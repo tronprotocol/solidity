@@ -1010,14 +1010,8 @@ public:
         verifyTransferProof,///< CALL to special contract for verifyTransferProof which is used for shielded transaction for TRC-20
         verifyMintProof,//< CALL to special contract for verifyMintProof which is used for shielded transaction for TRC-20
         pedersenHash,//< CALL to special contract for verifyMintProof which is used for shielded transaction for TRC-20
-//      Freeze,//< CALL to freeze balance
-//		Unfreeze,//< CALL to unfreeze balance
-//      Vote,//< CALL to vote witness
-        Stake,
-        Unstake,		
-		WithdrawReward,//< CALL to withdrawReward to address
-		AssetIssue,//CALL to issue new Asset
-		UpdateAsset,//CALL to update Asset
+        Freeze,//< CALL to freeze balance
+		Unfreeze,//< CALL to unfreeze balance
 		Log0,
 		Log1,
 		Log2,
