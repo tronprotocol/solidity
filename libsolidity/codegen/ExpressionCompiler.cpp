@@ -1432,12 +1432,21 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 		}
 		else if ((set<string>{"send", "transfer", "transferToken"}).count(member))
 		{
-			solAssert(dynamic_cast<AddressType const&>(*_memberAccess.expression().annotation().type).stateMutability() == StateMutability::Payable, "");
-			utils().convertType(
-				*_memberAccess.expression().annotation().type,
-				AddressType(StateMutability::Payable),
-				true
-			);
+			solAssert(dynamic_cast<AddressType const &>(*_memberAccess.expression().annotation().type).stateMutability()
+			              == StateMutability::Payable,
+			          "");
+			utils().convertType(*_memberAccess.expression().annotation().type,
+			                    AddressType(StateMutability::Payable),
+			                    true);
+		}
+		else if ((set<string>{"freeze", "unfreeze"}).count(member))
+		{
+            solAssert(dynamic_cast<AddressType const&>(*_memberAccess.expression().annotation().type).stateMutability() == StateMutability::Payable, "");
+            utils().convertType(
+                    *_memberAccess.expression().annotation().type,
+                    AddressType(StateMutability::Payable),
+                    true
+            );
 		}
 		else if ((set<string>{"tokenBalance", "call", "callcode", "delegatecall", "staticcall"}).count(member))
 			utils().convertType(
