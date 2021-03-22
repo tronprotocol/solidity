@@ -1012,6 +1012,7 @@ public:
         pedersenHash,//< CALL to special contract for verifyMintProof which is used for shielded transaction for TRC-20
         Freeze,//< CALL to freeze balance
 		Unfreeze,//< CALL to unfreeze balance
+        FreezeExpireTime,// < CALL to freeze expire time
 		Log0,
 		Log1,
 		Log2,

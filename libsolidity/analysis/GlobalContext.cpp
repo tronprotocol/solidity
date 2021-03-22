@@ -69,6 +69,7 @@ namespace dev
                     magicVarDecl("suicide", TypeProvider::function(strings{"address payable"}, strings{}, FunctionType::Kind::Selfdestruct)),
                     magicVarDecl("freeze", TypeProvider::function(strings{"uint", "uint"}, strings{"bool"}, FunctionType::Kind::Freeze, false, StateMutability::NonPayable)),
                     magicVarDecl("unfreeze", TypeProvider::function(strings{"uint"}, strings{"bool"}, FunctionType::Kind::Unfreeze, false, StateMutability::NonPayable)),
+                    magicVarDecl("freezeExpireTime", TypeProvider::function(strings{"uint"}, strings{"uint"}, FunctionType::Kind::FreezeExpireTime, false, StateMutability::NonPayable)),
                     magicVarDecl("tx", TypeProvider::magic(MagicType::Kind::Transaction)),
                     magicVarDecl("type", TypeProvider::function(
                             strings{"address"} /* accepts any contract type, handled by the type checker */,

@@ -1212,6 +1212,16 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 			m_context << Instruction::NATIVEUNFREEZE;
 			break;
 		}
+        case FunctionType::Kind::FreezeExpireTime:
+        {
+            _functionCall.expression().accept(*this);
+            for (unsigned i = 0; i < arguments.size(); ++i)
+            {
+                acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
+            }
+            m_context << Instruction::NATIVEFREEZEEXPIRETIME;
+            break;
+        }
 		default:
 		    solAssert(false, "unsupported member function of Kind");
         }
@@ -1439,7 +1449,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 			                    AddressType(StateMutability::Payable),
 			                    true);
 		}
-		else if ((set<string>{"freeze", "unfreeze"}).count(member))
+		else if ((set<string>{"freeze", "unfreeze", "freezeExpireTime"}).count(member))
 		{
             solAssert(dynamic_cast<AddressType const&>(*_memberAccess.expression().annotation().type).stateMutability() == StateMutability::Payable, "");
             utils().convertType(

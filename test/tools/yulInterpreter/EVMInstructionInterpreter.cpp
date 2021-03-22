@@ -422,6 +422,7 @@ u256 EVMInstructionInterpreter::eval(
 	case Instruction::ISCONTRACT:
     case Instruction::NATIVEFREEZE:
     case Instruction::NATIVEUNFREEZE:
+    case Instruction::NATIVEFREEZEEXPIRETIME:
 	{
 		yulAssert(false, "");
 		return 0;

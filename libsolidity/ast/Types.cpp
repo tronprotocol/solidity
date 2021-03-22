@@ -479,7 +479,8 @@ MemberList::MemberMap AddressType::nativeMembers(ContractDefinition const*) cons
 		members.emplace_back(MemberList::Member{"transferToken", TypeProvider::function(strings{"uint", "trcToken"}, strings(), FunctionType::Kind::TransferToken)});
         members.emplace_back(MemberList::Member{"freeze", TypeProvider::function(strings{"uint", "uint"}, strings{"bool"}, FunctionType::Kind::Freeze, false, StateMutability::NonPayable)});
         members.emplace_back(MemberList::Member{"unfreeze", TypeProvider::function(strings{"uint"}, strings{"bool"}, FunctionType::Kind::Unfreeze, false, StateMutability::NonPayable)});
-	}
+        members.emplace_back(MemberList::Member{"freezeExpireTime", TypeProvider::function(strings{"uint"}, strings{"uint"}, FunctionType::Kind::FreezeExpireTime, false, StateMutability::NonPayable)});
+    }
 	return members;
 }
 
@@ -2749,6 +2750,7 @@ string FunctionType::richIdentifier() const
         case Kind::MetaType: id += "metatype"; break;
     	case Kind::Freeze: id += "freeze"; break;
     	case Kind::Unfreeze: id += "unfreeze"; break;
+        case Kind::FreezeExpireTime: id += "freezeExpireTime"; break;
 	}
 	id += "_" + stateMutabilityToString(m_stateMutability);
 	id += identifierList(m_parameterTypes) + "returns" + identifierList(m_returnParameterTypes);

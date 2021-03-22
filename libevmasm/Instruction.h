@@ -194,6 +194,7 @@ enum class Instruction: uint8_t
 	ISCONTRACT,
     NATIVEFREEZE,
     NATIVEUNFREEZE,
+    NATIVEFREEZEEXPIRETIME,
 
 	CREATE = 0xf0,		///< create a new account with associated code
 	CALL,				///< message-call into an account
