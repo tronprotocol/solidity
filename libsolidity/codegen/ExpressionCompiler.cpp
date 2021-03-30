@@ -1200,6 +1200,8 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
                 acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
             }
             m_context << Instruction::NATIVEFREEZE;
+            m_context << Instruction::ISZERO;
+            m_context.appendConditionalRevert(true);
             break;
 		}
         case FunctionType::Kind::Unfreeze:
@@ -1210,6 +1212,8 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 				acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
 			}
 			m_context << Instruction::NATIVEUNFREEZE;
+            m_context << Instruction::ISZERO;
+            m_context.appendConditionalRevert(true);
 			break;
 		}
         case FunctionType::Kind::FreezeExpireTime:
@@ -1449,7 +1453,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 			                    AddressType(StateMutability::Payable),
 			                    true);
 		}
-		else if ((set<string>{"freeze", "unfreeze", "freezeExpireTime"}).count(member))
+		else if ((set<string>{"freeze", "unfreeze"}).count(member))
 		{
             solAssert(dynamic_cast<AddressType const&>(*_memberAccess.expression().annotation().type).stateMutability() == StateMutability::Payable, "");
             utils().convertType(
@@ -1458,7 +1462,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
                     true
             );
 		}
-		else if ((set<string>{"tokenBalance", "call", "callcode", "delegatecall", "staticcall"}).count(member))
+		else if ((set<string>{"tokenBalance", "call", "callcode", "delegatecall", "staticcall", "freezeExpireTime"}).count(member))
 			utils().convertType(
 				*_memberAccess.expression().annotation().type,
 				*TypeProvider::address(),

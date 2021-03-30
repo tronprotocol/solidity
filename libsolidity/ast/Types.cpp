@@ -471,15 +471,15 @@ MemberList::MemberMap AddressType::nativeMembers(ContractDefinition const*) cons
 		{"delegatecall", TypeProvider::function(strings{"bytes memory"}, strings{"bool", "bytes memory"}, FunctionType::Kind::BareDelegateCall, false, StateMutability::NonPayable)},
 		{"staticcall", TypeProvider::function(strings{"bytes memory"}, strings{"bool", "bytes memory"}, FunctionType::Kind::BareStaticCall, false, StateMutability::View)},
 		{"tokenBalance", TypeProvider::function(strings{"trcToken"}, strings{"uint"}, FunctionType::Kind::TokenBalance, false, StateMutability::View)},
-	};
+        {"freezeExpireTime", TypeProvider::function(strings{"uint"}, strings{"uint"}, FunctionType::Kind::FreezeExpireTime, false, StateMutability::View)},
+    };
 	if (m_stateMutability == StateMutability::Payable)
 	{
 		members.emplace_back(MemberList::Member{"send", TypeProvider::function(strings{"uint"}, strings{"bool"}, FunctionType::Kind::Send, false, StateMutability::NonPayable)});
 		members.emplace_back(MemberList::Member{"transfer", TypeProvider::function(strings{"uint"}, strings(), FunctionType::Kind::Transfer, false, StateMutability::NonPayable)});
 		members.emplace_back(MemberList::Member{"transferToken", TypeProvider::function(strings{"uint", "trcToken"}, strings(), FunctionType::Kind::TransferToken)});
-        members.emplace_back(MemberList::Member{"freeze", TypeProvider::function(strings{"uint", "uint"}, strings{"bool"}, FunctionType::Kind::Freeze, false, StateMutability::NonPayable)});
-        members.emplace_back(MemberList::Member{"unfreeze", TypeProvider::function(strings{"uint"}, strings{"bool"}, FunctionType::Kind::Unfreeze, false, StateMutability::NonPayable)});
-        members.emplace_back(MemberList::Member{"freezeExpireTime", TypeProvider::function(strings{"uint"}, strings{"uint"}, FunctionType::Kind::FreezeExpireTime, false, StateMutability::NonPayable)});
+        members.emplace_back(MemberList::Member{"freeze", TypeProvider::function(strings{"uint", "uint"}, strings(), FunctionType::Kind::Freeze, false, StateMutability::NonPayable)});
+        members.emplace_back(MemberList::Member{"unfreeze", TypeProvider::function(strings{"uint"}, strings(), FunctionType::Kind::Unfreeze, false, StateMutability::NonPayable)});
     }
 	return members;
 }
