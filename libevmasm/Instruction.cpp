@@ -215,6 +215,7 @@ static std::map<Instruction, InstructionInfo> const c_instructionInfo =
 	{ Instruction::KECCAK256,	{ "KECCAK256",			0, 2, 1, true, Tier::Special } },
 	{ Instruction::ADDRESS,		{ "ADDRESS",		0, 0, 1, false, Tier::Base } },
 	{ Instruction::BALANCE,		{ "BALANCE",		0, 1, 1, false, Tier::Balance } },
+    { Instruction::TOKENBALANCE,	{ "TOKENBALANCE",	0, 2, 1, false, Tier::Balance } },
 	{ Instruction::ISCONTRACT,	{ "ISCONTRACT",	0, 1, 1, false, Tier::Balance } },
 	{ Instruction::ORIGIN,		{ "ORIGIN",			0, 0, 1, false, Tier::Base } },
     { Instruction::NATIVEFREEZE,		{ "NATIVEFREEZE",			0, 3, 1, true, Tier::Ext } },
