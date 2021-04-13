@@ -35,8 +35,8 @@
 
 #include <libevmasm/LinkerObject.h>
 
-#include <libdevcore/Common.h>
-#include <libdevcore/FixedHash.h>
+#include <libsolutil/Common.h>
+#include <libsolutil/FixedHash.h>
 
 #include <boost/noncopyable.hpp>
 #include <json/json.h>
@@ -48,22 +48,20 @@
 #include <string>
 #include <vector>
 
-namespace langutil
+namespace solidity::langutil
 {
 class Scanner;
 }
 
-namespace dev
-{
 
-namespace eth
+namespace solidity::evmasm
 {
 class Assembly;
 class AssemblyItem;
 using AssemblyItems = std::vector<AssemblyItem>;
 }
 
-namespace solidity
+namespace solidity::frontend
 {
 
 // forward declarations
@@ -137,7 +135,7 @@ public:
 
 	/// Sets library addresses. Addresses are cleared iff @a _libraries is missing.
 	/// Must be set before parsing.
-	void setLibraries(std::map<std::string, h160> const& _libraries = std::map<std::string, h160>{});
+	void setLibraries(std::map<std::string, util::h160> const& _libraries = {});
 
 	/// Changes the optimiser settings.
 	/// Must be set before parsing.
@@ -178,8 +176,8 @@ public:
 	/// Enable experimental generation of Yul IR code.
 	void enableIRGeneration(bool _enable = true) { m_generateIR = _enable; }
 
-	/// Enable experimental generation of eWasm code. If enabled, IR is also generated.
-	void enableEWasmGeneration(bool _enable = true) { m_generateEWasm = _enable; }
+	/// Enable experimental generation of Ewasm code. If enabled, IR is also generated.
+	void enableEwasmGeneration(bool _enable = true) { m_generateEwasm = _enable; }
 
 	/// @arg _metadataLiteralSources When true, store sources as literals in the contract metadata.
 	/// Must be set before parsing.
@@ -195,11 +193,15 @@ public:
 
 	/// Adds a response to an SMTLib2 query (identified by the hash of the query input).
 	/// Must be set before parsing.
-	void addSMTLib2Response(h256 const& _hash, std::string const& _response);
+	void addSMTLib2Response(util::h256 const& _hash, std::string const& _response);
 
 	/// Parses all source units that were added
 	/// @returns false on error.
 	bool parse();
+
+	/// Imports given SourceUnits so they can be analyzed. Leads to the same internal state as parse().
+	/// Will throw errors if the import fails
+	void importASTs(std::map<std::string, Json::Value> const& _sources);
 
 	/// Performs the analysis steps (imports, scopesetting, syntaxCheck, referenceResolving,
 	///  typechecking, staticAnalysis) on previously parsed sources.
@@ -251,23 +253,23 @@ public:
 	/// @returns the optimized IR representation of a contract.
 	std::string const& yulIROptimized(std::string const& _contractName) const;
 
-	/// @returns the eWasm text representation of a contract.
-	std::string const& eWasm(std::string const& _contractName) const;
+	/// @returns the Ewasm text representation of a contract.
+	std::string const& ewasm(std::string const& _contractName) const;
 
-	/// @returns the eWasm representation of a contract.
-	eth::LinkerObject const& eWasmObject(std::string const& _contractName) const;
+	/// @returns the Ewasm representation of a contract.
+	evmasm::LinkerObject const& ewasmObject(std::string const& _contractName) const;
 
 	/// @returns the assembled object for a contract.
-	eth::LinkerObject const& object(std::string const& _contractName) const;
+	evmasm::LinkerObject const& object(std::string const& _contractName) const;
 
 	/// @returns the runtime object for the contract.
-	eth::LinkerObject const& runtimeObject(std::string const& _contractName) const;
+	evmasm::LinkerObject const& runtimeObject(std::string const& _contractName) const;
 
 	/// @returns normal contract assembly items
-	eth::AssemblyItems const* assemblyItems(std::string const& _contractName) const;
+	evmasm::AssemblyItems const* assemblyItems(std::string const& _contractName) const;
 
 	/// @returns runtime contract assembly items
-	eth::AssemblyItems const* runtimeAssemblyItems(std::string const& _contractName) const;
+	evmasm::AssemblyItems const* runtimeAssemblyItems(std::string const& _contractName) const;
 
 	/// @returns the string that provides a mapping between bytecode and sourcecode or a nullptr
 	/// if the contract does not (yet) have bytecode.
@@ -320,12 +322,12 @@ private:
 	{
 		std::shared_ptr<langutil::Scanner> scanner;
 		std::shared_ptr<SourceUnit> ast;
-		h256 mutable keccak256HashCached;
-		h256 mutable swarmHashCached;
+		util::h256 mutable keccak256HashCached;
+		util::h256 mutable swarmHashCached;
 		std::string mutable ipfsUrlCached;
 		void reset() { *this = Source(); }
-		h256 const& keccak256() const;
-		h256 const& swarmHash() const;
+		util::h256 const& keccak256() const;
+		util::h256 const& swarmHash() const;
 		std::string const& ipfsUrl() const;
 	};
 
@@ -334,12 +336,12 @@ private:
 	{
 		ContractDefinition const* contract = nullptr;
 		std::shared_ptr<Compiler> compiler;
-		eth::LinkerObject object; ///< Deployment object (includes the runtime sub-object).
-		eth::LinkerObject runtimeObject; ///< Runtime object.
+		evmasm::LinkerObject object; ///< Deployment object (includes the runtime sub-object).
+		evmasm::LinkerObject runtimeObject; ///< Runtime object.
 		std::string yulIR; ///< Experimental Yul IR code.
 		std::string yulIROptimized; ///< Optimized experimental Yul IR code.
-		std::string eWasm; ///< Experimental eWasm text representation
-		eth::LinkerObject eWasmObject; ///< Experimental eWasm code
+		std::string ewasm; ///< Experimental Ewasm text representation
+		evmasm::LinkerObject ewasmObject; ///< Experimental Ewasm code
 		mutable std::unique_ptr<std::string const> metadata; ///< The metadata json that will be hashed into the chain.
 		mutable std::unique_ptr<Json::Value const> abi;
 		mutable std::unique_ptr<Json::Value const> storageLayout;
@@ -374,8 +376,8 @@ private:
 	/// The IR is stored but otherwise unused.
 	void generateIR(ContractDefinition const& _contract);
 
-	/// Generate eWasm representation for a single contract.
-	void generateEWasm(ContractDefinition const& _contract);
+	/// Generate Ewasm representation for a single contract.
+	void generateEwasm(ContractDefinition const& _contract);
 
 	/// Links all the known library addresses in the available objects. Any unknown
 	/// library will still be kept as an unlinked placeholder in the objects.
@@ -400,7 +402,7 @@ private:
 	bytes createCBORMetadata(std::string const& _metadata, bool _experimentalMode);
 
 	/// @returns the computer source mapping string.
-	std::string computeSourceMapping(eth::AssemblyItems const& _items) const;
+	std::string computeSourceMapping(evmasm::AssemblyItems const& _items) const;
 
 	/// @returns the contract ABI as a JSON object.
 	/// This will generate the JSON object and store it in the Contract object if it is not present yet.
@@ -436,14 +438,16 @@ private:
 	smt::SMTSolverChoice m_enabledSMTSolvers;
 	std::map<std::string, std::set<std::string>> m_requestedContractNames;
 	bool m_generateIR;
-	bool m_generateEWasm;
-	std::map<std::string, h160> m_libraries;
+	bool m_generateEwasm;
+	std::map<std::string, util::h160> m_libraries;
 	/// list of path prefix remappings, e.g. mylibrary: github.com/ethereum = /usr/local/ethereum
 	/// "context:prefix=target"
 	std::vector<Remapping> m_remappings;
 	std::map<std::string const, Source> m_sources;
+	// if imported, store AST-JSONS for each filename
+	std::map<std::string, Json::Value> m_sourceJsons;
 	std::vector<std::string> m_unhandledSMTLib2Queries;
-	std::map<h256, std::string> m_smtlib2Responses;
+	std::map<util::h256, std::string> m_smtlib2Responses;
 	std::shared_ptr<GlobalContext> m_globalContext;
 	std::vector<Source const*> m_sourceOrder;
 	/// This is updated during compilation.
@@ -455,11 +459,11 @@ private:
 	MetadataHash m_metadataHash = MetadataHash::IPFS;
 	bool m_parserErrorRecovery = false;
 	State m_stackState = Empty;
+	bool m_importedSources = false;
 	/// Whether or not there has been an error during processing.
 	/// If this is true, the stack will refuse to generate code.
 	bool m_hasError = false;
 	bool m_release = VersionIsRelease;
 };
 
-}
 }

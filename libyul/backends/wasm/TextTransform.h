@@ -15,7 +15,7 @@
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
 /**
- * Component that transforms interval Wasm representation to text.
+ * Component that transforms internal Wasm representation to text.
  */
 
 #pragma once
@@ -24,11 +24,12 @@
 
 #include <vector>
 
-namespace yul
+namespace solidity::yul
 {
 struct AsmAnalysisInfo;
+}
 
-namespace wasm
+namespace solidity::yul::wasm
 {
 
 class TextTransform

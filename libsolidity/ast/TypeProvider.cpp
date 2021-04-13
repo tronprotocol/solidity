@@ -21,8 +21,9 @@
 #include <boost/algorithm/string/split.hpp>
 
 using namespace std;
-using namespace dev;
 using namespace solidity;
+using namespace solidity::frontend;
+using namespace solidity::util;
 
 BoolType const TypeProvider::m_boolean{};
 InaccessibleDynamicType const TypeProvider::m_inaccessibleDynamic{};
@@ -417,9 +418,9 @@ ReferenceType const* TypeProvider::withLocation(ReferenceType const* _type, Data
 	return static_cast<ReferenceType const*>(instance().m_generalTypes.back().get());
 }
 
-FunctionType const* TypeProvider::function(FunctionDefinition const& _function, bool _isInternal)
+FunctionType const* TypeProvider::function(FunctionDefinition const& _function, FunctionType::Kind _kind)
 {
-	return createAndGet<FunctionType>(_function, _isInternal);
+	return createAndGet<FunctionType>(_function, _kind);
 }
 
 FunctionType const* TypeProvider::function(VariableDeclaration const& _varDecl)
@@ -462,8 +463,8 @@ FunctionType const* TypeProvider::function(
 	Declaration const* _declaration,
 	bool _gasSet,
 	bool _valueSet,
-	bool _tokenSet,
-	bool _bound
+	bool _bound,
+	bool _saltSet
 )
 {
 	return createAndGet<FunctionType>(
@@ -477,8 +478,8 @@ FunctionType const* TypeProvider::function(
 		_declaration,
 		_gasSet,
 		_valueSet,
-		_tokenSet,
-		_bound
+		_bound,
+		_saltSet
 	);
 }
 

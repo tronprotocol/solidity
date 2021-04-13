@@ -18,6 +18,7 @@ add_library(yul
 	AssemblyStack.cpp
 	CompilabilityChecker.cpp
 	CompilabilityChecker.h
+	Dialect.cpp
 	Dialect.h
 	Exceptions.h
 	Object.cpp
@@ -44,18 +45,18 @@ add_library(yul
 	backends/evm/EVMMetrics.h
 	backends/evm/NoOutputAssembly.h
 	backends/evm/NoOutputAssembly.cpp
-	backends/wasm/EVMToEWasmTranslator.cpp
-	backends/wasm/EVMToEWasmTranslator.h
-	backends/wasm/EWasmCodeTransform.cpp
-	backends/wasm/EWasmCodeTransform.h
-	backends/wasm/EWasmObjectCompiler.cpp
-	backends/wasm/EWasmObjectCompiler.h
+	backends/wasm/EVMToEwasmTranslator.cpp
+	backends/wasm/EVMToEwasmTranslator.h
 	backends/wasm/BinaryTransform.cpp
 	backends/wasm/BinaryTransform.h
 	backends/wasm/TextTransform.cpp
 	backends/wasm/TextTransform.h
+	backends/wasm/WasmCodeTransform.cpp
+	backends/wasm/WasmCodeTransform.h
 	backends/wasm/WasmDialect.cpp
 	backends/wasm/WasmDialect.h
+	backends/wasm/WasmObjectCompiler.cpp
+	backends/wasm/WasmObjectCompiler.h
 	backends/wasm/WordSizeTransform.cpp
 	backends/wasm/WordSizeTransform.h
 	optimiser/ASTCopier.cpp
@@ -158,4 +159,4 @@ add_library(yul
 	optimiser/VarNameCleaner.cpp
 	optimiser/VarNameCleaner.h
 )
-target_link_libraries(yul PUBLIC evmasm devcore langutil)
+target_link_libraries(yul PUBLIC evmasm solutil langutil)

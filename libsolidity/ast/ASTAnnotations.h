@@ -32,16 +32,14 @@
 #include <set>
 #include <vector>
 
-namespace yul
+namespace solidity::yul
 {
 struct AsmAnalysisInfo;
 struct Identifier;
 struct Dialect;
 }
 
-namespace dev
-{
-namespace solidity
+namespace solidity::frontend
 {
 
 class Type;
@@ -75,7 +73,21 @@ struct SourceUnitAnnotation: ASTAnnotation
 	std::set<ExperimentalFeature> experimentalFeatures;
 };
 
-struct ImportAnnotation: ASTAnnotation
+struct ScopableAnnotation
+{
+	/// The scope this declaration resides in. Can be nullptr if it is the global scope.
+	/// Available only after name and type resolution step.
+	ASTNode const* scope = nullptr;
+	/// Pointer to the contract this declaration resides in. Can be nullptr if the current scope
+	/// is not part of a contract. Available only after name and type resolution step.
+	ContractDefinition const* contract = nullptr;
+};
+
+struct DeclarationAnnotation: ASTAnnotation, ScopableAnnotation
+{
+};
+
+struct ImportAnnotation: DeclarationAnnotation
 {
 	/// The absolute path of the source unit to import.
 	std::string absolutePath;
@@ -83,7 +95,7 @@ struct ImportAnnotation: ASTAnnotation
 	SourceUnit const* sourceUnit = nullptr;
 };
 
-struct TypeDeclarationAnnotation: ASTAnnotation
+struct TypeDeclarationAnnotation: DeclarationAnnotation
 {
 	/// The name of this type, prefixed by proper namespaces if globally accessible.
 	std::string canonicalName;
@@ -104,7 +116,7 @@ struct ContractDefinitionAnnotation: TypeDeclarationAnnotation, DocumentedAnnota
 	std::map<FunctionDefinition const*, ASTNode const*> baseConstructorArguments;
 };
 
-struct CallableDeclarationAnnotation: ASTAnnotation
+struct CallableDeclarationAnnotation: DeclarationAnnotation
 {
 	/// The set of functions/modifiers/events this callable overrides.
 	std::set<CallableDeclaration const*> baseFunctions;
@@ -112,19 +124,19 @@ struct CallableDeclarationAnnotation: ASTAnnotation
 
 struct FunctionDefinitionAnnotation: CallableDeclarationAnnotation, DocumentedAnnotation
 {
-	/// Pointer to the contract this function is defined in
-	ContractDefinition const* contract = nullptr;
 };
 
 struct EventDefinitionAnnotation: CallableDeclarationAnnotation, DocumentedAnnotation
 {
+	/// Pointer to the contract this function is defined in
+	ContractDefinition const* contract = nullptr;
 };
 
 struct ModifierDefinitionAnnotation: CallableDeclarationAnnotation, DocumentedAnnotation
 {
 };
 
-struct VariableDeclarationAnnotation: ASTAnnotation
+struct VariableDeclarationAnnotation: DeclarationAnnotation
 {
 	/// Type of variable (type of identifier referencing this variable).
 	TypePointer type = nullptr;
@@ -150,6 +162,18 @@ struct InlineAssemblyAnnotation: StatementAnnotation
 	std::map<yul::Identifier const*, ExternalIdentifierInfo> externalReferences;
 	/// Information generated during analysis phase.
 	std::shared_ptr<yul::AsmAnalysisInfo> analysisInfo;
+};
+
+struct BlockAnnotation: StatementAnnotation, ScopableAnnotation
+{
+};
+
+struct TryCatchClauseAnnotation: ASTAnnotation, ScopableAnnotation
+{
+};
+
+struct ForStatementAnnotation: StatementAnnotation, ScopableAnnotation
+{
 };
 
 struct ReturnAnnotation: StatementAnnotation
@@ -228,5 +252,4 @@ struct FunctionCallAnnotation: ExpressionAnnotation
 	bool tryCall = false;
 };
 
-}
 }

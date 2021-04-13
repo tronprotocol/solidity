@@ -139,8 +139,8 @@ cd build
 cmake -G "Visual Studio 15 2017 Win64" ..
 cmake --build . --config RelWithDebInfo
 ```
-```
-pragma solidity ^0.5.0;
+```solidity
+pragma solidity ^0.6.0;
 
 contract HelloWorld {
   function helloWorld() external pure returns (string memory) {

@@ -25,7 +25,7 @@
 #include <test/libsolidity/SemanticTest.h>
 #include <test/libsolidity/SMTCheckerTest.h>
 #include <test/libsolidity/SMTCheckerJSONTest.h>
-#include <test/libyul/EWasmTranslationTest.h>
+#include <test/libyul/EwasmTranslationTest.h>
 #include <test/libyul/YulOptimizerTest.h>
 #include <test/libyul/YulInterpreterTest.h>
 #include <test/libyul/ObjectCompilerTest.h>
@@ -33,11 +33,7 @@
 
 #include <boost/filesystem.hpp>
 
-namespace dev
-{
-namespace solidity
-{
-namespace test
+namespace solidity::frontend::test
 {
 
 /** Container for all information regarding a testsuite */
@@ -56,7 +52,7 @@ struct Testsuite
 Testsuite const g_interactiveTestsuites[] = {
 /*
 	Title                   Path           Subpath                SMT   NeedsVM Creator function */
-	{"EWasm Translation",   "libyul",      "ewasmTranslationTests",false,false, &yul::test::EWasmTranslationTest::create},
+	{"Ewasm Translation",   "libyul",      "ewasmTranslationTests",false,false, &yul::test::EwasmTranslationTest::create},
 	{"Yul Optimizer",       "libyul",      "yulOptimizerTests",   false, false, &yul::test::YulOptimizerTest::create},
 	{"Yul Interpreter",     "libyul",      "yulInterpreterTests", false, false, &yul::test::YulInterpreterTest::create},
 	{"Yul Object Compiler", "libyul",      "objectCompiler",      false, false, &yul::test::ObjectCompilerTest::create},
@@ -71,6 +67,4 @@ Testsuite const g_interactiveTestsuites[] = {
 	{"Gas Estimates",       "libsolidity", "gasTests",            false, false, &GasTest::create}
 };
 
-}
-}
 }

@@ -29,9 +29,7 @@
 #include <string>
 #include <vector>
 
-namespace dev
-{
-namespace solidity
+namespace solidity::frontend
 {
 
 class Type; // forward
@@ -74,5 +72,4 @@ private:
 //	void addupdateassetMethod();
 };
 
-}
 }

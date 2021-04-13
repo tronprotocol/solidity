@@ -21,7 +21,7 @@
 #include <test/tools/yulInterpreter/Interpreter.h>
 
 #include <test/tools/yulInterpreter/EVMInstructionInterpreter.h>
-#include <test/tools/yulInterpreter/EWasmBuiltinInterpreter.h>
+#include <test/tools/yulInterpreter/EwasmBuiltinInterpreter.h>
 
 #include <libyul/AsmData.h>
 #include <libyul/Dialect.h>
@@ -31,7 +31,7 @@
 
 #include <liblangutil/Exceptions.h>
 
-#include <libdevcore/FixedHash.h>
+#include <libsolutil/FixedHash.h>
 
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/algorithm/cxx11/all_of.hpp>
@@ -40,9 +40,11 @@
 #include <variant>
 
 using namespace std;
-using namespace dev;
-using namespace yul;
-using namespace yul::test;
+using namespace solidity;
+using namespace solidity::yul;
+using namespace solidity::yul::test;
+
+using solidity::util::h256;
 
 void InterpreterState::dumpTraceAndState(ostream& _out) const
 {
@@ -58,7 +60,7 @@ void InterpreterState::dumpTraceAndState(ostream& _out) const
 			_out << "  " << std::uppercase << std::hex << std::setw(4) << offset << ": " << h256(value).hex() << endl;
 	_out << "Storage dump:" << endl;
 	for (auto const& slot: storage)
-		if (slot.second != h256(0))
+		if (slot.second != h256{})
 			_out << "  " << slot.first.hex() << ": " << slot.second.hex() << endl;
 }
 
@@ -246,7 +248,7 @@ void ExpressionEvaluator::operator()(FunctionCall const& _funCall)
 	else if (WasmDialect const* dialect = dynamic_cast<WasmDialect const*>(&m_dialect))
 		if (dialect->builtin(_funCall.functionName.name))
 		{
-			EWasmBuiltinInterpreter interpreter(m_state);
+			EwasmBuiltinInterpreter interpreter(m_state);
 			setValue(interpreter.evalBuiltin(_funCall.functionName.name, values()));
 			return;
 		}

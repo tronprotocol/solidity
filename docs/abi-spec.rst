@@ -455,7 +455,9 @@ thus ``g = 0x0000000000000000000000000000000000000000000000000000000000000140``.
 Events
 ======
 
-Events are an abstraction of the Tron logging/event-watching protocol. Log entries provide the contract's address, a series of up to four topics and some arbitrary length binary data. Events leverage the existing function ABI in order to interpret this (together with an interface spec) as a properly typed structure.
+Events are an abstraction of the Ethereum logging/event-watching protocol. Log entries provide the contract's
+address, a series of up to four topics and some arbitrary length binary data. Events leverage the existing function
+ABI in order to interpret this (together with an interface spec) as a properly typed structure.
 
 Given an event name and series of event parameters, we split them into two sub-series: those which are indexed and
 those which are not. Those which are indexed, which may number up to 3, are used alongside the Keccak hash of the
@@ -463,10 +465,15 @@ event signature to form the topics of the log entry. Those which are not indexed
 
 In effect, a log entry using this ABI is described as:
 
-- ``address``: the address of the contract (intrinsically provided by Tron);
-- ``topics[0]``: ``keccak(EVENT_NAME+"("+EVENT_ARGS.map(canonical_type_of).join(",")+")")`` (``canonical_type_of`` is a function that simply returns the canonical type of a given argument, e.g. for ``uint indexed foo``, it would return ``uint256``). If the event is declared as ``anonymous`` the ``topics[0]`` is not generated;
-- ``topics[n]``: ``abi_encode(EVENT_INDEXED_ARGS[n - 1])`` (``EVENT_INDEXED_ARGS`` is the series of ``EVENT_ARGS`` that are indexed);
-- ``data``: ABI encoding of ``EVENT_NON_INDEXED_ARGS`` (``EVENT_NON_INDEXED_ARGS`` is the series of ``EVENT_ARGS`` that are not indexed, ``abi_encode`` is the ABI encoding function used for returning a series of typed values from a function, as described above).
+- ``address``: the address of the contract (intrinsically provided by Ethereum);
+- ``topics[0]``: ``keccak(EVENT_NAME+"("+EVENT_ARGS.map(canonical_type_of).join(",")+")")`` (``canonical_type_of``
+  is a function that simply returns the canonical type of a given argument, e.g. for ``uint indexed foo``, it would
+  return ``uint256``). If the event is declared as ``anonymous`` the ``topics[0]`` is not generated;
+- ``topics[n]``: ``abi_encode(EVENT_INDEXED_ARGS[n - 1])`` (``EVENT_INDEXED_ARGS`` is the series of ``EVENT_ARGS``
+  that are indexed);
+- ``data``: ABI encoding of ``EVENT_NON_INDEXED_ARGS`` (``EVENT_NON_INDEXED_ARGS`` is the series of ``EVENT_ARGS``
+  that are not indexed, ``abi_encode`` is the ABI encoding function used for returning a series of typed values
+  from a function, as described above).
 
 For all types of length at most 32 bytes, the ``EVENT_INDEXED_ARGS`` array contains
 the value directly, padded or sign-extended (for signed integers) to 32 bytes, just as for regular ABI encoding.
@@ -499,11 +506,9 @@ A function description is a JSON object with the fields:
   * ``components``: used for tuple types (more below).
 
 - ``outputs``: an array of objects similar to ``inputs``.
-- ``stateMutability``: a string with one of the following values: ``pure`` (:ref:`specified to not read blockchain state <pure-functions>`), ``view`` (:ref:`specified to not modify the blockchain state <view-functions>`), ``nonpayable`` (function does not accept Trx) and ``payable`` (function accepts Trx).
-- ``payable``: ``true`` if function accepts Trx, ``false`` otherwise.
-- ``constant``: ``true`` if function is either ``pure`` or ``view``, ``false`` otherwise.
-
-``type`` can be omitted, defaulting to ``"function"``, likewise ``payable`` and ``constant`` can be omitted, both defaulting to ``false``.
+- ``stateMutability``: a string with one of the following values: ``pure`` (:ref:`specified to not read
+  blockchain state <pure-functions>`), ``view`` (:ref:`specified to not modify the blockchain
+  state <view-functions>`), ``nonpayable`` (function does not accept Ether) and ``payable`` (function accepts Ether).
 
 Constructor and fallback function never have ``name`` or ``outputs``. Fallback function doesn't have ``inputs`` either.
 

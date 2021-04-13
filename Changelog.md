@@ -1,3 +1,35 @@
+### 0.6.2 (2020-01-27)
+
+Language Features:
+ * Allow accessing external functions via contract and interface names to obtain their selector.
+ * Allow interfaces to inherit from other interfaces
+ * Allow gas and value to be set in external function calls using ``c.f{gas: 10000, value: 4 ether}()``.
+ * Allow specifying the ``salt`` for contract creations and thus the ``create2`` opcode using ``new C{salt: 0x1234, value: 1 ether}(arg1, arg2)``.
+ * Inline Assembly: Support literals ``true`` and ``false``.
+
+
+Compiler Features:
+ * LLL: The LLL compiler has been removed.
+ * General: Raise warning if runtime bytecode exceeds 24576 bytes (a limit introduced in Spurious Dragon).
+ * General: Support compiling starting from an imported AST. Among others, this can be used for mutation testing.
+ * Yul Optimizer: Apply penalty when trying to rematerialize into loops.
+
+
+Bugfixes:
+ * Commandline interface: Only activate yul optimizer if ``--optimize`` is given.
+ * Fixes internal compiler error on explicitly calling unimplemented base functions.
+
+
+Build System:
+ * Switch to building soljson.js with an embedded base64-encoded wasm binary.
+
+
+### 0.6.1 (2020-01-02)
+
+Bugfixes:
+ * Yul Optimizer: Fix bug in redundant assignment remover in combination with break and continue statements.
+
+
 ### 0.6.0 (2019-12-17)
 
 Breaking changes:
@@ -33,6 +65,7 @@ Language Features:
  * Allow global enums and structs.
  * Allow public variables to override external functions.
  * Allow underscores as delimiters in hex strings.
+ * Allow to react on failing external calls using ``try`` and ``catch``.
  * Introduce syntax for array slices and implement them for dynamic calldata arrays.
  * Introduce ``push()`` for dynamic storage arrays. It returns a reference to the newly allocated element, if applicable.
  * Introduce ``virtual`` and ``override`` keywords.
@@ -43,6 +76,12 @@ Language Features:
 Compiler Features:
  * Allow revert strings to be stripped from the binary using the ``--revert-strings`` option or the ``settings.debug.revertStrings`` setting.
  * ABIEncoderV2: Do not warn about enabled ABIEncoderV2 anymore (the pragma is still needed, though).
+
+
+### 0.5.16 (2020-01-02)
+
+Backported Bugfixes:
+ * Yul Optimizer: Fix bug in redundant assignment remover in combination with break and continue statements.
 
 
 ### 0.5.15 (2019-12-17)
@@ -887,7 +926,7 @@ Features:
  * ABI JSON: Include new field ``stateMutability`` with values ``pure``, ``view``,
    ``nonpayable`` and ``payable``.
  * Analyzer: Experimental partial support for Z3 SMT checker ("SMTChecker").
- * Build System: Shared libraries (``libdevcore``, ``libevmasm``, ``libsolidity``
+ * Build System: Shared libraries (``libsolutil``, ``libevmasm``, ``libsolidity``
    and ``liblll``) are no longer produced during the build process.
  * Code generator: Experimental new implementation of ABI encoder that can
    encode arbitrarily nested arrays ("ABIEncoderV2")
