@@ -63,6 +63,12 @@ int magicVariableToID(std::string const& _name)
 	else if (_name == "tx") return -26;
 	else if (_name == "type") return -27;
 	else if (_name == "this") return -28;
+    else if (_name == "verifyMintProof") return -29;
+    else if (_name == "verifyBurnProof") return -30;
+    else if (_name == "verifyTransferProof") return -31;
+    else if (_name == "pedersenHash") return -32;
+    else if (_name == "batchvalidatesign") return -33;
+    else if (_name == "validatemultisign") return -34;
 	else
 		solAssert(false, "Unknown magic variable: \"" + _name + "\".");
 }
@@ -149,7 +155,7 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             strings returnParameterNames;
             returnParameterNames.push_back("msg");
 
-            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("verifyMintProof", TypeProvider::function(
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("verifyMintProof"), "verifyMintProof", TypeProvider::function(
                     parameterTypes,
                     returnParameterTypes,
                     parameterNames,
@@ -192,7 +198,7 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             strings returnParameterNames;
             returnParameterNames.push_back("msg");
 
-            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("verifyBurnProof", TypeProvider::function(
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("verifyBurnProof"), "verifyBurnProof", TypeProvider::function(
                     parameterTypes,
                     returnParameterTypes,
                     parameterNames,
@@ -249,7 +255,7 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             strings returnParameterNames;
             returnParameterNames.push_back("msg");
 
-            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("verifyTransferProof", TypeProvider::function(
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("verifyTransferProof"), "verifyTransferProof", TypeProvider::function(
                     parameterTypes,
                     returnParameterTypes,
                     parameterNames,
@@ -286,7 +292,7 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             strings returnParameterNames;
             returnParameterNames.push_back("msg");
 
-            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("pedersenHash", TypeProvider::function(
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("pedersenHash"), "pedersenHash", TypeProvider::function(
                     parameterTypes,
                     returnParameterTypes,
                     parameterNames,
@@ -319,7 +325,7 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             strings returnParameterNames;
             returnParameterNames.push_back("ok");
 
-            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("batchvalidatesign", TypeProvider::function(
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("batchvalidatesign"), "batchvalidatesign", TypeProvider::function(
                     parameterTypes,
                     returnParameterTypes,
                     parameterNames,
@@ -354,7 +360,7 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             strings returnParameterNames;
             returnParameterNames.push_back("ok");
 
-            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("validatemultisign", TypeProvider::function(
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("validatemultisign"), "validatemultisign", TypeProvider::function(
                     parameterTypes,
                     returnParameterTypes,
                     parameterNames,

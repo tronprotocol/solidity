@@ -968,6 +968,10 @@ Literal::SubDenomination ASTJsonImporter::subdenomination(Json::Value const& _no
 		return Literal::SubDenomination::Finney;
 	else if (subDenStr == "ether")
 		return Literal::SubDenomination::Ether;
+	else if (subDenStr == "trx")
+		return Literal::SubDenomination::Trx;
+	else if (subDenStr == "sun")
+		return Literal::SubDenomination::Sun;
 	else if (subDenStr == "seconds")
 		return Literal::SubDenomination::Second;
 	else if (subDenStr == "minutes")
