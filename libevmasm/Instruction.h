@@ -192,17 +192,9 @@ enum class Instruction: uint8_t
 	CALLTOKENVALUE,
 	CALLTOKENID,
 	ISCONTRACT,
-    NATIVESTAKE,
-	NATIVEUNSTAKE,
-	NATIVEWITHDRAWREWARD,
-	REWARDBALANCE,
-    ISSRCANDIDATE,
-	TOKENISSUE,
-	UPDATEASSET,
-// todo freeze unfreeze vote
-//	NATIVEFREEZE,
-//	NATIVEUNFREEZE,
-//  NATIVEVOTE,
+    NATIVEFREEZE,
+    NATIVEUNFREEZE,
+    NATIVEFREEZEEXPIRETIME,
 
 	CREATE = 0xf0,		///< create a new account with associated code
 	CALL,				///< message-call into an account

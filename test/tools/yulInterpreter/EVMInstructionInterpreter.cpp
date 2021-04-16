@@ -180,8 +180,6 @@ u256 EVMInstructionInterpreter::eval(
 		return m_state.address;
 	case Instruction::BALANCE:
 		return m_state.balance;
-	case Instruction::REWARDBALANCE:
-		return m_state.rewardbalance;
 	case Instruction::SELFBALANCE:
 		return m_state.selfbalance;
 	case Instruction::ORIGIN:
@@ -422,12 +420,9 @@ u256 EVMInstructionInterpreter::eval(
 	case Instruction::CALLTOKENVALUE:
 	case Instruction::CALLTOKENID:
 	case Instruction::ISCONTRACT:
-	case Instruction::ISSRCANDIDATE:
-    case Instruction::NATIVESTAKE:
-    case Instruction::NATIVEUNSTAKE:
-	case Instruction::NATIVEWITHDRAWREWARD:
-	case Instruction::TOKENISSUE:
-	case Instruction::UPDATEASSET:
+    case Instruction::NATIVEFREEZE:
+    case Instruction::NATIVEUNFREEZE:
+    case Instruction::NATIVEFREEZEEXPIRETIME:
 	{
 		yulAssert(false, "");
 		return 0;
