@@ -6,9 +6,9 @@
     case 0x02000000000000000000000000000000000000020 { sstore(3, 1) }
     default { sstore(8, 9) }
 }
-// ====
-// step: wordSizeTransform
 // ----
+// step: wordSizeTransform
+//
 // {
 //     let _1_0 := 0
 //     let _1_1 := 0
@@ -45,9 +45,9 @@
 //                     let _8_3 := 2
 //                     sstore(_8_0, _8_1, _8_2, _8_3, _7_0, _7_1, _7_2, _7_3)
 //                 }
-//                 default { run_default := 1 }
+//                 default { run_default := true }
 //             }
-//             default { run_default := 1 }
+//             default { run_default := true }
 //         }
 //         case 536870912 {
 //             switch _2_2
@@ -75,13 +75,13 @@
 //                     let _10_3 := 3
 //                     sstore(_10_0, _10_1, _10_2, _10_3, _9_0, _9_1, _9_2, _9_3)
 //                 }
-//                 default { run_default := 1 }
+//                 default { run_default := true }
 //             }
-//             default { run_default := 1 }
+//             default { run_default := true }
 //         }
-//         default { run_default := 1 }
+//         default { run_default := true }
 //     }
-//     default { run_default := 1 }
+//     default { run_default := true }
 //     if run_default
 //     {
 //         let _11_0 := 0

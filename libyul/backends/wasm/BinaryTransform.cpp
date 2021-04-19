@@ -311,7 +311,11 @@ bytes BinaryTransform::operator()(BuiltinCall const& _call)
 	bytes args = visit(_call.arguments);
 
 	if (_call.functionName == "unreachable")
-			return toBytes(Opcode::Unreachable);
+		return toBytes(Opcode::Unreachable);
+	else if (_call.functionName == "nop")
+		return toBytes(Opcode::Nop);
+	else if (_call.functionName == "drop")
+		return toBytes(Opcode::Drop);
 	else
 	{
 		yulAssert(builtins.count(_call.functionName), "Builtin " + _call.functionName + " not found");
@@ -354,13 +358,13 @@ bytes BinaryTransform::operator()(If const& _if)
 		toBytes(Opcode::If) +
 		toBytes(ValueType::Void);
 
-	m_labels.push({});
+	m_labels.emplace_back();
 
 	result += visit(_if.statements);
 	if (_if.elseStatements)
 		result += toBytes(Opcode::Else) + visit(*_if.elseStatements);
 
-	m_labels.pop();
+	m_labels.pop_back();
 
 	result += toBytes(Opcode::End);
 	return result;
@@ -370,26 +374,29 @@ bytes BinaryTransform::operator()(Loop const& _loop)
 {
 	bytes result = toBytes(Opcode::Loop) + toBytes(ValueType::Void);
 
-	m_labels.push(_loop.labelName);
+	m_labels.emplace_back(_loop.labelName);
 	result += visit(_loop.statements);
-	m_labels.pop();
+	m_labels.pop_back();
 
 	result += toBytes(Opcode::End);
 	return result;
 }
 
-bytes BinaryTransform::operator()(Break const&)
+bytes BinaryTransform::operator()(Break const& _break)
 {
-	yulAssert(false, "br not yet implemented.");
-	// TODO the index is just the nesting depth.
-	return {};
+	return toBytes(Opcode::Br) + encodeLabelIdx(_break.label.name);
 }
 
-bytes BinaryTransform::operator()(BreakIf const&)
+bytes BinaryTransform::operator()(BreakIf const& _breakIf)
 {
-	yulAssert(false, "br_if not yet implemented.");
-	// TODO the index is just the nesting depth.
-	return {};
+	bytes result = std::visit(*this, *_breakIf.condition);
+	result += toBytes(Opcode::BrIf) + encodeLabelIdx(_breakIf.label.name);
+	return result;
+}
+
+bytes BinaryTransform::operator()(Return const&)
+{
+	return toBytes(Opcode::Return);
 }
 
 bytes BinaryTransform::operator()(Return const&)
@@ -399,11 +406,14 @@ bytes BinaryTransform::operator()(Return const&)
 
 bytes BinaryTransform::operator()(Block const& _block)
 {
-	return
+	m_labels.emplace_back(_block.labelName);
+	bytes result =
 		toBytes(Opcode::Block) +
 		toBytes(ValueType::Void) +
 		visit(_block.statements) +
 		toBytes(Opcode::End);
+	m_labels.pop_back();
+	return result;
 }
 
 bytes BinaryTransform::operator()(FunctionDefinition const& _function)
@@ -423,8 +433,12 @@ bytes BinaryTransform::operator()(FunctionDefinition const& _function)
 	for (size_t i = 0; i < _function.locals.size(); ++i)
 		m_locals[_function.locals[i].variableName] = varIdx++;
 
+	yulAssert(m_labels.empty(), "Stray labels.");
+
 	ret += visit(_function.body);
 	ret += toBytes(Opcode::End);
+
+	yulAssert(m_labels.empty(), "Stray labels.");
 
 	return prefixSize(std::move(ret));
 }
@@ -575,6 +589,18 @@ bytes BinaryTransform::visitReversed(vector<Expression> const& _expressions)
 	for (auto const& expr: _expressions | boost::adaptors::reversed)
 		result += std::visit(*this, expr);
 	return result;
+}
+
+bytes BinaryTransform::encodeLabelIdx(string const& _label) const
+{
+	yulAssert(!_label.empty(), "Empty label.");
+	size_t depth = 0;
+	for (string const& label: m_labels | boost::adaptors::reversed)
+		if (label == _label)
+			return lebEncode(depth);
+		else
+			++depth;
+	yulAssert(false, "Label not found.");
 }
 
 bytes BinaryTransform::encodeName(std::string const& _name)

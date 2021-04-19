@@ -202,7 +202,7 @@ on the type of ``X`` being
 - ``uint<M>``: ``enc(X)`` is the big-endian encoding of ``X``, padded on the higher-order
   (left) side with zero-bytes such that the length is 32 bytes.
 - ``address``: as in the ``uint160`` case
-- ``int<M>``: ``enc(X)`` is the big-endian two's complement encoding of ``X``, padded on the higher-order (left) side with ``0xff`` for negative ``X`` and with zero bytes for positive ``X`` such that the length is 32 bytes.
+- ``int<M>``: ``enc(X)`` is the big-endian two's complement encoding of ``X``, padded on the higher-order (left) side with ``0xff`` bytes for negative ``X`` and with zero-bytes for non-negative ``X`` such that the length is 32 bytes.
 - ``bool``: as in the ``uint8`` case, where ``1`` is used for ``true`` and ``0`` for ``false``
 - ``fixed<M>x<N>``: ``enc(X)`` is ``enc(X * 10**N)`` where ``X * 10**N`` is interpreted as a ``int256``.
 - ``fixed``: as in the ``fixed128x18`` case
@@ -232,8 +232,8 @@ Given the contract:
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.16 <0.7.0;
-
 
     contract Foo {
         function bar(bytes3[2] memory) public pure {}
@@ -510,6 +510,10 @@ Constructor and fallback function never have ``name`` or ``outputs``. Fallback f
 .. note::
     Sending non-zero Trx to non-payable function will revert the transaction.
 
+.. note::
+    The state mutability ``nonpayable`` is reflected in Solidity by not specifying
+    a state mutability modifier at all.
+
 An event description is a JSON object with fairly similar fields:
 
 - ``type``: always ``"event"``
@@ -527,6 +531,7 @@ For example,
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
 
 
@@ -575,15 +580,15 @@ As an example, the code
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.19 <0.7.0;
     pragma experimental ABIEncoderV2;
-
 
     contract Test {
         struct S { uint a; uint[] b; T[] c; }
         struct T { uint x; uint y; }
-        function f(S memory s, T memory t, uint a) public {}
-        function g() public returns (S memory s, T memory t, uint a) {}
+        function f(S memory, T memory, uint) public pure {}
+        function g() public pure returns (S memory, T memory, uint) {}
     }
 
 would result in the JSON:

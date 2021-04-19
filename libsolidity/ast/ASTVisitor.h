@@ -23,9 +23,11 @@
 #pragma once
 
 #include <libsolidity/ast/AST.h>
+
 #include <functional>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace solidity::frontend
 {
@@ -41,7 +43,16 @@ namespace solidity::frontend
 class ASTVisitor
 {
 public:
+	ASTVisitor() = default;
+
+	ASTVisitor(ASTVisitor const&) = delete;
+	ASTVisitor(ASTVisitor&&) = delete;
+
+	ASTVisitor& operator=(ASTVisitor const&) = delete;
+	ASTVisitor& operator=(ASTVisitor&&) = delete;
+
 	virtual ~ASTVisitor() = default;
+
 	virtual bool visit(SourceUnit& _node) { return visitNode(_node); }
 	virtual bool visit(PragmaDirective& _node) { return visitNode(_node); }
 	virtual bool visit(ImportDirective& _node) { return visitNode(_node); }
@@ -92,6 +103,7 @@ public:
 	virtual bool visit(Identifier& _node) { return visitNode(_node); }
 	virtual bool visit(ElementaryTypeNameExpression& _node) { return visitNode(_node); }
 	virtual bool visit(Literal& _node) { return visitNode(_node); }
+	virtual bool visit(StructuredDocumentation& _node) { return visitNode(_node); }
 
 	virtual void endVisit(SourceUnit& _node) { endVisitNode(_node); }
 	virtual void endVisit(PragmaDirective& _node) { endVisitNode(_node); }
@@ -143,6 +155,7 @@ public:
 	virtual void endVisit(Identifier& _node) { endVisitNode(_node); }
 	virtual void endVisit(ElementaryTypeNameExpression& _node) { endVisitNode(_node); }
 	virtual void endVisit(Literal& _node) { endVisitNode(_node); }
+	virtual void endVisit(StructuredDocumentation& _node) { endVisitNode(_node); }
 
 protected:
 	/// Generic function called by default for each node, to be overridden by derived classes
@@ -156,7 +169,16 @@ protected:
 class ASTConstVisitor
 {
 public:
+	ASTConstVisitor() = default;
+
+	ASTConstVisitor(ASTConstVisitor const&) = delete;
+	ASTConstVisitor(ASTConstVisitor&&) = delete;
+
+	ASTConstVisitor& operator=(ASTConstVisitor const&) = delete;
+	ASTConstVisitor& operator=(ASTConstVisitor&&) = delete;
+
 	virtual ~ASTConstVisitor() = default;
+
 	virtual bool visit(SourceUnit const& _node) { return visitNode(_node); }
 	virtual bool visit(PragmaDirective const& _node) { return visitNode(_node); }
 	virtual bool visit(ImportDirective const& _node) { return visitNode(_node); }
@@ -207,6 +229,7 @@ public:
 	virtual bool visit(Identifier const& _node) { return visitNode(_node); }
 	virtual bool visit(ElementaryTypeNameExpression const& _node) { return visitNode(_node); }
 	virtual bool visit(Literal const& _node) { return visitNode(_node); }
+	virtual bool visit(StructuredDocumentation const& _node) { return visitNode(_node); }
 
 	virtual void endVisit(SourceUnit const& _node) { endVisitNode(_node); }
 	virtual void endVisit(PragmaDirective const& _node) { endVisitNode(_node); }
@@ -258,6 +281,7 @@ public:
 	virtual void endVisit(Identifier const& _node) { endVisitNode(_node); }
 	virtual void endVisit(ElementaryTypeNameExpression const& _node) { endVisitNode(_node); }
 	virtual void endVisit(Literal const& _node) { endVisitNode(_node); }
+	virtual void endVisit(StructuredDocumentation const& _node) { endVisitNode(_node); }
 
 protected:
 	/// Generic function called by default for each node, to be overridden by derived classes
@@ -277,7 +301,7 @@ public:
 	SimpleASTVisitor(
 		std::function<bool(ASTNode const&)> _onVisit,
 		std::function<void(ASTNode const&)> _onEndVisit
-	): m_onVisit(_onVisit), m_onEndVisit(_onEndVisit) {}
+	): m_onVisit(std::move(_onVisit)), m_onEndVisit(std::move(_onEndVisit)) {}
 
 protected:
 	bool visitNode(ASTNode const& _n) override { return m_onVisit ? m_onVisit(_n) : true; }
@@ -307,7 +331,7 @@ public:
 	ASTReduce(
 		std::function<bool(ASTNode const&)> _onNode,
 		std::function<void(ASTNode const&, ASTNode const&)> _onEdge
-	): m_onNode(_onNode), m_onEdge(_onEdge)
+	): m_onNode(std::move(_onNode)), m_onEdge(std::move(_onEdge))
 	{
 	}
 

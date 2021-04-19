@@ -8,6 +8,7 @@
     ]
   },
   "id": 12,
+  "license": null,
   "nodeType": "SourceUnit",
   "nodes":
   [
@@ -45,6 +46,7 @@
                   {
                     "constant": false,
                     "id": 4,
+                    "mutability": "mutable",
                     "name": "a",
                     "nodeType": "VariableDeclaration",
                     "overrides": null,

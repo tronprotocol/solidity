@@ -104,7 +104,7 @@ Allowed options)",
 	else if (arguments.count("input-files"))
 		inputs = arguments["input-files"].as<vector<string>>();
 	else
-		inputs.push_back("");
+		inputs.emplace_back("");
 
 	bool optimize = !arguments.count("without-optimizer");
 	int retResult = 0;
@@ -124,7 +124,7 @@ Allowed options)",
 			else if (arguments.count("standard-json"))
 				FuzzerUtil::testStandardCompiler(input, quiet);
 			else
-				FuzzerUtil::testCompiler(input, optimize, quiet);
+				FuzzerUtil::testCompilerJsonInterface(input, optimize, quiet);
 		}
 		catch (...)
 		{

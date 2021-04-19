@@ -92,10 +92,10 @@ public:
 	{}
 
 public:
-	void operator()(Identifier const& _identifier);
-	void operator()(FunctionDefinition const&);
-	void operator()(ForLoop const&);
-	void operator()(Block const& _block);
+	void operator()(Identifier const& _identifier) override;
+	void operator()(FunctionDefinition const&) override;
+	void operator()(ForLoop const&) override;
+	void operator()(Block const& _block) override;
 
 private:
 	void increaseRefIfFound(YulString _variableName);
@@ -134,7 +134,6 @@ public:
 		_evm15,
 		_identifierAccess,
 		_useNamedLabelsForFunctions,
-		_assembly.stackHeight(),
 		nullptr
 	)
 	{
@@ -153,9 +152,8 @@ protected:
 		EVMDialect const& _dialect,
 		BuiltinContext& _builtinContext,
 		bool _evm15,
-		ExternalIdentifierAccess const& _identifierAccess,
+		ExternalIdentifierAccess _identifierAccess,
 		bool _useNamedLabelsForFunctions,
-		int _stackAdjustment,
 		std::shared_ptr<Context> _context
 	);
 
@@ -206,8 +204,6 @@ private:
 
 	void expectDeposit(int _deposit, int _oldHeight) const;
 
-	void checkStackHeight(void const* _astElement) const;
-
 	/// Stores the stack error in the list of errors, appends an invalid opcode
 	/// and corrects the stack height to the target stack height.
 	void stackError(StackTooDeepError _error, int _targetStackSize);
@@ -225,11 +221,6 @@ private:
 	bool const m_evm15 = false;
 	bool const m_useNamedLabelsForFunctions = false;
 	ExternalIdentifierAccess m_identifierAccess;
-	/// Adjustment between the stack height as determined during the analysis phase
-	/// and the stack height in the assembly. This is caused by an initial stack being present
-	/// for inline assembly and different stack heights depending on the EVM backend used
-	/// (EVM 1.0 or 1.5).
-	int m_stackAdjustment = 0;
 	std::shared_ptr<Context> m_context;
 
 	/// Set of variables whose reference counter has reached zero,

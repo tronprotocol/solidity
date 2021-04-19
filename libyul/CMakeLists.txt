@@ -69,6 +69,8 @@ add_library(yul
 	optimiser/BlockHasher.h
 	optimiser/CallGraphGenerator.cpp
 	optimiser/CallGraphGenerator.h
+	optimiser/CircularReferencesPruner.cpp
+	optimiser/CircularReferencesPruner.h
 	optimiser/CommonSubexpressionEliminator.cpp
 	optimiser/CommonSubexpressionEliminator.h
 	optimiser/ConditionalSimplifier.cpp
@@ -152,6 +154,8 @@ add_library(yul
 	optimiser/Suite.h
 	optimiser/SyntacticalEquality.cpp
 	optimiser/SyntacticalEquality.h
+	optimiser/TypeInfo.cpp
+	optimiser/TypeInfo.h
 	optimiser/UnusedPruner.cpp
 	optimiser/UnusedPruner.h
 	optimiser/VarDeclInitializer.cpp

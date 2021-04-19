@@ -44,6 +44,7 @@ using solidity::util::h256;
 namespace solidity::langutil
 {
 class ErrorReporter;
+struct ErrorId;
 struct SourceLocation;
 }
 
@@ -117,24 +118,21 @@ private:
 
 	/// Verification targets.
 	//@{
-	struct VerificationTarget
+	struct BMCVerificationTarget: VerificationTarget
 	{
-		enum class Type { ConstantCondition, Underflow, Overflow, UnderOverflow, DivByZero, Balance, Assert } type;
-		smt::Expression value;
-		smt::Expression constraints;
 		Expression const* expression;
 		std::vector<CallStackEntry> callStack;
 		std::pair<std::vector<smt::Expression>, std::vector<std::string>> modelExpressions;
 	};
 
 	void checkVerificationTargets(smt::Expression const& _constraints);
-	void checkVerificationTarget(VerificationTarget& _target, smt::Expression const& _constraints = smt::Expression(true));
-	void checkConstantCondition(VerificationTarget& _target);
-	void checkUnderflow(VerificationTarget& _target, smt::Expression const& _constraints);
-	void checkOverflow(VerificationTarget& _target, smt::Expression const& _constraints);
-	void checkDivByZero(VerificationTarget& _target);
-	void checkBalance(VerificationTarget& _target);
-	void checkAssert(VerificationTarget& _target);
+	void checkVerificationTarget(BMCVerificationTarget& _target, smt::Expression const& _constraints = smt::Expression(true));
+	void checkConstantCondition(BMCVerificationTarget& _target);
+	void checkUnderflow(BMCVerificationTarget& _target, smt::Expression const& _constraints);
+	void checkOverflow(BMCVerificationTarget& _target, smt::Expression const& _constraints);
+	void checkDivByZero(BMCVerificationTarget& _target);
+	void checkBalance(BMCVerificationTarget& _target);
+	void checkAssert(BMCVerificationTarget& _target);
 	void addVerificationTarget(
 		VerificationTarget::Type _type,
 		smt::Expression const& _value,
@@ -147,22 +145,22 @@ private:
 	/// Check that a condition can be satisfied.
 	void checkCondition(
 		smt::Expression _condition,
-		std::vector<CallStackEntry> const& callStack,
+		std::vector<CallStackEntry> const& _callStack,
 		std::pair<std::vector<smt::Expression>, std::vector<std::string>> const& _modelExpressions,
 		langutil::SourceLocation const& _location,
+		langutil::ErrorId _errorHappens,
+		langutil::ErrorId _errorMightHappen,
 		std::string const& _description,
 		std::string const& _additionalValueName = "",
 		smt::Expression const* _additionalValue = nullptr
 	);
 	/// Checks that a boolean condition is not constant. Do not warn if the expression
 	/// is a literal constant.
-	/// @param _description the warning string, $VALUE will be replaced by the constant value.
 	void checkBooleanNotConstant(
 		Expression const& _condition,
 		smt::Expression const& _constraints,
 		smt::Expression const& _value,
-		std::vector<CallStackEntry> const& _callStack,
-		std::string const& _description
+		std::vector<CallStackEntry> const& _callStack
 	);
 	std::pair<smt::CheckResult, std::vector<std::string>>
 	checkSatisfiableAndGenerateModel(std::vector<smt::Expression> const& _expressionsToEvaluate);
@@ -179,7 +177,7 @@ private:
 	/// ErrorReporter that comes from CompilerStack.
 	langutil::ErrorReporter& m_outerErrorReporter;
 
-	std::vector<VerificationTarget> m_verificationTargets;
+	std::vector<BMCVerificationTarget> m_verificationTargets;
 
 	/// Assertions that are known to be safe.
 	std::set<Expression const*> m_safeAssertions;

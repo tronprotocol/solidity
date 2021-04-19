@@ -386,14 +386,14 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             m_currentContract = &_contract;
         }
 
-        vector<Declaration const*> GlobalContext::declarations() const
-        {
-            vector<Declaration const*> declarations;
-            declarations.reserve(m_magicVariables.size());
-            for (ASTPointer<Declaration const> const& variable: m_magicVariables)
-                declarations.push_back(variable.get());
-            return declarations;
-        }
+vector<Declaration const*> GlobalContext::declarations() const
+{
+	vector<Declaration const*> declarations;
+	declarations.reserve(m_magicVariables.size());
+	for (ASTPointer<MagicVariableDeclaration const> const& variable: m_magicVariables)
+		declarations.push_back(variable.get());
+	return declarations;
+}
 
 MagicVariableDeclaration const* GlobalContext::currentThis() const
 {

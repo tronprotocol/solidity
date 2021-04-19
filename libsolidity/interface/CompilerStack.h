@@ -108,7 +108,7 @@ public:
 	/// Creates a new compiler stack.
 	/// @param _readFile callback used to read files for import statements. Must return
 	/// and must not emit exceptions.
-	explicit CompilerStack(ReadCallback::Callback const& _readFile = ReadCallback::Callback());
+	explicit CompilerStack(ReadCallback::Callback _readFile = ReadCallback::Callback());
 
 	~CompilerStack();
 
@@ -287,7 +287,7 @@ public:
 	/// @returns a JSON representation of the assembly.
 	/// @arg _sourceCodes is the map of input files to source code strings
 	/// Prerequisite: Successful compilation.
-	Json::Value assemblyJSON(std::string const& _contractName, StringMap const& _sourceCodes = StringMap()) const;
+	Json::Value assemblyJSON(std::string const& _contractName) const;
 
 	/// @returns a JSON representing the contract ABI.
 	/// Prerequisite: Successful call to parse or compile.
@@ -400,9 +400,6 @@ private:
 
 	/// @returns the metadata CBOR for the given serialised metadata JSON.
 	bytes createCBORMetadata(std::string const& _metadata, bool _experimentalMode);
-
-	/// @returns the computer source mapping string.
-	std::string computeSourceMapping(evmasm::AssemblyItems const& _items) const;
 
 	/// @returns the contract ABI as a JSON object.
 	/// This will generate the JSON object and store it in the Contract object if it is not present yet.

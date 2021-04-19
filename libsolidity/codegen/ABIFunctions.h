@@ -25,11 +25,12 @@
 #include <libsolidity/codegen/MultiUseYulFunctionCollector.h>
 #include <libsolidity/codegen/YulUtilFunctions.h>
 
+#include <libsolidity/interface/DebugSettings.h>
+
 #include <liblangutil/EVMVersion.h>
 
 #include <functional>
 #include <map>
-#include <set>
 #include <vector>
 
 namespace solidity::frontend
@@ -55,40 +56,64 @@ class ABIFunctions
 public:
 	explicit ABIFunctions(
 		langutil::EVMVersion _evmVersion,
-		std::shared_ptr<MultiUseYulFunctionCollector> _functionCollector = std::make_shared<MultiUseYulFunctionCollector>()
+		RevertStrings _revertStrings,
+		MultiUseYulFunctionCollector& _functionCollector
 	):
 		m_evmVersion(_evmVersion),
-		m_functionCollector(std::move(_functionCollector)),
-		m_utils(_evmVersion, m_functionCollector)
+		m_revertStrings(_revertStrings),
+		m_functionCollector(_functionCollector),
+		m_utils(_evmVersion, m_revertStrings, m_functionCollector)
 	{}
 
 	/// @returns name of an assembly function to ABI-encode values of @a _givenTypes
 	/// into memory, converting the types to @a _targetTypes on the fly.
-	/// Parameters are: <headStart> <value_n> ... <value_1>, i.e.
-	/// the layout on the stack is <value_1> ... <value_n> <headStart> with
+	/// Parameters are: <headStart> <value_1> ... <value_n>, i.e.
+	/// the layout on the stack is <value_n> ... <value_1> <headStart> with
 	/// the top of the stack on the right.
 	/// The values represent stack slots. If a type occupies more or less than one
 	/// stack slot, it takes exactly that number of values.
 	/// Returns a pointer to the end of the area written in memory.
 	/// Does not allocate memory (does not change the free memory pointer), but writes
 	/// to memory starting at $headStart and an unrestricted amount after that.
+	/// If @reversed is true, the order of the variables after <headStart> is reversed.
 	std::string tupleEncoder(
 		TypePointers const& _givenTypes,
 		TypePointers const& _targetTypes,
-		bool _encodeAsLibraryTypes = false
+		bool _encodeAsLibraryTypes = false,
+		bool _reversed = false
 	);
+
+	/// Specialization of tupleEncoder to _reversed = true
+	std::string tupleEncoderReversed(
+		TypePointers const& _givenTypes,
+		TypePointers const& _targetTypes,
+		bool _encodeAsLibraryTypes = false
+	) {
+		return tupleEncoder(_givenTypes, _targetTypes, _encodeAsLibraryTypes, true);
+	}
 
 	/// @returns name of an assembly function to encode values of @a _givenTypes
 	/// with packed encoding into memory, converting the types to @a _targetTypes on the fly.
-	/// Parameters are: <memPos> <value_n> ... <value_1>, i.e.
-	/// the layout on the stack is <value_1> ... <value_n> <memPos> with
+	/// Parameters are: <memPos> <value_1> ... <value_n>, i.e.
+	/// the layout on the stack is <value_n> ... <value_1> <memPos> with
 	/// the top of the stack on the right.
 	/// The values represent stack slots. If a type occupies more or less than one
 	/// stack slot, it takes exactly that number of values.
 	/// Returns a pointer to the end of the area written in memory.
 	/// Does not allocate memory (does not change the free memory pointer), but writes
 	/// to memory starting at memPos and an unrestricted amount after that.
-	std::string tupleEncoderPacked(TypePointers const& _givenTypes, TypePointers const& _targetTypes);
+	/// If @reversed is true, the order of the variables after <headStart> is reversed.
+	std::string tupleEncoderPacked(
+		TypePointers const& _givenTypes,
+		TypePointers const& _targetTypes,
+		bool _reversed = false
+	);
+
+	/// Specialization of tupleEncoderPacked to _reversed = true
+	std::string tupleEncoderPackedReversed(TypePointers const& _givenTypes, TypePointers const& _targetTypes)
+	{
+		return tupleEncoderPacked(_givenTypes, _targetTypes, true);
+	}
 
 	/// @returns name of an assembly function to ABI-decode values of @a _types
 	/// into memory. If @a _fromMemory is true, decodes from memory instead of
@@ -99,12 +124,6 @@ public:
 	/// The values represent stack slots. If a type occupies more or less than one
 	/// stack slot, it takes exactly that number of values.
 	std::string tupleDecoder(TypePointers const& _types, bool _fromMemory = false);
-
-	/// @returns concatenation of all generated functions and a set of the
-	/// externally used functions.
-	/// Clears the internal list, i.e. calling it again will result in an
-	/// empty return value.
-	std::pair<std::string, std::set<std::string>> requestedFunctions();
 
 private:
 	struct EncodingOptions
@@ -200,7 +219,7 @@ private:
 	/// @param _fromMemory if decoding from memory instead of from calldata
 	/// @param _forUseOnStack if the decoded value is stored on stack or in memory.
 	std::string abiDecodingFunction(
-		Type const& _Type,
+		Type const& _type,
 		bool _fromMemory,
 		bool _forUseOnStack
 	);
@@ -235,11 +254,6 @@ private:
 	/// cases.
 	std::string createFunction(std::string const& _name, std::function<std::string()> const& _creator);
 
-	/// Helper function that uses @a _creator to create a function and add it to
-	/// @a m_requestedFunctions if it has not been created yet and returns @a _name in both
-	/// cases. Also adds it to the list of externally used functions.
-	std::string createExternallyUsedFunction(std::string const& _name, std::function<std::string()> const& _creator);
-
 	/// @returns the size of the static part of the encoding of the given types.
 	static size_t headSize(TypePointers const& _targetTypes);
 
@@ -249,9 +263,13 @@ private:
 	/// is true), for which it is two.
 	static size_t numVariablesForType(Type const& _type, EncodingOptions const& _options);
 
+	/// @returns code that stores @param _message for revert reason
+	/// if m_revertStrings is debug.
+	std::string revertReasonIfDebug(std::string const& _message = "");
+
 	langutil::EVMVersion m_evmVersion;
-	std::shared_ptr<MultiUseYulFunctionCollector> m_functionCollector;
-	std::set<std::string> m_externallyUsedFunctions;
+	RevertStrings const m_revertStrings;
+	MultiUseYulFunctionCollector& m_functionCollector;
 	YulUtilFunctions m_utils;
 };
 

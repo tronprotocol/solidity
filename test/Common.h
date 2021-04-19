@@ -21,21 +21,21 @@
 #include <liblangutil/EVMVersion.h>
 
 #include <boost/filesystem/path.hpp>
-#include <boost/program_options.hpp>
 #include <boost/noncopyable.hpp>
+#include <boost/program_options.hpp>
 
 namespace solidity::test
 {
 
 #ifdef _WIN32
 static constexpr auto evmoneFilename = "evmone.dll";
-static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.3.0/evmone-0.3.0-windows-amd64.zip";
+static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.4.1/evmone-0.4.1-windows-amd64.zip";
 #elif defined(__APPLE__)
 static constexpr auto evmoneFilename = "libevmone.dylib";
-static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.3.0/evmone-0.3.0-darwin-x86_64.tar.gz";
+static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.4.1/evmone-0.4.1-darwin-x86_64.tar.gz";
 #else
 static constexpr auto evmoneFilename = "libevmone.so";
-static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.3.0/evmone-0.3.0-linux-x86_64.tar.gz";
+static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.4.1/evmone-0.4.1-linux-x86_64.tar.gz";
 #endif
 
 
@@ -46,8 +46,11 @@ struct CommonOptions: boost::noncopyable
 	boost::filesystem::path evmonePath;
 	boost::filesystem::path testPath;
 	bool optimize = false;
-	bool optimizeYul = false;
+	bool enforceViaYul = false;
 	bool disableSMT = false;
+	bool useABIEncoderV2 = false;
+	bool showMessages = false;
+	bool showMetadata = false;
 
 	langutil::EVMVersion evmVersion() const;
 
@@ -55,13 +58,18 @@ struct CommonOptions: boost::noncopyable
 	// Throws a ConfigException on error
 	virtual void validate() const;
 
-protected:
+	static CommonOptions const& get();
+	static void setSingleton(std::unique_ptr<CommonOptions const>&& _instance);
+
 	CommonOptions(std::string caption = "");
+	virtual ~CommonOptions() {};
+protected:
 
 	boost::program_options::options_description options;
 
 private:
 	std::string evmVersionString;
+	static std::unique_ptr<CommonOptions const> m_singleton;
 };
 
 }

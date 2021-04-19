@@ -7,9 +7,8 @@ Mapping Types
 Mapping types use the syntax ``mapping(_KeyType => _ValueType)`` and variables
 of mapping type are declared using the syntax ``mapping(_KeyType => _ValueType) _VariableName``.
 The ``_KeyType`` can be any
-built-in value type plus ``bytes`` and ``string``. User-defined
-or complex types such as contract types, enums, mappings, structs or array types
-apart from ``bytes`` and ``string`` are not allowed.
+built-in value type, ``bytes``, ``string``, or any contract or enum type. Other user-defined
+or complex types, such as mappings, structs or array types are not allowed.
 ``_ValueType`` can be any type, including mappings, arrays and structs.
 
 You can think of mappings as `hash tables <https://en.wikipedia.org/wiki/Hash_table>`_, which are virtually initialised
@@ -42,6 +41,7 @@ contract that returns the value at the specified address.
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     contract MappingExample {
@@ -67,7 +67,8 @@ The example below uses ``_allowances`` to record the amount someone else is allo
 
 ::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.22 <0.7.0;
 
     contract MappingExample {
 
@@ -121,7 +122,8 @@ the ``sum`` function iterates over to sum all the values.
 
 ::
 
-    pragma solidity >=0.5.99 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.6.0 <0.7.0;
 
     struct IndexValue { uint keyIndex; uint value; }
     struct KeyFlag { uint key; bool deleted; }
@@ -139,8 +141,8 @@ the ``sum`` function iterates over to sum all the values.
             if (keyIndex > 0)
                 return true;
             else {
-                self.keys.push();
                 keyIndex = self.keys.length;
+                self.keys.push();
                 self.data[key].keyIndex = keyIndex + 1;
                 self.keys[keyIndex].key = key;
                 self.size++;

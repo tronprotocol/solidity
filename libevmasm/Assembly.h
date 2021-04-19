@@ -54,6 +54,8 @@ public:
 	Assembly& sub(size_t _sub) { return *m_subs.at(_sub); }
 	AssemblyItem newPushSubSize(u256 const& _subId) { return AssemblyItem(PushSubSize, _subId); }
 	AssemblyItem newPushLibraryAddress(std::string const& _identifier);
+	AssemblyItem newPushImmutable(std::string const& _identifier);
+	AssemblyItem newImmutableAssignment(std::string const& _identifier);
 
 	AssemblyItem const& append(AssemblyItem const& _i);
 	AssemblyItem const& append(bytes const& _data) { return append(newData(_data)); }
@@ -64,6 +66,8 @@ public:
 	/// after compilation and CODESIZE is not an option.
 	void appendProgramSize() { append(AssemblyItem(PushProgramSize)); }
 	void appendLibraryAddress(std::string const& _identifier) { append(newPushLibraryAddress(_identifier)); }
+	void appendImmutable(std::string const& _identifier) { append(newPushImmutable(_identifier)); }
+	void appendImmutableAssignment(std::string const& _identifier) { append(newImmutableAssignment(_identifier)); }
 
 	AssemblyItem appendJump() { auto ret = append(newPushTag()); append(Instruction::JUMP); return ret; }
 	AssemblyItem appendJumpI() { auto ret = append(newPushTag()); append(Instruction::JUMPI); return ret; }
@@ -133,7 +137,7 @@ public:
 
 	/// Create a JSON representation of the assembly.
 	Json::Value assemblyJSON(
-		StringMap const& _sourceCodes = StringMap()
+		std::map<std::string, unsigned> const& _sourceIndices = std::map<std::string, unsigned>()
 	) const;
 
 protected:
@@ -145,7 +149,14 @@ protected:
 	unsigned bytesRequired(unsigned subTagSize) const;
 
 private:
-	static Json::Value createJsonValue(std::string _name, int _begin, int _end, std::string _value = std::string(), std::string _jumpType = std::string());
+	static Json::Value createJsonValue(
+		std::string _name,
+		int _source,
+		int _begin,
+		int _end,
+		std::string _value = std::string(),
+		std::string _jumpType = std::string()
+	);
 	static std::string toStringInHex(u256 _value);
 
 protected:
@@ -159,6 +170,7 @@ protected:
 	std::vector<std::shared_ptr<Assembly>> m_subs;
 	std::map<util::h256, std::string> m_strings;
 	std::map<util::h256, std::string> m_libraries; ///< Identifiers of libraries to be linked.
+	std::map<util::h256, std::string> m_immutables; ///< Identifiers of immutables.
 
 	mutable LinkerObject m_assembledObject;
 	mutable std::vector<size_t> m_tagPositionsInBytecode;

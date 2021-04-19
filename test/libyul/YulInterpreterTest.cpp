@@ -19,7 +19,7 @@
 
 #include <test/tools/yulInterpreter/Interpreter.h>
 
-#include <test/Options.h>
+#include <test/Common.h>
 
 #include <libyul/backends/evm/EVMDialect.h>
 #include <libyul/AsmParser.h>
@@ -45,17 +45,11 @@ using namespace solidity::frontend;
 using namespace solidity::frontend::test;
 using namespace std;
 
-YulInterpreterTest::YulInterpreterTest(string const& _filename)
+YulInterpreterTest::YulInterpreterTest(string const& _filename):
+	EVMVersionRestrictedTestCase(_filename)
 {
-	boost::filesystem::path path(_filename);
-
-	ifstream file(_filename);
-	if (!file)
-		BOOST_THROW_EXCEPTION(runtime_error("Cannot open test case: \"" + _filename + "\"."));
-	file.exceptions(ios::badbit);
-
-	m_source = parseSourceAndSettings(file);
-	m_expectation = parseSimpleExpectations(file);
+	m_source = m_reader.source();
+	m_expectation = m_reader.simpleExpectations();
 }
 
 TestCase::TestResult YulInterpreterTest::run(ostream& _stream, string const& _linePrefix, bool const _formatted)
@@ -88,18 +82,10 @@ void YulInterpreterTest::printUpdatedExpectations(ostream& _stream, string const
 	printIndented(_stream, m_obtainedResult, _linePrefix);
 }
 
-void YulInterpreterTest::printIndented(ostream& _stream, string const& _output, string const& _linePrefix) const
-{
-	stringstream output(_output);
-	string line;
-	while (getline(output, line))
-		_stream << _linePrefix << line << endl;
-}
-
 bool YulInterpreterTest::parse(ostream& _stream, string const& _linePrefix, bool const _formatted)
 {
 	AssemblyStack stack(
-		solidity::test::Options::get().evmVersion(),
+		solidity::test::CommonOptions::get().evmVersion(),
 		AssemblyStack::Language::StrictAssembly,
 		solidity::frontend::OptimiserSettings::none()
 	);

@@ -19,11 +19,28 @@
  */
 
 #include <libyul/Dialect.h>
+#include <libyul/AsmData.h>
 
 using namespace solidity::yul;
 using namespace std;
+using namespace solidity::langutil;
 
-Dialect const& Dialect::yul()
+Literal Dialect::zeroLiteralForType(solidity::yul::YulString _type) const
+{
+	if (_type == boolType && _type != defaultType)
+		return {SourceLocation{}, LiteralKind::Boolean, "false"_yulstring, _type};
+	return {SourceLocation{}, LiteralKind::Number, "0"_yulstring, _type};
+}
+
+bool Dialect::validTypeForLiteral(LiteralKind _kind, YulString, YulString _type) const
+{
+	if (_kind == LiteralKind::Boolean)
+		return _type == boolType;
+	else
+		return true;
+}
+
+Dialect const& Dialect::yulDeprecated()
 {
 	static unique_ptr<Dialect> dialect;
 	static YulStringRepository::ResetCallback callback{[&] { dialect.reset(); }};

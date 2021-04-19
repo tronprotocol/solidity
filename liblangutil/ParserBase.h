@@ -32,6 +32,7 @@ namespace solidity::langutil
 
 class ErrorReporter;
 class Scanner;
+struct ErrorId;
 
 class ParserBase
 {
@@ -62,10 +63,8 @@ protected:
 		ParserBase& m_parser;
 	};
 
-	/// Start position of the current token
-	int position() const;
-	/// End position of the current token
-	int endPosition() const;
+	/// Location of the current token
+	SourceLocation currentLocation() const;
 
 	///@{
 	///@name Helper functions
@@ -90,17 +89,18 @@ protected:
 
 	/// Creates a @ref ParserError and annotates it with the current position and the
 	/// given @a _description.
-	void parserError(std::string const& _description);
-	void parserError(SourceLocation const& _location, std::string const& _description);
+	void parserError(ErrorId _error, std::string const& _description);
+	void parserError(ErrorId _error, SourceLocation const& _location, std::string const& _description);
 
 	/// Creates a @ref ParserWarning and annotates it with the current position and the
 	/// given @a _description.
-	void parserWarning(std::string const& _description);
+	void parserWarning(ErrorId _error, std::string const& _description);
+	void parserWarning(ErrorId _error, SourceLocation const& _location, std::string const& _description);
 
 	/// Creates a @ref ParserError and annotates it with the current position and the
 	/// given @a _description. Throws the FatalError.
-	void fatalParserError(std::string const& _description);
-	void fatalParserError(SourceLocation const& _location, std::string const& _description);
+	void fatalParserError(ErrorId _error, std::string const& _description);
+	void fatalParserError(ErrorId _error, SourceLocation const& _location, std::string const& _description);
 
 	std::shared_ptr<Scanner> m_scanner;
 	/// The reference to the list of errors and warning to add errors/warnings during parsing

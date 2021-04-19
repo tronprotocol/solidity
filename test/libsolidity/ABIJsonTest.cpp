@@ -20,13 +20,11 @@
 
 #include <test/libsolidity/ABIJsonTest.h>
 
-#include <test/Options.h>
+#include <test/Common.h>
 
 #include <libsolidity/interface/CompilerStack.h>
 #include <libsolutil/JSON.h>
 #include <libsolutil/AnsiColorized.h>
-
-#include <boost/algorithm/string.hpp>
 
 #include <fstream>
 
@@ -36,24 +34,23 @@ using namespace solidity::util;
 using namespace solidity::frontend;
 using namespace solidity::frontend::test;
 
-ABIJsonTest::ABIJsonTest(string const& _filename)
+ABIJsonTest::ABIJsonTest(string const& _filename):
+	TestCase(_filename)
 {
-	ifstream file(_filename);
-	if (!file)
-		BOOST_THROW_EXCEPTION(runtime_error("Cannot open test contract: \"" + _filename + "\"."));
-	file.exceptions(ios::badbit);
-
-	m_source = parseSourceAndSettings(file);
-	m_expectation = parseSimpleExpectations(file);
+	m_source = m_reader.source();
+	m_expectation = m_reader.simpleExpectations();
 }
 
 TestCase::TestResult ABIJsonTest::run(ostream& _stream, string const& _linePrefix, bool _formatted)
 {
 	CompilerStack compiler;
 
-	compiler.setSources({{"", "pragma solidity >=0.0;\n" + m_source}});
-	compiler.setEVMVersion(solidity::test::Options::get().evmVersion());
-	compiler.setOptimiserSettings(solidity::test::Options::get().optimize);
+	compiler.setSources({{
+		"",
+		"pragma solidity >=0.0;\n// SPDX-License-Identifier: GPL-3.0\n" + m_source
+	}});
+	compiler.setEVMVersion(solidity::test::CommonOptions::get().evmVersion());
+	compiler.setOptimiserSettings(solidity::test::CommonOptions::get().optimize);
 	if (!compiler.parseAndAnalyze())
 		BOOST_THROW_EXCEPTION(runtime_error("Parsing contract failed"));
 
@@ -89,16 +86,3 @@ void ABIJsonTest::printUpdatedExpectations(ostream& _stream, string const& _line
 {
 	printIndented(_stream, m_obtainedResult, _linePrefix);
 }
-
-void ABIJsonTest::printIndented(ostream& _stream, string const& _output, string const& _linePrefix) const
-{
-	stringstream output(_output);
-	string line;
-	while (getline(output, line))
-		if (line.empty())
-			// Avoid trailing spaces.
-			_stream << boost::trim_right_copy(_linePrefix) << endl;
-		else
-			_stream << _linePrefix << line << endl;
-}
-

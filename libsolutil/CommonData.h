@@ -34,11 +34,12 @@
 #include <set>
 #include <functional>
 #include <utility>
+#include <type_traits>
 
 /// Operators need to stay in the global namespace.
 
 /// Concatenate the contents of a container onto a vector
-template <class T, class U> std::vector<T>& operator+=(std::vector<T>& _a, U const& _b)
+template <class T, class U> std::vector<T>& operator+=(std::vector<T>& _a, U& _b)
 {
 	for (auto const& i: _b)
 		_a.push_back(i);
@@ -51,7 +52,7 @@ template <class T, class U> std::vector<T>& operator+=(std::vector<T>& _a, U&& _
 	return _a;
 }
 /// Concatenate the contents of a container onto a multiset
-template <class U, class... T> std::multiset<T...>& operator+=(std::multiset<T...>& _a, U const& _b)
+template <class U, class... T> std::multiset<T...>& operator+=(std::multiset<T...>& _a, U& _b)
 {
 	_a.insert(_b.begin(), _b.end());
 	return _a;
@@ -64,7 +65,7 @@ template <class U, class... T> std::multiset<T...>& operator+=(std::multiset<T..
 	return _a;
 }
 /// Concatenate the contents of a container onto a set
-template <class U, class... T> std::set<T...>& operator+=(std::set<T...>& _a, U const& _b)
+template <class U, class... T> std::set<T...>& operator+=(std::set<T...>& _a, U& _b)
 {
 	_a.insert(_b.begin(), _b.end());
 	return _a;
@@ -141,6 +142,36 @@ inline std::multiset<T...>& operator-=(std::multiset<T...>& _a, C const& _b)
 namespace solidity::util
 {
 
+/// Functional map.
+/// Returns a container _oc applying @param _op to each element in @param _c.
+/// By default _oc is a vector.
+/// If another return type is desired, an empty contained of that type
+/// is given as @param _oc.
+template<class Container, class Callable, class OutputContainer =
+	std::vector<std::invoke_result_t<
+		Callable,
+		decltype(*std::begin(std::declval<Container>()))
+>>>
+auto applyMap(Container const& _c, Callable&& _op, OutputContainer _oc = OutputContainer{})
+{
+	std::transform(std::begin(_c), std::end(_c), std::inserter(_oc, std::end(_oc)), _op);
+	return _oc;
+}
+
+/// Functional fold.
+/// Given a container @param _c, an initial value @param _acc,
+/// and a binary operator @param _binaryOp(T, U), accumulate
+/// the elements of _c over _acc.
+/// Note that <numeric> has a similar function `accumulate` which
+/// until C++20 does *not* std::move the partial accumulated.
+template<class C, class T, class Callable>
+auto fold(C const& _c, T _acc, Callable&& _binaryOp)
+{
+	for (auto const& e: _c)
+		_acc = _binaryOp(std::move(_acc), e);
+	return _acc;
+}
+
 template <class T, class U>
 T convertContainer(U const& _from)
 {
@@ -154,6 +185,23 @@ T convertContainer(U&& _from)
 		std::make_move_iterator(_from.begin()),
 		std::make_move_iterator(_from.end())
 	};
+}
+
+/// Gets a @a K -> @a V map and returns a map where values from the original map are keys and keys
+/// from the original map are values.
+///
+/// @pre @a originalMap must have unique values.
+template <typename K, typename V>
+std::map<V, K> invertMap(std::map<K, V> const& originalMap)
+{
+	std::map<V, K> inverseMap;
+	for (auto const& originalPair: originalMap)
+	{
+		assert(inverseMap.count(originalPair.second) == 0);
+		inverseMap.insert({originalPair.second, originalPair.first});
+	}
+
+	return inverseMap;
 }
 
 // String conversion functions, mainly to/from hex/nibble/byte representations.
@@ -232,14 +280,14 @@ inline void toBigEndian(T _val, Out& o_out)
 }
 
 /// Converts a big-endian byte-stream represented on a templated collection to a templated integer value.
-/// @a _In will typically be either std::string or bytes.
+/// @a In will typically be either std::string or bytes.
 /// @a T will typically by unsigned, u160, u256 or bigint.
-template <class T, class _In>
-inline T fromBigEndian(_In const& _bytes)
+template <class T, class In>
+inline T fromBigEndian(In const& _bytes)
 {
 	T ret = (T)0;
 	for (auto i: _bytes)
-		ret = (T)((ret << 8) | (uint8_t)(typename std::make_unsigned<typename _In::value_type>::type)i);
+		ret = (T)((ret << 8) | (uint8_t)(typename std::make_unsigned<typename In::value_type>::type)i);
 	return ret;
 }
 inline bytes toBigEndian(u256 _val) { bytes ret(32); toBigEndian(_val, ret); return ret; }
@@ -411,6 +459,10 @@ bool isValidDecimal(std::string const& _string);
 /// or its hex representation otherwise.
 /// _value cannot be longer than 32 bytes.
 std::string formatAsStringOrNumber(std::string const& _value);
+
+/// @returns a string with the usual backslash-escapes for non-ASCII
+/// characters and surrounded by '"'-characters.
+std::string escapeAndQuoteString(std::string const& _input);
 
 template<typename Container, typename Compare>
 bool containerEqual(Container const& _lhs, Container const& _rhs, Compare&& _compare)

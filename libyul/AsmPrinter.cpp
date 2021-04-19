@@ -23,6 +23,7 @@
 #include <libyul/AsmPrinter.h>
 #include <libyul/AsmData.h>
 #include <libyul/Exceptions.h>
+#include <libyul/Dialect.h>
 
 #include <libsolutil/CommonData.h>
 
@@ -49,38 +50,12 @@ string AsmPrinter::operator()(Literal const& _literal) const
 		return _literal.value.str() + appendTypeName(_literal.type);
 	case LiteralKind::Boolean:
 		yulAssert(_literal.value == "true"_yulstring || _literal.value == "false"_yulstring, "Invalid bool literal.");
-		return ((_literal.value == "true"_yulstring) ? "true" : "false") + appendTypeName(_literal.type);
+		return ((_literal.value == "true"_yulstring) ? "true" : "false") + appendTypeName(_literal.type, true);
 	case LiteralKind::String:
 		break;
 	}
 
-	string out;
-	for (char c: _literal.value.str())
-		if (c == '\\')
-			out += "\\\\";
-		else if (c == '"')
-			out += "\\\"";
-		else if (c == '\b')
-			out += "\\b";
-		else if (c == '\f')
-			out += "\\f";
-		else if (c == '\n')
-			out += "\\n";
-		else if (c == '\r')
-			out += "\\r";
-		else if (c == '\t')
-			out += "\\t";
-		else if (c == '\v')
-			out += "\\v";
-		else if (!isprint(c, locale::classic()))
-		{
-			ostringstream o;
-			o << std::hex << setfill('0') << setw(2) << (unsigned)(unsigned char)(c);
-			out += "\\x" + o.str();
-		}
-		else
-			out += c;
-	return "\"" + out + "\"" + appendTypeName(_literal.type);
+	return escapeAndQuoteString(_literal.value.str()) + appendTypeName(_literal.type);
 }
 
 string AsmPrinter::operator()(Identifier const& _identifier) const
@@ -236,9 +211,18 @@ string AsmPrinter::formatTypedName(TypedName _variable) const
 	return _variable.name.str() + appendTypeName(_variable.type);
 }
 
-string AsmPrinter::appendTypeName(YulString _type) const
+string AsmPrinter::appendTypeName(YulString _type, bool _isBoolLiteral) const
 {
-	if (!_type.empty())
+	if (m_dialect && !_type.empty())
+	{
+		if (!_isBoolLiteral && _type == m_dialect->defaultType)
+			_type = {};
+		else if (_isBoolLiteral && _type == m_dialect->boolType && !m_dialect->defaultType.empty())
+			// Special case: If we have a bool type but empty default type, do not remove the type.
+			_type = {};
+	}
+	if (_type.empty())
+		return {};
+	else
 		return ":" + _type.str();
-	return "";
 }

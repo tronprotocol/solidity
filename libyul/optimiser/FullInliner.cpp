@@ -29,11 +29,10 @@
 #include <libyul/optimiser/Semantics.h>
 #include <libyul/Exceptions.h>
 #include <libyul/AsmData.h>
+#include <libyul/Dialect.h>
 
 #include <libsolutil/CommonData.h>
 #include <libsolutil/Visitor.h>
-
-#include <boost/range/adaptor/reversed.hpp>
 
 using namespace std;
 using namespace solidity;
@@ -41,11 +40,11 @@ using namespace solidity::yul;
 
 void FullInliner::run(OptimiserStepContext& _context, Block& _ast)
 {
-	FullInliner{_ast, _context.dispenser}.run();
+	FullInliner{_ast, _context.dispenser, _context.dialect}.run();
 }
 
-FullInliner::FullInliner(Block& _ast, NameDispenser& _dispenser):
-	m_ast(_ast), m_nameDispenser(_dispenser)
+FullInliner::FullInliner(Block& _ast, NameDispenser& _dispenser, Dialect const& _dialect):
+	m_ast(_ast), m_nameDispenser(_dispenser), m_dialect(_dialect)
 {
 	// Determine constants
 	SSAValueTracker tracker;
@@ -139,7 +138,7 @@ void FullInliner::updateCodeSize(FunctionDefinition const& _fun)
 
 void FullInliner::handleBlock(YulString _currentFunctionName, Block& _block)
 {
-	InlineModifier{*this, m_nameDispenser, _currentFunctionName}(_block);
+	InlineModifier{*this, m_nameDispenser, _currentFunctionName, m_dialect}(_block);
 }
 
 bool FullInliner::recursive(FunctionDefinition const& _fun) const
@@ -198,7 +197,7 @@ vector<Statement> InlineModifier::performInline(Statement& _statement, FunctionC
 		if (_value)
 			varDecl.value = make_unique<Expression>(std::move(*_value));
 		else
-			varDecl.value = make_unique<Expression>(Literal{{}, LiteralKind::Number, YulString{"0"}, {}});
+			varDecl.value = make_unique<Expression>(m_dialect.zeroLiteralForType(varDecl.variables.front().type));
 		newStatements.emplace_back(std::move(varDecl));
 	};
 

@@ -25,7 +25,8 @@
 #include <libsolidity/interface/CompilerStack.h>
 
 #include <optional>
-#include <boost/variant.hpp>
+#include <utility>
+#include <variant>
 
 namespace solidity::frontend
 {
@@ -40,8 +41,8 @@ public:
 	/// Creates a new StandardCompiler.
 	/// @param _readFile callback used to read files for import statements. Must return
 	/// and must not emit exceptions.
-	explicit StandardCompiler(ReadCallback::Callback const& _readFile = ReadCallback::Callback()):
-		m_readFile(_readFile)
+	explicit StandardCompiler(ReadCallback::Callback _readFile = ReadCallback::Callback()):
+		m_readFile(std::move(_readFile))
 	{
 	}
 
@@ -72,7 +73,7 @@ private:
 
 	/// Parses the input json (and potentially invokes the read callback) and either returns
 	/// it in condensed form or an error as a json object.
-	boost::variant<InputsAndSettings, Json::Value> parseInput(Json::Value const& _input);
+	std::variant<InputsAndSettings, Json::Value> parseInput(Json::Value const& _input);
 
 	Json::Value compileSolidity(InputsAndSettings _inputsAndSettings);
 	Json::Value compileYul(InputsAndSettings _inputsAndSettings);

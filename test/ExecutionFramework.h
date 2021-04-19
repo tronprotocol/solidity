@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include <test/Options.h>
+#include <test/Common.h>
 
 #include <libsolidity/interface/OptimiserSettings.h>
 #include <libsolidity/interface/DebugSettings.h>
@@ -34,6 +34,8 @@
 
 #include <functional>
 
+#include <boost/test/unit_test.hpp>
+
 namespace solidity::test
 {
 class EVMHost;
@@ -43,9 +45,12 @@ using rational = boost::rational<bigint>;
 /// @NOTE This is not endian-specific; it's just a bunch of bytes.
 using Address = util::h160;
 
-	// The various denominations; here for ease of use where needed within code.
-    static const u256 sun = 1;
-    static const u256 trx = sun * 1000000;
+// The various denominations; here for ease of use where needed within code.
+static const u256 wei = 1;
+static const u256 shannon = u256("1000000000");
+static const u256 szabo = shannon * 1000;
+static const u256 finney = szabo * 1000;
+static const u256 ether = finney * 1000;
 
 class ExecutionFramework
 {
@@ -174,8 +179,8 @@ public:
 		return _padLeft ? padding + _value : _value + padding;
 	}
 	static bytes encode(std::string const& _value) { return encode(util::asBytes(_value), false); }
-	template <class _T>
-	static bytes encode(std::vector<_T> const& _value)
+	template <class T>
+	static bytes encode(std::vector<T> const& _value)
 	{
 		bytes ret;
 		for (auto const& v: _value)
@@ -246,6 +251,8 @@ private:
 	}
 
 protected:
+	void reset();
+
 	void sendMessage(bytes const& _data, bool _isCreation, u256 const& _value = 0);
 	void sendEther(Address const& _to, u256 const& _value);
 	size_t currentTimestamp();
@@ -273,8 +280,7 @@ protected:
 	bool m_transactionSuccessful = true;
 	Address m_sender = account(0);
 	Address m_contractAddress;
-	u256 m_blockNumber;
-	u256 const m_gasPrice = 10000 * sun;
+	u256 const m_gasPrice = 100 * szabo;
 	u256 const m_gas = 100000000;
 	bytes m_output;
 	u256 m_gasUsed;

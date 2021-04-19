@@ -24,8 +24,11 @@ solidity code.  The goal of this guide is *consistency*.  A quote from python's
 `pep8 <https://www.python.org/dev/peps/pep-0008/#a-foolish-consistency-is-the-hobgoblin-of-little-minds>`_
 captures this concept well.
 
+.. note::
+
     A style guide is about consistency. Consistency with this style guide is important. Consistency within a project is more important. Consistency within one module or function is most important.
-    But most importantly: know when to be inconsistent -- sometimes the style guide just doesn't apply. When in doubt, use your best judgement. Look at other examples and decide what looks best. And don't hesitate to ask!
+
+    But most importantly: **know when to be inconsistent** -- sometimes the style guide just doesn't apply. When in doubt, use your best judgement. Look at other examples and decide what looks best. And don't hesitate to ask!
 
 
 ***********
@@ -52,6 +55,7 @@ Surround top level declarations in solidity source with two blank lines.
 
 Yes::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     contract A {
@@ -70,6 +74,7 @@ Yes::
 
 No::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     contract A {
@@ -89,6 +94,7 @@ Blank lines may be omitted between groups of related one-liners (such as stub fu
 
 Yes::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity ^0.6.0;
 
     abstract contract A {
@@ -109,7 +115,8 @@ Yes::
 
 No::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.6.0 <0.7.0;
 
     abstract contract A {
         function spam() virtual pure public;
@@ -243,6 +250,7 @@ Import statements should always be placed at the top of the file.
 
 Yes::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     import "./Owned.sol";
@@ -257,6 +265,7 @@ Yes::
 
 No::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     contract A {
@@ -290,6 +299,7 @@ Within a grouping, place the ``view`` and ``pure`` functions last.
 
 Yes::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity ^0.6.0;
 
     contract A {
@@ -326,7 +336,8 @@ Yes::
 
 No::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity ^0.6.0;
 
     contract A {
 
@@ -383,8 +394,7 @@ No::
 
     function spam(uint i , Coin coin) public ;
 
-More than one space around an assignment or other operator to align with
-  another:
+More than one space around an assignment or other operator to align with another:
 
 Yes::
 
@@ -434,6 +444,7 @@ should:
 
 Yes::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     contract Coin {
@@ -445,6 +456,7 @@ Yes::
 
 No::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     contract Coin
@@ -745,7 +757,8 @@ manner as modifiers if the function declaration is long or hard to read.
 
 Yes::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.22 <0.7.0;
 
     // Base contracts just to make this compile
     contract B {
@@ -777,7 +790,8 @@ Yes::
 
 No::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.22 <0.7.0;
 
 
     // Base contracts just to make this compile
@@ -996,11 +1010,12 @@ Contract and Library Names
 * Contract and library names should also match their filenames.
 * If a contract file includes multiple contracts and/or libraries, then the filename should match the *core contract*. This is not recommended however if it can be avoided.
 
-As shown in the example below, if the contract name is `Congress` and the library name is `Owned`, then their associated filenames should be `Congress.sol` and `Owned.sol`.
+As shown in the example below, if the contract name is ``Congress`` and the library name is ``Owned``, then their associated filenames should be ``Congress.sol`` and ``Owned.sol``.
 
 Yes::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.22 <0.7.0;
 
 
     // Owned.sol
@@ -1023,6 +1038,7 @@ Yes::
 
 and in ``Congress.sol``::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     import "./Owned.sol";
@@ -1034,7 +1050,8 @@ and in ``Congress.sol``::
 
 No::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.22 <0.7.0;
 
 
     // owned.sol
@@ -1132,13 +1149,14 @@ Solidity contracts can have a form of comments that are the basis of the
 Ethereum Natural Language Specification Format.
 
 Add comments above functions or contracts following `doxygen <http://www.doxygen.nl>`_ notation
-of one or multiple lines starting with `///` or a
-multiline comment starting with `/**` and ending with `*/`.
+of one or multiple lines starting with ``///`` or a
+multiline comment starting with ``/**`` and ending with ``*/``.
 
 For example, the contract from `a simple smart contract <simple-smart-contract>`_ with the comments
 added looks like the one below::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.16 <0.7.0;
 
 
     /// @author The Solidity Team

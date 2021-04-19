@@ -36,6 +36,7 @@ bool SemanticInformation::breaksCSEAnalysisBlock(AssemblyItem const& _item, bool
 	case UndefinedItem:
 	case Tag:
 	case PushDeployTimeAddress:
+	case AssignImmutable:
 		return true;
 	case Push:
 	case PushString:
@@ -45,6 +46,7 @@ bool SemanticInformation::breaksCSEAnalysisBlock(AssemblyItem const& _item, bool
 	case PushProgramSize:
 	case PushData:
 	case PushLibraryAddress:
+	case PushImmutable:
 		return false;
 	case Operation:
 	{
@@ -152,6 +154,26 @@ bool SemanticInformation::terminatesControlFlow(Instruction _instruction)
 		return true;
 	default:
 		return false;
+	}
+}
+
+bool SemanticInformation::reverts(AssemblyItem const& _item)
+{
+	if (_item.type() != Operation)
+		return false;
+	else
+		return reverts(_item.instruction());
+}
+
+bool SemanticInformation::reverts(Instruction _instruction)
+{
+	switch (_instruction)
+	{
+		case Instruction::INVALID:
+		case Instruction::REVERT:
+			return true;
+		default:
+			return false;
 	}
 }
 

@@ -80,6 +80,7 @@ private:
 	///@{
 	///@name Parsing functions for the AST nodes
 	void parsePragmaVersion(langutil::SourceLocation const& _location, std::vector<Token> const& _tokens, std::vector<std::string> const& _literals);
+	ASTPointer<StructuredDocumentation> parseStructuredDocumentation();
 	ASTPointer<PragmaDirective> parsePragmaDirective();
 	ASTPointer<ImportDirective> parseImportDirective();
 	/// @returns an std::pair<ContractKind, bool>, where
@@ -173,6 +174,8 @@ private:
 		std::vector<Index> indices;
 		bool empty() const;
 	};
+
+	std::optional<std::string> findLicenseString(std::vector<ASTPointer<ASTNode>> const& _nodes);
 
 	/// Returns the next AST node ID
 	int64_t nextID() { return ++m_currentNodeID; }

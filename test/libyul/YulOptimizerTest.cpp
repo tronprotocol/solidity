@@ -19,7 +19,7 @@
 
 #include <test/libsolidity/util/SoltestErrors.h>
 #include <test/libyul/Common.h>
-#include <test/Options.h>
+#include <test/Common.h>
 
 #include <libyul/optimiser/BlockFlattener.h>
 #include <libyul/optimiser/VarDeclInitializer.h>
@@ -28,6 +28,7 @@
 #include <libyul/optimiser/DeadCodeEliminator.h>
 #include <libyul/optimiser/Disambiguator.h>
 #include <libyul/optimiser/CallGraphGenerator.h>
+#include <libyul/optimiser/CircularReferencesPruner.h>
 #include <libyul/optimiser/ConditionalUnsimplifier.h>
 #include <libyul/optimiser/ConditionalSimplifier.h>
 #include <libyul/optimiser/CommonSubexpressionEliminator.h>
@@ -73,6 +74,8 @@
 
 #include <libsolutil/AnsiColorized.h>
 
+#include <libsolidity/interface/OptimiserSettings.h>
+
 #include <boost/test/unit_test.hpp>
 #include <boost/algorithm/string.hpp>
 
@@ -88,7 +91,8 @@ using namespace solidity::frontend;
 using namespace solidity::frontend::test;
 using namespace std;
 
-YulOptimizerTest::YulOptimizerTest(string const& _filename)
+YulOptimizerTest::YulOptimizerTest(string const& _filename):
+	EVMVersionRestrictedTestCase(_filename)
 {
 	boost::filesystem::path path(_filename);
 
@@ -96,36 +100,12 @@ YulOptimizerTest::YulOptimizerTest(string const& _filename)
 		BOOST_THROW_EXCEPTION(runtime_error("Filename path has to contain a directory: \"" + _filename + "\"."));
 	m_optimizerStep = std::prev(std::prev(path.end()))->string();
 
-	ifstream file(_filename);
-	soltestAssert(file, "Cannot open test contract: \"" + _filename + "\".");
-	file.exceptions(ios::badbit);
+	m_source = m_reader.source();
 
-	m_source = parseSourceAndSettings(file);
-	if (m_settings.count("dialect"))
-	{
-		auto dialectName = m_settings["dialect"];
-		if (dialectName == "yul")
-			m_dialect = &Dialect::yul();
-		else if (dialectName == "ewasm")
-			m_dialect = &WasmDialect::instance();
-		else if (dialectName == "evm")
-			m_dialect = &EVMDialect::strictAssemblyForEVMObjects(solidity::test::Options::get().evmVersion());
-		else
-			BOOST_THROW_EXCEPTION(runtime_error("Invalid dialect " + dialectName));
+	auto dialectName = m_reader.stringSetting("dialect", "evm");
+	m_dialect = &dialect(dialectName, solidity::test::CommonOptions::get().evmVersion());
 
-		m_validatedSettings["dialect"] = dialectName;
-		m_settings.erase("dialect");
-	}
-	else
-		m_dialect = &EVMDialect::strictAssemblyForEVMObjects(solidity::test::Options::get().evmVersion());
-
-	if (m_settings.count("step"))
-	{
-		m_validatedSettings["step"] = m_settings["step"];
-		m_settings.erase("step");
-	}
-
-	m_expectation = parseSimpleExpectations(file);
+	m_expectation = m_reader.simpleExpectations();
 }
 
 TestCase::TestResult YulOptimizerTest::run(ostream& _stream, string const& _linePrefix, bool const _formatted)
@@ -250,6 +230,7 @@ TestCase::TestResult YulOptimizerTest::run(ostream& _stream, string const& _line
 		CommonSubexpressionEliminator::run(*m_context, *m_ast);
 		ExpressionSimplifier::run(*m_context, *m_ast);
 		UnusedPruner::run(*m_context, *m_ast);
+		CircularReferencesPruner::run(*m_context, *m_ast);
 		DeadCodeEliminator::run(*m_context, *m_ast);
 		ExpressionJoiner::run(*m_context, *m_ast);
 		ExpressionJoiner::run(*m_context, *m_ast);
@@ -258,6 +239,12 @@ TestCase::TestResult YulOptimizerTest::run(ostream& _stream, string const& _line
 	{
 		disambiguate();
 		UnusedPruner::run(*m_context, *m_ast);
+	}
+	else if (m_optimizerStep == "circularReferencesPruner")
+	{
+		disambiguate();
+		FunctionHoister::run(*m_context, *m_ast);
+		CircularReferencesPruner::run(*m_context, *m_ast);
 	}
 	else if (m_optimizerStep == "deadCodeEliminator")
 	{
@@ -349,7 +336,7 @@ TestCase::TestResult YulOptimizerTest::run(ostream& _stream, string const& _line
 	{
 		disambiguate();
 		ExpressionSplitter::run(*m_context, *m_ast);
-		WordSizeTransform::run(*m_dialect, *m_ast, *m_nameDispenser);
+		WordSizeTransform::run(*m_dialect, *m_dialect, *m_ast, *m_nameDispenser);
 	}
 	else if (m_optimizerStep == "fullSuite")
 	{
@@ -357,7 +344,7 @@ TestCase::TestResult YulOptimizerTest::run(ostream& _stream, string const& _line
 		yul::Object obj;
 		obj.code = m_ast;
 		obj.analysisInfo = m_analysisInfo;
-		OptimiserSuite::run(*m_dialect, &meter, obj, true);
+		OptimiserSuite::run(*m_dialect, &meter, obj, true, solidity::frontend::OptimiserSettings::DefaultYulOptimiserSteps);
 	}
 	else
 	{
@@ -365,21 +352,8 @@ TestCase::TestResult YulOptimizerTest::run(ostream& _stream, string const& _line
 		return TestResult::FatalError;
 	}
 
-	m_obtainedResult = AsmPrinter{}(*m_ast) + "\n";
+	m_obtainedResult = "step: " + m_optimizerStep + "\n\n" + AsmPrinter{ *m_dialect }(*m_ast) + "\n";
 
-	if (m_optimizerStep != m_validatedSettings["step"])
-	{
-		string nextIndentLevel = _linePrefix + "  ";
-		AnsiColorized(_stream, _formatted, {formatting::BOLD, formatting::CYAN}) <<
-			_linePrefix <<
-			"Invalid optimizer step. Given: \"" <<
-			m_validatedSettings["step"] <<
-			"\", should be: \"" <<
-			m_optimizerStep <<
-			"\"." <<
-			endl;
-		return TestResult::FatalError;
-	}
 	if (m_expectation != m_obtainedResult)
 	{
 		string nextIndentLevel = _linePrefix + "  ";
@@ -398,23 +372,9 @@ void YulOptimizerTest::printSource(ostream& _stream, string const& _linePrefix, 
 	printIndented(_stream, m_source, _linePrefix);
 }
 
-void YulOptimizerTest::printUpdatedSettings(ostream& _stream, const string& _linePrefix, const bool _formatted)
-{
-	m_validatedSettings["step"] = m_optimizerStep;
-	EVMVersionRestrictedTestCase::printUpdatedSettings(_stream, _linePrefix, _formatted);
-}
-
 void YulOptimizerTest::printUpdatedExpectations(ostream& _stream, string const& _linePrefix) const
 {
 	printIndented(_stream, m_obtainedResult, _linePrefix);
-}
-
-void YulOptimizerTest::printIndented(ostream& _stream, string const& _output, string const& _linePrefix) const
-{
-	stringstream output(_output);
-	string line;
-	while (getline(output, line))
-		_stream << _linePrefix << line << endl;
 }
 
 bool YulOptimizerTest::parse(ostream& _stream, string const& _linePrefix, bool const _formatted)

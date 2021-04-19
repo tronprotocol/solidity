@@ -23,13 +23,13 @@
 
 #include <libyul/optimiser/ASTWalker.h>
 #include <libyul/optimiser/OptimiserStep.h>
+#include <libyul/optimiser/TypeInfo.h>
 
 #include <libyul/AsmData.h>
 #include <libyul/Dialect.h>
 
 #include <libsolutil/CommonData.h>
-
-#include <boost/range/adaptor/reversed.hpp>
+#include <libsolutil/Visitor.h>
 
 using namespace std;
 using namespace solidity;
@@ -39,18 +39,21 @@ using namespace solidity::langutil;
 
 void ExpressionSplitter::run(OptimiserStepContext& _context, Block& _ast)
 {
-	ExpressionSplitter{_context.dialect, _context.dispenser}(_ast);
+	TypeInfo typeInfo(_context.dialect, _ast);
+	ExpressionSplitter{_context.dialect, _context.dispenser, typeInfo}(_ast);
 }
 
 void ExpressionSplitter::operator()(FunctionCall& _funCall)
 {
+	vector<bool> const* literalArgs = nullptr;
+
 	if (BuiltinFunction const* builtin = m_dialect.builtin(_funCall.functionName.name))
 		if (builtin->literalArguments)
-			// We cannot outline function arguments that have to be literals
-			return;
+			literalArgs = &builtin->literalArguments.value();
 
-	for (auto& arg: _funCall.arguments | boost::adaptors::reversed)
-		outlineExpression(arg);
+	for (size_t i = _funCall.arguments.size(); i > 0; i--)
+		if (!literalArgs || !(*literalArgs)[i - 1])
+			outlineExpression(_funCall.arguments[i - 1]);
 }
 
 void ExpressionSplitter::operator()(If& _if)
@@ -103,10 +106,13 @@ void ExpressionSplitter::outlineExpression(Expression& _expr)
 
 	SourceLocation location = locationOf(_expr);
 	YulString var = m_nameDispenser.newName({});
+	YulString type = m_typeInfo.typeOf(_expr);
 	m_statementsToPrefix.emplace_back(VariableDeclaration{
 		location,
-		{{TypedName{location, var, {}}}},
+		{{TypedName{location, var, type}}},
 		make_unique<Expression>(std::move(_expr))
 	});
 	_expr = Identifier{location, var};
+	m_typeInfo.setVariableType(var, type);
 }
+

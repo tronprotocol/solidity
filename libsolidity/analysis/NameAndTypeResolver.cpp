@@ -80,6 +80,7 @@ bool NameAndTypeResolver::performImports(SourceUnit& _sourceUnit, map<string, So
 			if (!_sourceUnits.count(path))
 			{
 				m_errorReporter.declarationError(
+					5073_error,
 					imp->location(),
 					"Import \"" + path + "\" (referenced as \"" + imp->path() + "\") not found."
 				);
@@ -95,6 +96,7 @@ bool NameAndTypeResolver::performImports(SourceUnit& _sourceUnit, map<string, So
 					if (declarations.empty())
 					{
 						m_errorReporter.declarationError(
+							2904_error,
 							imp->location(),
 							"Declaration \"" +
 							alias.symbol->name() +
@@ -195,51 +197,6 @@ Declaration const* NameAndTypeResolver::pathFromCurrentScope(vector<ASTString> c
 		return nullptr;
 }
 
-vector<Declaration const*> NameAndTypeResolver::cleanedDeclarations(
-		Identifier const& _identifier,
-		vector<Declaration const*> const& _declarations
-)
-{
-	solAssert(_declarations.size() > 1, "");
-	vector<Declaration const*> uniqueFunctions;
-
-	for (Declaration const* declaration: _declarations)
-	{
-		solAssert(declaration, "");
-		// the declaration is functionDefinition, eventDefinition or a VariableDeclaration while declarations > 1
-		solAssert(
-			dynamic_cast<FunctionDefinition const*>(declaration) ||
-			dynamic_cast<EventDefinition const*>(declaration) ||
-			dynamic_cast<VariableDeclaration const*>(declaration) ||
-			dynamic_cast<MagicVariableDeclaration const*>(declaration),
-			"Found overloading involving something not a function, event or a (magic) variable."
-		);
-
-		FunctionTypePointer functionType { declaration->functionType(false) };
-		if (!functionType)
-			functionType = declaration->functionType(true);
-		solAssert(functionType, "Failed to determine the function type of the overloaded.");
-
-		for (auto parameter: functionType->parameterTypes() + functionType->returnParameterTypes())
-			if (!parameter)
-				m_errorReporter.fatalDeclarationError(_identifier.location(), "Function type can not be used in this context.");
-
-		if (uniqueFunctions.end() == find_if(
-			uniqueFunctions.begin(),
-			uniqueFunctions.end(),
-			[&](Declaration const* d)
-			{
-				FunctionType const* newFunctionType = d->functionType(false);
-				if (!newFunctionType)
-					newFunctionType = d->functionType(true);
-				return newFunctionType && functionType->hasEqualParameterTypes(*newFunctionType);
-			}
-		))
-			uniqueFunctions.push_back(declaration);
-	}
-	return uniqueFunctions;
-}
-
 void NameAndTypeResolver::warnVariablesNamedLikeInstructions()
 {
 	for (auto const& instruction: evmasm::c_instructions)
@@ -253,6 +210,7 @@ void NameAndTypeResolver::warnVariablesNamedLikeInstructions()
 				// Don't warn the user for what the user did not.
 				continue;
 			m_errorReporter.warning(
+				8261_error,
 				declaration->location(),
 				"Variable is shadowed in inline assembly by an instruction of the same name"
 			);
@@ -371,6 +329,7 @@ void NameAndTypeResolver::importInheritedScope(ContractDefinition const& _base)
 					}
 
 					m_errorReporter.declarationError(
+						9097_error,
 						secondDeclarationLocation,
 						SecondarySourceLocation().append("The previous declaration is here:", firstDeclarationLocation),
 						"Identifier already declared."
@@ -388,30 +347,30 @@ void NameAndTypeResolver::linearizeBaseContracts(ContractDefinition& _contract)
 		UserDefinedTypeName const& baseName = baseSpecifier->name();
 		auto base = dynamic_cast<ContractDefinition const*>(baseName.annotation().referencedDeclaration);
 		if (!base)
-			m_errorReporter.fatalTypeError(baseName.location(), "Contract expected.");
+			m_errorReporter.fatalTypeError(8758_error, baseName.location(), "Contract expected.");
 		// "push_front" has the effect that bases mentioned later can overwrite members of bases
 		// mentioned earlier
 		input.back().push_front(base);
 		vector<ContractDefinition const*> const& basesBases = base->annotation().linearizedBaseContracts;
 		if (basesBases.empty())
-			m_errorReporter.fatalTypeError(baseName.location(), "Definition of base has to precede definition of derived contract");
+			m_errorReporter.fatalTypeError(2449_error, baseName.location(), "Definition of base has to precede definition of derived contract");
 		input.push_front(list<ContractDefinition const*>(basesBases.begin(), basesBases.end()));
 	}
 	input.back().push_front(&_contract);
 	vector<ContractDefinition const*> result = cThreeMerge(input);
 	if (result.empty())
-		m_errorReporter.fatalTypeError(_contract.location(), "Linearization of inheritance graph impossible");
+		m_errorReporter.fatalTypeError(5005_error, _contract.location(), "Linearization of inheritance graph impossible");
 	_contract.annotation().linearizedBaseContracts = result;
 	_contract.annotation().contractDependencies.insert(result.begin() + 1, result.end());
 }
 
-template <class _T>
-vector<_T const*> NameAndTypeResolver::cThreeMerge(list<list<_T const*>>& _toMerge)
+template <class T>
+vector<T const*> NameAndTypeResolver::cThreeMerge(list<list<T const*>>& _toMerge)
 {
 	// returns true iff _candidate appears only as last element of the lists
-	auto appearsOnlyAtHead = [&](_T const* _candidate) -> bool
+	auto appearsOnlyAtHead = [&](T const* _candidate) -> bool
 	{
-		for (list<_T const*> const& bases: _toMerge)
+		for (list<T const*> const& bases: _toMerge)
 		{
 			solAssert(!bases.empty(), "");
 			if (find(++bases.begin(), bases.end(), _candidate) != bases.end())
@@ -420,9 +379,9 @@ vector<_T const*> NameAndTypeResolver::cThreeMerge(list<list<_T const*>>& _toMer
 		return true;
 	};
 	// returns the next candidate to append to the linearized list or nullptr on failure
-	auto nextCandidate = [&]() -> _T const*
+	auto nextCandidate = [&]() -> T const*
 	{
-		for (list<_T const*> const& bases: _toMerge)
+		for (list<T const*> const& bases: _toMerge)
 		{
 			solAssert(!bases.empty(), "");
 			if (appearsOnlyAtHead(bases.front()))
@@ -431,7 +390,7 @@ vector<_T const*> NameAndTypeResolver::cThreeMerge(list<list<_T const*>>& _toMer
 		return nullptr;
 	};
 	// removes the given contract from all lists
-	auto removeCandidate = [&](_T const* _candidate)
+	auto removeCandidate = [&](T const* _candidate)
 	{
 		for (auto it = _toMerge.begin(); it != _toMerge.end();)
 		{
@@ -443,13 +402,13 @@ vector<_T const*> NameAndTypeResolver::cThreeMerge(list<list<_T const*>>& _toMer
 		}
 	};
 
-	_toMerge.remove_if([](list<_T const*> const& _bases) { return _bases.empty(); });
-	vector<_T const*> result;
+	_toMerge.remove_if([](list<T const*> const& _bases) { return _bases.empty(); });
+	vector<T const*> result;
 	while (!_toMerge.empty())
 	{
-		_T const* candidate = nextCandidate();
+		T const* candidate = nextCandidate();
 		if (!candidate)
-			return vector<_T const*>();
+			return vector<T const*>();
 		result.push_back(candidate);
 		removeCandidate(candidate);
 	}
@@ -521,6 +480,7 @@ bool DeclarationRegistrationHelper::registerDeclaration(
 		}
 
 		_errorReporter.declarationError(
+			2333_error,
 			secondDeclarationLocation,
 			SecondarySourceLocation().append("The previous declaration is here:", firstDeclarationLocation),
 			"Identifier already declared."
@@ -531,6 +491,7 @@ bool DeclarationRegistrationHelper::registerDeclaration(
 	{
 		if (dynamic_cast<MagicVariableDeclaration const*>(shadowedDeclaration))
 			_errorReporter.warning(
+				2319_error,
 				*_errorLocation,
 				"This declaration shadows a builtin symbol."
 			);
@@ -538,6 +499,7 @@ bool DeclarationRegistrationHelper::registerDeclaration(
 		{
 			auto shadowedLocation = shadowedDeclaration->location();
 			_errorReporter.warning(
+				2519_error,
 				_declaration.location(),
 				"This declaration shadows an existing declaration.",
 				SecondarySourceLocation().append("The shadowed declaration is here:", shadowedLocation)

@@ -1,5 +1,5 @@
 # The Solidity Contract-Oriented Programming Language
-[![Join the chat at https://gitter.im/ethereum/solidity](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ethereum/solidity?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+You can talk to us on [![solidity at https://gitter.im/ethereum/solidity](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ethereum/solidity?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge). Questions, feedback and suggestions are welcome!
 
 Solidity is a statically typed, contract-oriented, high-level language for implementing smart contracts on the Tron platform.
 
@@ -12,6 +12,7 @@ Solidity is a statically typed, contract-oriented, high-level language for imple
 - [Development](#development)
 - [Maintainers](#maintainers)
 - [License](#license)
+- [Security](#security)
 
 ## Background
 
@@ -181,3 +182,7 @@ releases [in the projects section](https://github.com/ethereum/solidity/projects
 Solidity is licensed under [GNU General Public License v3.0](LICENSE.txt).
 
 Some third-party code has its [own licensing terms](cmake/templates/license.h.in).
+
+## Security
+
+The security policy may be [found here](SECURITY.md).

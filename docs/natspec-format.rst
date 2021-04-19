@@ -49,6 +49,7 @@ The following example shows a contract and a function using all available tags.
 
 .. code:: solidity
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
 
     /// @title A simulator for trees
@@ -73,8 +74,8 @@ Tags
 
 All tags are optional. The following table explains the purpose of each
 NatSpec tag and where it may be used. As a special case, if no tags are
-used then the Solidity compiler will interpret a `///` or `/**` comment
-in the same way as if it were tagged with `@notice`.
+used then the Solidity compiler will interpret a ``///`` or ``/**`` comment
+in the same way as if it were tagged with ``@notice``.
 
 =========== =============================================================================== =============================
 Tag                                                                                         Context

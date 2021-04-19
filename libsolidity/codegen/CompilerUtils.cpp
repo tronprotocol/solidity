@@ -51,7 +51,9 @@ static_assert(CompilerUtils::generalPurposeMemoryStart >= CompilerUtils::zeroPoi
 
 void CompilerUtils::initialiseFreeMemoryPointer()
 {
-	m_context << u256(generalPurposeMemoryStart);
+	size_t reservedMemory = m_context.reservedMemory();
+	solAssert(bigint(generalPurposeMemoryStart) + bigint(reservedMemory) < bigint(1) << 63, "");
+	m_context << (u256(generalPurposeMemoryStart) + reservedMemory);
 	storeFreeMemoryPointer();
 }
 
@@ -121,50 +123,12 @@ void CompilerUtils::returnDataToArray()
 
 void CompilerUtils::accessCalldataTail(Type const& _type)
 {
-	solAssert(_type.dataStoredIn(DataLocation::CallData), "");
-	solAssert(_type.isDynamicallyEncoded(), "");
-
-	unsigned int tailSize = _type.calldataEncodedTailSize();
-	solAssert(tailSize > 1, "");
-
-	// returns the absolute offset of the tail in "base_ref"
-	m_context.appendInlineAssembly(Whiskers(R"({
-		let rel_offset_of_tail := calldataload(ptr_to_tail)
-		if iszero(slt(rel_offset_of_tail, sub(sub(calldatasize(), base_ref), sub(<neededLength>, 1)))) { revert(0, 0) }
-		base_ref := add(base_ref, rel_offset_of_tail)
-	})")("neededLength", toCompactHexWithPrefix(tailSize)).render(), {"base_ref", "ptr_to_tail"});
-	// stack layout: <absolute_offset_of_tail> <garbage>
-
-	if (!_type.isDynamicallySized())
-	{
-		m_context << Instruction::POP;
-		// stack layout: <absolute_offset_of_tail>
-		solAssert(
-			_type.category() == Type::Category::Struct ||
-			_type.category() == Type::Category::Array,
-			"Invalid dynamically encoded base type on tail access."
-		);
-	}
-	else
-	{
-		auto const* arrayType = dynamic_cast<ArrayType const*>(&_type);
-		solAssert(!!arrayType, "Invalid dynamically sized type.");
-		unsigned int calldataStride = arrayType->calldataStride();
-		solAssert(calldataStride > 0, "");
-
-		// returns the absolute offset of the tail in "base_ref"
-		// and the length of the tail in "length"
-		m_context.appendInlineAssembly(
-			Whiskers(R"({
-				length := calldataload(base_ref)
-				base_ref := add(base_ref, 0x20)
-				if gt(length, 0xffffffffffffffff) { revert(0, 0) }
-				if sgt(base_ref, sub(calldatasize(), mul(length, <calldataStride>))) { revert(0, 0) }
-			})")("calldataStride", toCompactHexWithPrefix(calldataStride)).render(),
-			{"base_ref", "length"}
-		);
-		// stack layout: <absolute_offset_of_tail> <length>
-	}
+	m_context << Instruction::SWAP1;
+	m_context.callYulFunction(
+		m_context.utilFunctions().accessCalldataTailFunction(_type),
+		2,
+		_type.isDynamicallySized() ? 2 : 1
+	);
 }
 
 unsigned CompilerUtils::loadFromMemory(
@@ -277,7 +241,13 @@ void CompilerUtils::abiDecode(TypePointers const& _typeParameters, bool _fromMem
 	size_t encodedSize = 0;
 	for (auto const& t: _typeParameters)
 		encodedSize += t->decodingType()->calldataHeadSize();
-	m_context.appendInlineAssembly("{ if lt(len, " + to_string(encodedSize) + ") { revert(0, 0) } }", {"len"});
+
+	Whiskers templ(R"({
+		if lt(len, <encodedSize>) { <revertString> }
+	})");
+	templ("encodedSize", to_string(encodedSize));
+	templ("revertString", m_context.revertReasonIfDebug("Calldata too short"));
+	m_context.appendInlineAssembly(templ.render(), {"len"});
 
 	m_context << Instruction::DUP2 << Instruction::ADD;
 	m_context << Instruction::SWAP1;
@@ -319,19 +289,23 @@ void CompilerUtils::abiDecode(TypePointers const& _typeParameters, bool _fromMem
 					// Check that the data pointer is valid and that length times
 					// item size is still inside the range.
 					Whiskers templ(R"({
-						if gt(ptr, 0x100000000) { revert(0, 0) }
+						if gt(ptr, 0x100000000) { <revertStringPointer> }
 						ptr := add(ptr, base_offset)
 						let array_data_start := add(ptr, 0x20)
-						if gt(array_data_start, input_end) { revert(0, 0) }
+						if gt(array_data_start, input_end) { <revertStringStart> }
 						let array_length := mload(ptr)
 						if or(
 							gt(array_length, 0x100000000),
 							gt(add(array_data_start, mul(array_length, <item_size>)), input_end)
-						) { revert(0, 0) }
+						) { <revertStringLength> }
 						mstore(dst, array_length)
 						dst := add(dst, 0x20)
 					})");
 					templ("item_size", to_string(arrayType.calldataStride()));
+					// TODO add test
+					templ("revertStringPointer", m_context.revertReasonIfDebug("ABI memory decoding: invalid data pointer"));
+					templ("revertStringStart", m_context.revertReasonIfDebug("ABI memory decoding: invalid data start"));
+					templ("revertStringLength", m_context.revertReasonIfDebug("ABI memory decoding: invalid data length"));
 					m_context.appendInlineAssembly(templ.render(), {"input_end", "base_offset", "offset", "ptr", "dst"});
 					// stack: v1 v2 ... v(k-1) dstmem input_end base_offset current_offset data_ptr dstdata
 					m_context << Instruction::SWAP1;
@@ -359,24 +333,33 @@ void CompilerUtils::abiDecode(TypePointers const& _typeParameters, bool _fromMem
 					loadFromMemoryDynamic(*TypeProvider::uint256(), !_fromMemory);
 					m_context << Instruction::SWAP1;
 					// stack: input_end base_offset next_pointer data_offset
-					m_context.appendInlineAssembly("{ if gt(data_offset, 0x100000000) { revert(0, 0) } }", {"data_offset"});
+					m_context.appendInlineAssembly(Whiskers(R"({
+						if gt(data_offset, 0x100000000) { <revertString> }
+					})")
+					// TODO add test
+					("revertString", m_context.revertReasonIfDebug("ABI calldata decoding: invalid data offset"))
+					.render(), {"data_offset"});
 					m_context << Instruction::DUP3 << Instruction::ADD;
 					// stack: input_end base_offset next_pointer array_head_ptr
-					m_context.appendInlineAssembly(
-						"{ if gt(add(array_head_ptr, 0x20), input_end) { revert(0, 0) } }",
-						{"input_end", "base_offset", "next_ptr", "array_head_ptr"}
-					);
+					m_context.appendInlineAssembly(Whiskers(R"({
+						if gt(add(array_head_ptr, 0x20), input_end) { <revertString> }
+					})")
+					("revertString", m_context.revertReasonIfDebug("ABI calldata decoding: invalid head pointer"))
+					.render(), {"input_end", "base_offset", "next_ptr", "array_head_ptr"});
+
 					// retrieve length
 					loadFromMemoryDynamic(*TypeProvider::uint256(), !_fromMemory, true);
 					// stack: input_end base_offset next_pointer array_length data_pointer
 					m_context << Instruction::SWAP2;
 					// stack: input_end base_offset data_pointer array_length next_pointer
-					m_context.appendInlineAssembly(R"({
+					m_context.appendInlineAssembly(Whiskers(R"({
 						if or(
 							gt(array_length, 0x100000000),
 							gt(add(data_ptr, mul(array_length, )" + to_string(arrayType.calldataStride()) + R"()), input_end)
-						) { revert(0, 0) }
-					})", {"input_end", "base_offset", "data_ptr", "array_length", "next_ptr"});
+						) { <revertString> }
+					})")
+					("revertString", m_context.revertReasonIfDebug("ABI calldata decoding: invalid data pointer"))
+					.render(), {"input_end", "base_offset", "data_ptr", "array_length", "next_ptr"});
 				}
 				else
 				{
@@ -497,6 +480,16 @@ void CompilerUtils::encodeToMemory(
 				convertType(*_givenTypes[i], *targetType, true);
 			if (auto arrayType = dynamic_cast<ArrayType const*>(type))
 				ArrayUtils(m_context).copyArrayToMemory(*arrayType, _padToWordBoundaries);
+			else if (auto arraySliceType = dynamic_cast<ArraySliceType const*>(type))
+			{
+				solAssert(
+					arraySliceType->dataStoredIn(DataLocation::CallData) &&
+					arraySliceType->isDynamicallySized() &&
+					!arraySliceType->arrayType().baseType()->isDynamicallyEncoded(),
+					""
+				);
+				ArrayUtils(m_context).copyArrayToMemory(arraySliceType->arrayType(), _padToWordBoundaries);
+			}
 			else
 				storeInMemoryDynamic(*type, _padToWordBoundaries);
 		}
@@ -514,6 +507,10 @@ void CompilerUtils::encodeToMemory(
 		if (targetType->isDynamicallySized() && !_copyDynamicDataInPlace)
 		{
 			// copy tail pointer (=mem_end - mem_start) to memory
+			solAssert(
+				(2 + dynPointers) <= 16,
+				"Stack too deep(" + to_string(2 + dynPointers) + "), try using fewer variables."
+			);
 			m_context << dupInstruction(2 + dynPointers) << Instruction::DUP2;
 			m_context << Instruction::SUB;
 			m_context << dupInstruction(2 + dynPointers - thisDynPointer);
@@ -529,22 +526,39 @@ void CompilerUtils::encodeToMemory(
 			}
 			else
 			{
-				solAssert(_givenTypes[i]->category() == Type::Category::Array, "Unknown dynamic type.");
-				auto const& arrayType = dynamic_cast<ArrayType const&>(*_givenTypes[i]);
+				ArrayType const* arrayType = nullptr;
+				switch (_givenTypes[i]->category())
+				{
+					case Type::Category::Array:
+						arrayType = dynamic_cast<ArrayType const*>(_givenTypes[i]);
+						break;
+					case Type::Category::ArraySlice:
+						arrayType = &dynamic_cast<ArraySliceType const*>(_givenTypes[i])->arrayType();
+						solAssert(
+							arrayType->isDynamicallySized() &&
+							arrayType->dataStoredIn(DataLocation::CallData) &&
+							!arrayType->baseType()->isDynamicallyEncoded(),
+							""
+						);
+						break;
+					default:
+						solAssert(false, "Unknown dynamic type.");
+						break;
+				}
 				// now copy the array
-				copyToStackTop(argSize - stackPos + dynPointers + 2, arrayType.sizeOnStack());
+				copyToStackTop(argSize - stackPos + dynPointers + 2, arrayType->sizeOnStack());
 				// stack: ... <end_of_mem> <value...>
 				// copy length to memory
-				m_context << dupInstruction(1 + arrayType.sizeOnStack());
-				ArrayUtils(m_context).retrieveLength(arrayType, 1);
+				m_context << dupInstruction(1 + arrayType->sizeOnStack());
+				ArrayUtils(m_context).retrieveLength(*arrayType, 1);
 				// stack: ... <end_of_mem> <value...> <end_of_mem'> <length>
 				storeInMemoryDynamic(*TypeProvider::uint256(), true);
 				// stack: ... <end_of_mem> <value...> <end_of_mem''>
 				// copy the new memory pointer
-				m_context << swapInstruction(arrayType.sizeOnStack() + 1) << Instruction::POP;
+				m_context << swapInstruction(arrayType->sizeOnStack() + 1) << Instruction::POP;
 				// stack: ... <end_of_mem''> <value...>
 				// copy data part
-				ArrayUtils(m_context).copyArrayToMemory(arrayType, _padToWordBoundaries);
+				ArrayUtils(m_context).copyArrayToMemory(*arrayType, _padToWordBoundaries);
 				// stack: ... <end_of_mem'''>
 			}
 
@@ -570,31 +584,21 @@ void CompilerUtils::abiEncodeV2(
 
 	// stack: <$value0> <$value1> ... <$value(n-1)> <$headStart>
 
-	auto ret = m_context.pushNewTag();
-	moveIntoStack(sizeOnStack(_givenTypes) + 1);
-
 	string encoderName =
 		_padToWordBoundaries ?
-		m_context.abiFunctions().tupleEncoder(_givenTypes, _targetTypes, _encodeAsLibraryTypes) :
-		m_context.abiFunctions().tupleEncoderPacked(_givenTypes, _targetTypes);
-	m_context.appendJumpTo(m_context.namedTag(encoderName));
-	m_context.adjustStackOffset(-int(sizeOnStack(_givenTypes)) - 1);
-	m_context << ret.tag();
+		m_context.abiFunctions().tupleEncoderReversed(_givenTypes, _targetTypes, _encodeAsLibraryTypes) :
+		m_context.abiFunctions().tupleEncoderPackedReversed(_givenTypes, _targetTypes);
+	m_context.callYulFunction(encoderName, sizeOnStack(_givenTypes) + 1, 1);
 }
 
 void CompilerUtils::abiDecodeV2(TypePointers const& _parameterTypes, bool _fromMemory)
 {
 	// stack: <source_offset> <length> [stack top]
-	auto ret = m_context.pushNewTag();
-	moveIntoStack(2);
-	// stack: <return tag> <source_offset> <length> [stack top]
 	m_context << Instruction::DUP2 << Instruction::ADD;
 	m_context << Instruction::SWAP1;
-	// stack: <return tag> <end> <start>
+	// stack: <end> <start>
 	string decoderName = m_context.abiFunctions().tupleDecoder(_parameterTypes, _fromMemory);
-	m_context.appendJumpTo(m_context.namedTag(decoderName));
-	m_context.adjustStackOffset(int(sizeOnStack(_parameterTypes)) - 3);
-	m_context << ret.tag();
+	m_context.callYulFunction(decoderName, 2, sizeOnStack(_parameterTypes));
 }
 
 void CompilerUtils::zeroInitialiseMemoryArray(ArrayType const& _type)
@@ -605,7 +609,7 @@ void CompilerUtils::zeroInitialiseMemoryArray(ArrayType const& _type)
 		Whiskers templ(R"({
 			let size := mul(length, <element_size>)
 			// cheap way of zero-initializing a memory range
-			codecopy(memptr, codesize(), size)
+			calldatacopy(memptr, calldatasize(), size)
 			memptr := add(memptr, size)
 		})");
 		templ("element_size", to_string(_type.memoryStride()));
@@ -792,8 +796,7 @@ void CompilerUtils::convertType(
 			solAssert(enumType.numberOfMembers() > 0, "empty enum should have caused a parser error.");
 			m_context << u256(enumType.numberOfMembers() - 1) << Instruction::DUP2 << Instruction::GT;
 			if (_asPartOfArgumentDecoding)
-				// TODO: error message?
-				m_context.appendConditionalRevert();
+				m_context.appendConditionalRevert(false, "Enum out of range");
 			else
 				m_context.appendConditionalInvalid();
 			enumOverflowCheckPending = false;
@@ -1014,7 +1017,8 @@ void CompilerUtils::convertType(
 		solAssert(_targetType == typeOnStack.arrayType(), "");
 		solUnimplementedAssert(
 			typeOnStack.arrayType().location() == DataLocation::CallData &&
-			typeOnStack.arrayType().isDynamicallySized(),
+			typeOnStack.arrayType().isDynamicallySized() &&
+			!typeOnStack.arrayType().baseType()->isDynamicallyEncoded(),
 			""
 		);
 		break;
@@ -1132,12 +1136,12 @@ void CompilerUtils::convertType(
 					// Value shrank
 					for (unsigned j = targetSize; j < sourceSize; ++j)
 					{
-						moveToStackTop(depth - 1, 1);
+						moveToStackTop(depth + targetSize - sourceSize, 1);
 						m_context << Instruction::POP;
 					}
 					// Value grew
 					if (targetSize > sourceSize)
-						moveIntoStack(depth + targetSize - sourceSize - 1, targetSize - sourceSize);
+						moveIntoStack(depth - sourceSize, targetSize - sourceSize);
 				}
 			}
 			depth -= sourceSize;

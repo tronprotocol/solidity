@@ -25,9 +25,11 @@
 #include <liblangutil/Scanner.h>
 #include <libsolidity/parsing/Parser.h>
 #include <liblangutil/ErrorReporter.h>
-#include <test/Options.h>
+#include <test/Common.h>
 #include <test/libsolidity/ErrorCheck.h>
 #include <libsolidity/ast/ASTVisitor.h>
+
+#include <boost/test/unit_test.hpp>
 
 using namespace std;
 using namespace solidity::langutil;
@@ -42,7 +44,7 @@ ASTPointer<ContractDefinition> parseText(std::string const& _source, ErrorList& 
 	ErrorReporter errorReporter(_errors);
 	ASTPointer<SourceUnit> sourceUnit = Parser(
 		errorReporter,
-		solidity::test::Options::get().evmVersion(),
+		solidity::test::CommonOptions::get().evmVersion(),
 		errorRecovery
 	).parse(std::make_shared<Scanner>(CharStream(_source, "")));
 	if (!sourceUnit)
@@ -96,7 +98,7 @@ void checkFunctionNatspec(
 	std::string const& _expectedDoc
 )
 {
-	auto doc = _function->documentation();
+	auto doc = _function->documentation()->text();
 	BOOST_CHECK_MESSAGE(doc != nullptr, "Function does not have Natspec Doc as expected");
 	BOOST_CHECK_EQUAL(*doc, _expectedDoc);
 }
@@ -538,7 +540,6 @@ BOOST_AUTO_TEST_CASE(keyword_is_reserved)
 		"default",
 		"define",
 		"final",
-		"immutable",
 		"implements",
 		"in",
 		"inline",
@@ -671,7 +672,7 @@ BOOST_AUTO_TEST_CASE(inline_asm_end_location)
 	{
 	public:
 		bool visited = false;
-		virtual bool visit(InlineAssembly const& _inlineAsm)
+		bool visit(InlineAssembly const& _inlineAsm) override
 		{
 			auto loc = _inlineAsm.location();
 			auto asmStr = loc.source->source().substr(loc.start, loc.end - loc.start);

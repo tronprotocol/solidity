@@ -20,11 +20,13 @@
 #include <libsolidity/ast/AST.h>
 #include <libsolidity/ast/ASTVisitor.h>
 #include <liblangutil/ErrorReporter.h>
+#include <liblangutil/EVMVersion.h>
 #include <liblangutil/SourceLocation.h>
 
 #include <map>
 #include <memory>
 #include <stack>
+#include <utility>
 #include <vector>
 
 namespace solidity::frontend
@@ -33,8 +35,8 @@ namespace solidity::frontend
 /**
  * Occurrence of a variable in a block of control flow.
  * Stores the declaration of the referenced variable, the
- * kind of the occurrence and possibly the node at which
- * it occurred.
+ * kind of the occurrence and possibly the source location
+ * at which it occurred.
  */
 class VariableOccurrence
 {
@@ -47,8 +49,8 @@ public:
 		Assignment,
 		InlineAssembly
 	};
-	VariableOccurrence(VariableDeclaration const& _declaration, Kind _kind, ASTNode const* _occurrence):
-		m_declaration(_declaration), m_occurrenceKind(_kind), m_occurrence(_occurrence)
+	VariableOccurrence(VariableDeclaration const& _declaration, Kind _kind, std::optional<langutil::SourceLocation>  _occurrence = {}):
+		m_declaration(_declaration), m_occurrenceKind(_kind), m_occurrence(std::move(_occurrence))
 	{
 	}
 
@@ -57,8 +59,8 @@ public:
 	{
 		if (m_occurrence && _rhs.m_occurrence)
 		{
-			if (m_occurrence->id() < _rhs.m_occurrence->id()) return true;
-			if (_rhs.m_occurrence->id() < m_occurrence->id()) return false;
+			if (*m_occurrence < *_rhs.m_occurrence) return true;
+			if (*_rhs.m_occurrence < *m_occurrence) return false;
 		}
 		else if (_rhs.m_occurrence)
 			return true;
@@ -74,14 +76,14 @@ public:
 
 	VariableDeclaration const& declaration() const { return m_declaration; }
 	Kind kind() const { return m_occurrenceKind; };
-	ASTNode const* occurrence() const { return m_occurrence; }
+	std::optional<langutil::SourceLocation> const& occurrence() const { return m_occurrence; }
 private:
 	/// Declaration of the occurring variable.
 	VariableDeclaration const& m_declaration;
 	/// Kind of occurrence.
 	Kind m_occurrenceKind = Kind::Access;
-	/// AST node at which the variable occurred, if available (may be nullptr).
-	ASTNode const* m_occurrence = nullptr;
+	/// Source location at which the variable occurred, if available (may be nullptr).
+	std::optional<langutil::SourceLocation> m_occurrence;
 };
 
 /**
@@ -119,6 +121,10 @@ struct FunctionFlow
 	/// This node is empty does not have any exits, but may have multiple entries
 	/// (e.g. all assert, require, revert and throw statements).
 	CFGNode* revert = nullptr;
+	/// Transaction return node. Destination node for inline assembly "return" calls.
+	/// This node is empty and does not have any exits, but may have multiple entries
+	/// (e.g. all inline assembly return calls).
+	CFGNode* transactionReturn = nullptr;
 };
 
 class CFG: private ASTConstVisitor
@@ -140,7 +146,6 @@ public:
 		std::vector<std::unique_ptr<CFGNode>> m_nodes;
 	};
 private:
-
 	langutil::ErrorReporter& m_errorReporter;
 
 	/// Node container.
