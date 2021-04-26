@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Lefteris <lefteris@ethdev.com>
  * @author Gav Wood <g@ethdev.com>
@@ -47,6 +48,8 @@
 #include <liblangutil/SourceReferenceFormatter.h>
 #include <liblangutil/SourceReferenceFormatterHuman.h>
 
+#include <libsmtutil/Exceptions.h>
+
 #include <libsolutil/Common.h>
 #include <libsolutil/CommonData.h>
 #include <libsolutil/CommonIO.h>
@@ -56,6 +59,8 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/operations.hpp>
+#include <boost/range/adaptor/transformed.hpp>
+#include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string.hpp>
 
 #ifdef _WIN32 // windows
@@ -105,6 +110,7 @@ std::ostream& serr(bool _used = true)
 static string const g_stdinFileNameStr = "<stdin>";
 static string const g_strAbi = "abi";
 static string const g_strAllowPaths = "allow-paths";
+static string const g_strBasePath = "base-path";
 static string const g_strAsm = "asm";
 static string const g_strAsmJson = "asm-json";
 static string const g_strAssemble = "assemble";
@@ -174,11 +180,13 @@ static string const g_strVersion = "version";
 static string const g_strIgnoreMissingFiles = "ignore-missing";
 static string const g_strColor = "color";
 static string const g_strNoColor = "no-color";
+static string const g_strErrorIds = "error-codes";
 static string const g_strOldReporter = "old-reporter";
 
 static string const g_argAbi = g_strAbi;
 static string const g_argPrettyJson = g_strPrettyJson;
 static string const g_argAllowPaths = g_strAllowPaths;
+static string const g_argBasePath = g_strBasePath;
 static string const g_argAsm = g_strAsm;
 static string const g_argAsmJson = g_strAsmJson;
 static string const g_argAssemble = g_strAssemble;
@@ -218,6 +226,7 @@ static string const g_stdinFileName = g_stdinFileNameStr;
 static string const g_argIgnoreMissingFiles = g_strIgnoreMissingFiles;
 static string const g_argColor = g_strColor;
 static string const g_argNoColor = g_strNoColor;
+static string const g_argErrorIds = g_strErrorIds;
 static string const g_argOldReporter = g_strOldReporter;
 
 /// Possible arguments to for --combined-json
@@ -433,7 +442,7 @@ void CommandLineInterface::handleABI(string const& _contract)
 	if (!m_args.count(g_argAbi))
 		return;
 
-	string data = jsonCompactPrint(m_compiler->contractABI(_contract));
+	string data = jsonCompactPrint(removeNullMembers(m_compiler->contractABI(_contract)));
 	if (m_args.count(g_argOutputDir))
 		createFile(m_compiler->filesystemFriendlyName(_contract) + ".abi", data);
 	else
@@ -445,7 +454,7 @@ void CommandLineInterface::handleStorageLayout(string const& _contract)
 	if (!m_args.count(g_argStorageLayout))
 		return;
 
-	string data = jsonCompactPrint(m_compiler->storageLayout(_contract));
+	string data = jsonCompactPrint(removeNullMembers(m_compiler->storageLayout(_contract)));
 	if (m_args.count(g_argOutputDir))
 		createFile(m_compiler->filesystemFriendlyName(_contract) + "_storage.json", data);
 	else
@@ -474,9 +483,11 @@ void CommandLineInterface::handleNatspec(bool _natspecDev, string const& _contra
 	if (m_args.count(argName))
 	{
 		std::string output = jsonPrettyPrint(
-			_natspecDev ?
-			m_compiler->natspecDev(_contract) :
-			m_compiler->natspecUser(_contract)
+			removeNullMembers(
+				_natspecDev ?
+				m_compiler->natspecDev(_contract) :
+				m_compiler->natspecUser(_contract)
+			)
 		);
 
 		if (m_args.count(g_argOutputDir))
@@ -625,8 +636,8 @@ bool CommandLineInterface::parseLibraryOption(string const& _input)
 				serr() << "Colon separator missing in library address specifier \"" << lib << "\"" << endl;
 				return false;
 			}
-			string libName(lib.begin(), lib.begin() + colon);
-			string addrString(lib.begin() + colon + 1, lib.end());
+			string libName(lib.begin(), lib.begin() + static_cast<ptrdiff_t>(colon));
+			string addrString(lib.begin() + static_cast<ptrdiff_t>(colon) + 1, lib.end());
 			boost::trim(libName);
 			boost::trim(addrString);
 			if (addrString.substr(0, 2) == "0x")
@@ -734,7 +745,7 @@ remap paths using the context:prefix=path syntax.
 Example:
 solc --)" + g_argBinary + R"( -o /tmp/solcoutput dapp-bin=/usr/local/lib/dapp-bin contract.sol
 
-Allowed options)").c_str(),
+General Information)").c_str(),
 		po::options_description::m_default_line_length,
 		po::options_description::m_default_line_length - 23
 	);
@@ -742,47 +753,67 @@ Allowed options)").c_str(),
 		(g_argHelp.c_str(), "Show help message and exit.")
 		(g_argVersion.c_str(), "Show version and exit.")
 		(g_strLicense.c_str(), "Show licensing information and exit.")
+	;
+
+	po::options_description inputOptions("Input Options");
+	inputOptions.add_options()
+		(
+			g_argBasePath.c_str(),
+			po::value<string>()->value_name("path"),
+			"Use the given path as the root of the source tree instead of the root of the filesystem."
+		)
+		(
+			g_argAllowPaths.c_str(),
+			po::value<string>()->value_name("path(s)"),
+			"Allow a given path for imports. A list of paths can be supplied by separating them with a comma."
+		)
+		(
+			g_argIgnoreMissingFiles.c_str(),
+			"Ignore missing files."
+		)
+		(
+			g_argErrorRecovery.c_str(),
+			"Enables additional parser error recovery."
+		)
+	;
+	desc.add(inputOptions);
+
+	po::options_description outputOptions("Output Options");
+	outputOptions.add_options()
+		(
+			(g_argOutputDir + ",o").c_str(),
+			po::value<string>()->value_name("path"),
+			"If given, creates one file per component and contract/file at the specified directory."
+		)
+		(
+			g_strOverwrite.c_str(),
+			"Overwrite existing files (used together with -o)."
+		)
 		(
 			g_strEVMVersion.c_str(),
 			po::value<string>()->value_name("version"),
 			"Select desired EVM version. Either homestead, tangerineWhistle, spuriousDragon, "
 			"byzantium, constantinople, petersburg, istanbul (default) or berlin."
 		)
-		(g_argPrettyJson.c_str(), "Output JSON in pretty format. Currently it only works with the combined JSON output.")
-		(
-			g_argLibraries.c_str(),
-			po::value<vector<string>>()->value_name("libs"),
-			"Direct string or file containing library addresses. Syntax: "
-			"<libraryName>:<address> [, or whitespace] ...\n"
-			"Address is interpreted as a hex string optionally prefixed by 0x."
-		)
 		(
 			g_strRevertStrings.c_str(),
 			po::value<string>()->value_name(boost::join(g_revertStringsArgs, ",")),
 			"Strip revert (and require) reason strings or add additional debugging information."
 		)
-		(
-			(g_argOutputDir + ",o").c_str(),
-			po::value<string>()->value_name("path"),
-			"If given, creates one file per component and contract/file at the specified directory."
-		)
-		(g_strOverwrite.c_str(), "Overwrite existing files (used together with -o).")
-		(
-			g_argCombinedJson.c_str(),
-			po::value<string>()->value_name(boost::join(g_combinedJsonArgs, ",")),
-			"Output a single json document containing the specified information."
-		)
-		(g_argGas.c_str(), "Print an estimate of the maximal gas usage for each function.")
+	;
+	desc.add(outputOptions);
+
+	po::options_description alternativeInputModes("Alternative Input Modes");
+	alternativeInputModes.add_options()
 		(
 			g_argStandardJSON.c_str(),
 			"Switch to Standard JSON input / output mode, ignoring all options. "
 			"It reads from standard input, if no input file was given, otherwise it reads from the provided input file. The result will be written to standard output."
 		)
 		(
-			g_argImportAst.c_str(),
-			("Import ASTs to be compiled, assumes input holds the AST in compact JSON format. "
-			"Supported Inputs is the output of the --" + g_argStandardJSON + " or the one produced by "
-			"--" + g_argCombinedJson + " " + g_strAst + "," + g_strCompactJSON).c_str()
+			g_argLink.c_str(),
+			("Switch to linker mode, ignoring all options apart from --" + g_argLibraries + " "
+			"and modify binaries in place.").c_str()
 		)
 		(
 			g_argAssemble.c_str(),
@@ -803,53 +834,66 @@ Allowed options)").c_str(),
 			"and assumes input is strict assembly.").c_str()
 		)
 		(
-			g_strYulDialect.c_str(),
-			po::value<string>()->value_name(boost::join(g_yulDialectArgs, ",")),
-			"Input dialect to use in assembly or yul mode."
+			g_argImportAst.c_str(),
+			("Import ASTs to be compiled, assumes input holds the AST in compact JSON format. "
+			"Supported Inputs is the output of the --" + g_argStandardJSON + " or the one produced by "
+			"--" + g_argCombinedJson + " " + g_strAst + "," + g_strCompactJSON).c_str()
 		)
+	;
+	desc.add(alternativeInputModes);
+
+	po::options_description assemblyModeOptions("Assembly Mode Options");
+	assemblyModeOptions.add_options()
 		(
 			g_argMachine.c_str(),
 			po::value<string>()->value_name(boost::join(g_machineArgs, ",")),
 			"Target machine in assembly or Yul mode."
 		)
 		(
-			g_argLink.c_str(),
-			("Switch to linker mode, ignoring all options apart from --" + g_argLibraries + " "
-			"and modify binaries in place.").c_str()
+			g_strYulDialect.c_str(),
+			po::value<string>()->value_name(boost::join(g_yulDialectArgs, ",")),
+			"Input dialect to use in assembly or yul mode."
+		)
+	;
+	desc.add(assemblyModeOptions);
+
+	po::options_description linkerModeOptions("Linker Mode Options");
+	linkerModeOptions.add_options()
+		(
+			g_argLibraries.c_str(),
+			po::value<vector<string>>()->value_name("libs"),
+			"Direct string or file containing library addresses. Syntax: "
+			"<libraryName>:<address> [, or whitespace] ...\n"
+			"Address is interpreted as a hex string optionally prefixed by 0x."
+		)
+	;
+	desc.add(linkerModeOptions);
+
+	po::options_description outputFormatting("Output Formatting");
+	outputFormatting.add_options()
+		(
+			g_argPrettyJson.c_str(),
+			"Output JSON in pretty format. Currently it only works with the combined JSON output."
 		)
 		(
-			g_argMetadataHash.c_str(),
-			po::value<string>()->value_name(boost::join(g_metadataHashArgs, ",")),
-			"Choose hash method for the bytecode metadata or disable it."
+			g_argColor.c_str(),
+			"Force colored output."
 		)
-		(g_argMetadataLiteral.c_str(), "Store referenced sources as literal data in the metadata output.")
 		(
-			g_argAllowPaths.c_str(),
-			po::value<string>()->value_name("path(s)"),
-			"Allow a given path for imports. A list of paths can be supplied by separating them with a comma."
+			g_argNoColor.c_str(),
+			"Explicitly disable colored output, disabling terminal auto-detection."
 		)
-		(g_argColor.c_str(), "Force colored output.")
-		(g_argNoColor.c_str(), "Explicitly disable colored output, disabling terminal auto-detection.")
-		(g_argOldReporter.c_str(), "Enables old diagnostics reporter.")
-		(g_argErrorRecovery.c_str(), "Enables additional parser error recovery.")
-		(g_argIgnoreMissingFiles.c_str(), "Ignore missing files.");
-	po::options_description optimizerOptions("Optimizer options");
-	optimizerOptions.add_options()
-		(g_argOptimize.c_str(), "Enable bytecode optimizer.")
 		(
-			g_argOptimizeRuns.c_str(),
-			po::value<unsigned>()->value_name("n")->default_value(200),
-			"Set for how many contract runs to optimize. "
-			"Lower values will optimize more for initial deployment cost, higher values will optimize more for high-frequency usage."
+			g_argErrorIds.c_str(),
+			"Output error codes."
 		)
-		(g_strOptimizeYul.c_str(), ("Legacy option, ignored. Use the general --" + g_argOptimize + " to enable Yul optimizer.").c_str())
-		(g_strNoOptimizeYul.c_str(), "Disable Yul optimizer in Solidity.")
 		(
-			g_strYulOptimizations.c_str(),
-			po::value<string>()->value_name("steps"),
-			"Forces yul optimizer to use the specified sequence of optimization steps instead of the built-in one."
-		);
-	desc.add(optimizerOptions);
+			g_argOldReporter.c_str(),
+			"Enables old diagnostics reporter (legacy option, will be removed)."
+		)
+	;
+	desc.add(outputFormatting);
+
 	po::options_description outputComponents("Output Components");
 	outputComponents.add_options()
 		(g_argAstJson.c_str(), "AST of all source files in JSON format.")
@@ -867,8 +911,65 @@ Allowed options)").c_str(),
 		(g_argNatspecUser.c_str(), "Natspec user documentation of all contracts.")
 		(g_argNatspecDev.c_str(), "Natspec developer documentation of all contracts.")
 		(g_argMetadata.c_str(), "Combined Metadata JSON whose Swarm hash is stored on-chain.")
-		(g_argStorageLayout.c_str(), "Slots, offsets and types of the contract's state variables.");
+		(g_argStorageLayout.c_str(), "Slots, offsets and types of the contract's state variables.")
+	;
 	desc.add(outputComponents);
+
+	po::options_description extraOutput("Extra Output");
+	extraOutput.add_options()
+		(
+			g_argGas.c_str(),
+			"Print an estimate of the maximal gas usage for each function."
+		)
+		(
+			g_argCombinedJson.c_str(),
+			po::value<string>()->value_name(boost::join(g_combinedJsonArgs, ",")),
+			"Output a single json document containing the specified information."
+		)
+	;
+	desc.add(extraOutput);
+
+	po::options_description metadataOptions("Metadata Options");
+	metadataOptions.add_options()
+		(
+			g_argMetadataHash.c_str(),
+			po::value<string>()->value_name(boost::join(g_metadataHashArgs, ",")),
+			"Choose hash method for the bytecode metadata or disable it."
+		)
+		(
+			g_argMetadataLiteral.c_str(),
+			"Store referenced sources as literal data in the metadata output."
+		)
+	;
+	desc.add(metadataOptions);
+
+	po::options_description optimizerOptions("Optimizer Options");
+	optimizerOptions.add_options()
+		(
+			g_argOptimize.c_str(),
+			"Enable bytecode optimizer."
+		)
+		(
+			g_argOptimizeRuns.c_str(),
+			po::value<unsigned>()->value_name("n")->default_value(200),
+			"Set for how many contract runs to optimize. "
+			"Lower values will optimize more for initial deployment cost, higher values will optimize more for high-frequency usage."
+		)
+		(
+			g_strOptimizeYul.c_str(),
+			("Legacy option, ignored. Use the general --" + g_argOptimize + " to enable Yul optimizer.").c_str()
+		)
+		(
+			g_strNoOptimizeYul.c_str(),
+			"Disable Yul optimizer in Solidity."
+		)
+		(
+			g_strYulOptimizations.c_str(),
+			po::value<string>()->value_name("steps"),
+			"Forces yul optimizer to use the specified sequence of optimization steps instead of the built-in one."
+		)
+	;
+	desc.add(optimizerOptions);
 
 	po::options_description allOptions = desc;
 	allOptions.add_options()(g_argInputFile.c_str(), po::value<vector<string>>(), "input file");
@@ -898,6 +999,8 @@ Allowed options)").c_str(),
 	}
 
 	m_coloredOutput = !m_args.count(g_argNoColor) && (isatty(STDERR_FILENO) || m_args.count(g_argColor));
+
+	m_withErrorIds = m_args.count(g_argErrorIds);
 
 	if (m_args.count(g_argHelp) || (isatty(fileno(stdin)) && _argc == 1))
 	{
@@ -963,7 +1066,8 @@ bool CommandLineInterface::processInput()
 			string validPath = _path;
 			if (validPath.find("file://") == 0)
 				validPath.erase(0, 7);
-			auto path = boost::filesystem::path(validPath);
+
+			auto const path = m_basePath / validPath;
 			auto canonicalPath = boost::filesystem::weakly_canonical(path);
 			bool isAllowed = false;
 			for (auto const& allowedDir: m_allowedDirectories)
@@ -1001,6 +1105,19 @@ bool CommandLineInterface::processInput()
 		}
 	};
 
+	if (m_args.count(g_argBasePath))
+	{
+		boost::filesystem::path const fspath{m_args[g_argBasePath].as<string>()};
+		if (!boost::filesystem::is_directory(fspath))
+		{
+			serr() << "Base path must be a directory: \"" << fspath << "\"\n";
+			return false;
+		}
+		m_basePath = fspath;
+		if (!contains(m_allowedDirectories, fspath))
+			m_allowedDirectories.push_back(fspath);
+	}
+
 	if (m_args.count(g_argAllowPaths))
 	{
 		vector<string> paths;
@@ -1015,6 +1132,21 @@ bool CommandLineInterface::processInput()
 				filesystem_path.remove_filename();
 			m_allowedDirectories.push_back(filesystem_path);
 		}
+	}
+
+	vector<string> const exclusiveModes = {
+		g_argStandardJSON,
+		g_argLink,
+		g_argAssemble,
+		g_argStrictAssembly,
+		g_argYul,
+		g_argImportAst,
+	};
+	if (countEnabledOptions(exclusiveModes) > 1)
+	{
+		serr() << "The following options are mutually exclusive: " << joinOptionNames(exclusiveModes) << ". ";
+		serr() << "Select at most one." << endl;
+		return false;
 	}
 
 	if (m_args.count(g_argStandardJSON))
@@ -1062,6 +1194,27 @@ bool CommandLineInterface::processInput()
 
 	if (m_args.count(g_argAssemble) || m_args.count(g_argStrictAssembly) || m_args.count(g_argYul))
 	{
+		vector<string> const nonAssemblyModeOptions = {
+			// TODO: The list is not complete. Add more.
+			g_argOutputDir,
+			g_argGas,
+			g_argCombinedJson,
+			g_strOptimizeYul,
+			g_strNoOptimizeYul,
+		};
+		if (countEnabledOptions(nonAssemblyModeOptions) >= 1)
+		{
+			auto optionEnabled = [&](string const& name){ return m_args.count(name) > 0; };
+			auto enabledOptions = boost::copy_range<vector<string>>(nonAssemblyModeOptions | boost::adaptors::filtered(optionEnabled));
+
+			serr() << "The following options are invalid in assembly mode: ";
+			serr() << joinOptionNames(enabledOptions) << ".";
+			if (m_args.count(g_strOptimizeYul) || m_args.count(g_strNoOptimizeYul))
+				serr() << " Optimization is disabled by default and can be enabled with --" << g_argOptimize << "." << endl;
+			serr() << endl;
+			return false;
+		}
+
 		// switch to assembly mode
 		m_onlyAssemble = true;
 		using Input = yul::AssemblyStack::Language;
@@ -1069,16 +1222,6 @@ bool CommandLineInterface::processInput()
 		Input inputLanguage = m_args.count(g_argYul) ? Input::Yul : (m_args.count(g_argStrictAssembly) ? Input::StrictAssembly : Input::Assembly);
 		Machine targetMachine = Machine::EVM;
 		bool optimize = m_args.count(g_argOptimize);
-		if (m_args.count(g_strOptimizeYul))
-		{
-			serr() << "--" << g_strOptimizeYul << " is invalid in assembly mode. Use --" << g_argOptimize << " instead." << endl;
-			return false;
-		}
-		if (m_args.count(g_strNoOptimizeYul))
-		{
-			serr() << "--" << g_strNoOptimizeYul << " is invalid in assembly mode. Optimization is disabled by default and can be enabled with --" << g_argOptimize << "." << endl;
-			return false;
-		}
 
 		optional<string> yulOptimiserSteps;
 		if (m_args.count(g_strYulOptimizations))
@@ -1149,12 +1292,25 @@ bool CommandLineInterface::processInput()
 				endl;
 			return false;
 		}
+		if (targetMachine == Machine::Ewasm && inputLanguage != Input::StrictAssembly && inputLanguage != Input::Ewasm)
+		{
+			serr() << "The selected input language is not directly supported when targeting the Ewasm machine ";
+			serr() << "and automatic translation is not available." << endl;
+			return false;
+		}
 		serr() <<
 			"Warning: Yul is still experimental. Please use the output with care." <<
 			endl;
 
 		return assemble(inputLanguage, targetMachine, optimize, yulOptimiserSteps);
 	}
+	else if (countEnabledOptions({g_strYulDialect, g_argMachine}) >= 1)
+	{
+		serr() << "--" << g_strYulDialect << " and --" << g_argMachine << " ";
+		serr() << "are only valid in assembly mode." << endl;
+		return false;
+	}
+
 	if (m_args.count(g_argLink))
 	{
 		// switch to linker mode
@@ -1184,7 +1340,7 @@ bool CommandLineInterface::processInput()
 	if (m_args.count(g_argOldReporter))
 		formatter = make_unique<SourceReferenceFormatter>(serr(false));
 	else
-		formatter = make_unique<SourceReferenceFormatterHuman>(serr(false), m_coloredOutput);
+		formatter = make_unique<SourceReferenceFormatterHuman>(serr(false), m_coloredOutput, m_withErrorIds);
 
 	try
 	{
@@ -1295,6 +1451,14 @@ bool CommandLineInterface::processInput()
 			boost::diagnostic_information(_exception);
 		return false;
 	}
+	catch (smtutil::SMTLogicError const& _exception)
+	{
+		serr() <<
+			"SMT logic error during analysis:" <<
+			endl <<
+			boost::diagnostic_information(_exception);
+		return false;
+	}
 	catch (Error const& _error)
 	{
 		if (_error.type() == Error::Type::DocstringParsingError)
@@ -1399,7 +1563,8 @@ void CommandLineInterface::handleCombinedJSON()
 		}
 	}
 
-	string json = m_args.count(g_argPrettyJson) ? jsonPrettyPrint(output) : jsonCompactPrint(output);
+	string json = m_args.count(g_argPrettyJson) ? jsonPrettyPrint(removeNullMembers(std::move(output))) :
+		jsonCompactPrint(removeNullMembers(std::move(output)));
 
 	if (m_args.count(g_argOutputDir))
 		createJson("combined", json);
@@ -1614,7 +1779,7 @@ bool CommandLineInterface::assemble(
 		if (m_args.count(g_argOldReporter))
 			formatter = make_unique<SourceReferenceFormatter>(serr(false));
 		else
-			formatter = make_unique<SourceReferenceFormatterHuman>(serr(false), m_coloredOutput);
+			formatter = make_unique<SourceReferenceFormatterHuman>(serr(false), m_coloredOutput, m_withErrorIds);
 
 		for (auto const& error: stack.errors())
 		{
@@ -1715,7 +1880,7 @@ void CommandLineInterface::outputCompilationResults()
 		{
 			string ret;
 			if (m_args.count(g_argAsmJson))
-				ret = jsonPrettyPrint(m_compiler->assemblyJSON(contract));
+				ret = jsonPrettyPrint(removeNullMembers(m_compiler->assemblyJSON(contract)));
 			else
 				ret = m_compiler->assemblyString(contract, m_sourceCodes);
 
@@ -1751,6 +1916,23 @@ void CommandLineInterface::outputCompilationResults()
 		else
 			serr() << "Compiler run successful, no output requested." << endl;
 	}
+}
+
+size_t CommandLineInterface::countEnabledOptions(vector<string> const& _optionNames) const
+{
+	size_t count = 0;
+	for (string const& _option: _optionNames)
+		count += m_args.count(_option);
+
+	return count;
+}
+
+string CommandLineInterface::joinOptionNames(vector<string> const& _optionNames, string _separator)
+{
+	return boost::algorithm::join(
+		_optionNames | boost::adaptors::transformed([](string const& _option){ return "--" + _option; }),
+		_separator
+	);
 }
 
 }

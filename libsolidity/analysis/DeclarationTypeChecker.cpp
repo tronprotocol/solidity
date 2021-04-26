@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <libsolidity/analysis/DeclarationTypeChecker.h>
 
@@ -50,7 +51,8 @@ bool DeclarationTypeChecker::visit(ElementaryTypeName const& _typeName)
 				_typeName.annotation().type = TypeProvider::address();
 				break;
 			default:
-				typeError(
+				m_errorReporter.typeError(
+					2311_error,
 					_typeName.location(),
 					"Address types can only be payable or non-payable."
 				);
@@ -102,24 +104,26 @@ bool DeclarationTypeChecker::visit(StructDefinition const& _struct)
 	auto visitor = [&](StructDefinition const& _struct, auto& _cycleDetector, size_t _depth)
 	{
 		if (_depth >= 256)
-			fatalDeclarationError(_struct.location(), "Struct definition exhausts cyclic dependency validator.");
+			m_errorReporter.fatalDeclarationError(
+				5651_error,
+				_struct.location(),
+				"Struct definition exhausts cyclic dependency validator."
+			);
 
 		for (ASTPointer<VariableDeclaration> const& member: _struct.members())
 		{
 			Type const* memberType = member->annotation().type;
-			while (auto arrayType = dynamic_cast<ArrayType const*>(memberType))
-			{
-				if (arrayType->isDynamicallySized())
-					break;
-				memberType = arrayType->baseType();
-			}
+
+			if (auto arrayType = dynamic_cast<ArrayType const*>(memberType))
+				memberType = arrayType->finalBaseType(true);
+
 			if (auto structType = dynamic_cast<StructType const*>(memberType))
 				if (_cycleDetector.run(structType->structDefinition()))
 					return;
 		}
 	};
-	if (util::CycleDetector<StructDefinition>(visitor).run(_struct) != nullptr)
-		fatalTypeError(_struct.location(), "Recursive struct definition.");
+	if (util::CycleDetector<StructDefinition>(visitor).run(_struct))
+		m_errorReporter.fatalTypeError(2046_error, _struct.location(), "Recursive struct definition.");
 
 	return false;
 }
@@ -145,9 +149,14 @@ void DeclarationTypeChecker::endVisit(UserDefinedTypeName const& _typeName)
 	else
 	{
 		_typeName.annotation().type = TypeProvider::emptyTuple();
-		fatalTypeError(_typeName.location(), "Name has to refer to a struct, enum or contract.");
+		m_errorReporter.fatalTypeError(
+			5172_error,
+			_typeName.location(),
+			"Name has to refer to a struct, enum or contract."
+		);
 	}
 }
+
 bool DeclarationTypeChecker::visit(FunctionTypeName const& _typeName)
 {
 	if (_typeName.annotation().type)
@@ -165,18 +174,27 @@ bool DeclarationTypeChecker::visit(FunctionTypeName const& _typeName)
 		case Visibility::External:
 			break;
 		default:
-			fatalTypeError(_typeName.location(), "Invalid visibility, can only be \"external\" or \"internal\".");
+			m_errorReporter.fatalTypeError(
+				6012_error,
+				_typeName.location(),
+				"Invalid visibility, can only be \"external\" or \"internal\"."
+			);
 			return false;
 	}
 
 	if (_typeName.isPayable() && _typeName.visibility() != Visibility::External)
 	{
-		fatalTypeError(_typeName.location(), "Only external function types can be payable.");
+		m_errorReporter.fatalTypeError(
+			7415_error,
+			_typeName.location(),
+			"Only external function types can be payable."
+		);
 		return false;
 	}
 	_typeName.annotation().type = TypeProvider::function(_typeName);
 	return false;
 }
+
 void DeclarationTypeChecker::endVisit(Mapping const& _mapping)
 {
 	if (_mapping.annotation().type)
@@ -226,7 +244,11 @@ void DeclarationTypeChecker::endVisit(ArrayTypeName const& _typeName)
 		return;
 	}
 	if (baseType->storageBytes() == 0)
-		fatalTypeError(_typeName.baseType().location(), "Illegal base type of storage size zero for array.");
+		m_errorReporter.fatalTypeError(
+			6493_error,
+			_typeName.baseType().location(),
+			"Illegal base type of storage size zero for array."
+		);
 	if (Expression const* length = _typeName.length())
 	{
 		TypePointer& lengthTypeGeneric = length->annotation().type;
@@ -235,13 +257,17 @@ void DeclarationTypeChecker::endVisit(ArrayTypeName const& _typeName)
 		RationalNumberType const* lengthType = dynamic_cast<RationalNumberType const*>(lengthTypeGeneric);
 		u256 lengthValue = 0;
 		if (!lengthType || !lengthType->mobileType())
-			typeError(length->location(), "Invalid array length, expected integer literal or constant expression.");
+			m_errorReporter.typeError(
+				5462_error,
+				length->location(),
+				"Invalid array length, expected integer literal or constant expression."
+			);
 		else if (lengthType->isZero())
-			typeError(length->location(), "Array with zero length specified.");
+			m_errorReporter.typeError(1406_error, length->location(), "Array with zero length specified.");
 		else if (lengthType->isFractional())
-			typeError(length->location(), "Array with fractional length specified.");
+			m_errorReporter.typeError(3208_error, length->location(), "Array with fractional length specified.");
 		else if (lengthType->isNegative())
-			typeError(length->location(), "Array with negative length specified.");
+			m_errorReporter.typeError(3658_error, length->location(), "Array with negative length specified.");
 		else
 			lengthValue = lengthType->literalValue(nullptr);
 		_typeName.annotation().type = TypeProvider::array(DataLocation::Storage, baseType, lengthValue);
@@ -249,25 +275,25 @@ void DeclarationTypeChecker::endVisit(ArrayTypeName const& _typeName)
 	else
 		_typeName.annotation().type = TypeProvider::array(DataLocation::Storage, baseType);
 }
+
 void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 {
 	if (_variable.annotation().type)
 		return;
 
 	if (_variable.isConstant() && !_variable.isStateVariable())
-		m_errorReporter.declarationError(1788_error, _variable.location(), "The \"constant\" keyword can only be used for state variables.");
+		m_errorReporter.declarationError(
+			1788_error,
+			_variable.location(),
+			"The \"constant\" keyword can only be used for state variables."
+		);
 	if (_variable.immutable() && !_variable.isStateVariable())
-		m_errorReporter.declarationError(8297_error, _variable.location(), "The \"immutable\" keyword can only be used for state variables.");
+		m_errorReporter.declarationError(
+			8297_error,
+			_variable.location(),
+			"The \"immutable\" keyword can only be used for state variables."
+		);
 
-	if (!_variable.typeName())
-	{
-		// This can still happen in very unusual cases where a developer uses constructs, such as
-		// `var a;`, however, such code will have generated errors already.
-		// However, we cannot blindingly solAssert() for that here, as the TypeChecker (which is
-		// invoking ReferencesResolver) is generating it, so the error is most likely(!) generated
-		// after this step.
-		return;
-	}
 	using Location = VariableDeclaration::Location;
 	Location varLoc = _variable.referenceLocation();
 	DataLocation typeLoc = DataLocation::Memory;
@@ -298,7 +324,9 @@ void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 					", ",
 					" or "
 				);
-			if (_variable.isCallableOrCatchParameter())
+			if (_variable.isConstructorParameter())
+				errorString += " for constructor parameter";
+			else if (_variable.isCallableOrCatchParameter())
 				errorString +=
 					" for " +
 					string(_variable.isReturnParameter() ? "return " : "") +
@@ -309,7 +337,7 @@ void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 				errorString += " for variable";
 		}
 		errorString += ", but " + locationToString(varLoc) + " was given.";
-		typeError(_variable.location(), errorString);
+		m_errorReporter.typeError(6651_error, _variable.location(), errorString);
 
 		solAssert(!allowedDataLocations.empty(), "");
 		varLoc = *allowedDataLocations.begin();
@@ -348,7 +376,7 @@ void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 				solAssert(!_variable.hasReferenceOrMappingType(), "Data location not properly set.");
 		}
 
-	TypePointer type = _variable.typeName()->annotation().type;
+	TypePointer type = _variable.typeName().annotation().type;
 	if (auto ref = dynamic_cast<ReferenceType const*>(type))
 	{
 		bool isPointer = !_variable.isStateVariable();
@@ -359,24 +387,18 @@ void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 
 }
 
-void DeclarationTypeChecker::typeError(SourceLocation const& _location, string const& _description)
+void DeclarationTypeChecker::endVisit(UsingForDirective const& _usingFor)
 {
-	m_errorReporter.typeError(2311_error, _location, _description);
-}
-
-void DeclarationTypeChecker::fatalTypeError(SourceLocation const& _location, string const& _description)
-{
-	m_errorReporter.fatalTypeError(5651_error, _location, _description);
-}
-
-void DeclarationTypeChecker::fatalDeclarationError(SourceLocation const& _location, string const& _description)
-{
-	m_errorReporter.fatalDeclarationError(2046_error, _location, _description);
+	ContractDefinition const* library = dynamic_cast<ContractDefinition const*>(
+		_usingFor.libraryName().annotation().referencedDeclaration
+	);
+	if (!library || !library->isLibrary())
+		m_errorReporter.fatalTypeError(4357_error, _usingFor.libraryName().location(), "Library name expected.");
 }
 
 bool DeclarationTypeChecker::check(ASTNode const& _node)
 {
-	unsigned errorCount = m_errorReporter.errorCount();
+	auto watcher = m_errorReporter.errorWatcher();
 	_node.accept(*this);
-	return m_errorReporter.errorCount() == errorCount;
+	return watcher.ok();
 }

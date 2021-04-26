@@ -59,11 +59,11 @@ complete contract):
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.0 <0.7.0;
+    pragma solidity >=0.4.0 <0.8.0;
 
     // THIS CONTRACT CONTAINS A BUG - DO NOT USE
     contract Fund {
-        /// Mapping of trx shares of the contract.
+        /// @dev Mapping of trx shares of the contract.
         mapping(address => uint) shares;
         /// Withdraw your share.
         function withdraw() public {
@@ -83,11 +83,11 @@ as it uses ``call`` which forwards all remaining gas by default:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.6.2 <0.7.0;
+    pragma solidity >=0.6.2 <0.8.0;
 
     // THIS CONTRACT CONTAINS A BUG - DO NOT USE
     contract Fund {
-        /// Mapping of trx shares of the contract.
+        /// @dev Mapping of trx shares of the contract.
         mapping(address => uint) shares;
         /// Withdraw your share.
         function withdraw() public {
@@ -103,10 +103,10 @@ outlined further below:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.11 <0.7.0;
+    pragma solidity >=0.4.11 <0.8.0;
 
     contract Fund {
-        /// Mapping of trx shares of the contract.
+        /// @dev Mapping of trx shares of the contract.
         mapping(address => uint) shares;
         /// Withdraw your share.
         function withdraw() public {
@@ -201,13 +201,13 @@ Never use tx.origin for authorization. Let's say you have a wallet contract like
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.5.0 <0.7.0;
+    pragma solidity >0.6.99 <0.8.0;
 
     // THIS CONTRACT CONTAINS A BUG - DO NOT USE
     contract TxUserWallet {
         address owner;
 
-        constructor() public {
+        constructor() {
             owner = msg.sender;
         }
 
@@ -222,7 +222,7 @@ Now someone tricks you into sending Trx to the address of this attack wallet:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity ^0.6.0;
+    pragma solidity >0.6.99 <0.8.0;
 
     interface TxUserWallet {
         function transferTo(address payable dest, uint amount) external;
@@ -231,7 +231,7 @@ Now someone tricks you into sending Trx to the address of this attack wallet:
     contract TxAttackWallet {
         address payable owner;
 
-        constructor() public {
+        constructor() {
             owner = msg.sender;
         }
 
@@ -283,7 +283,7 @@ field of a ``struct`` that is the base type of a dynamic storage array.  The
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.6.0 <0.7.0;
+    pragma solidity >=0.6.0 <0.8.0;
 
     contract Map {
         mapping (uint => uint)[] array;
@@ -657,3 +657,14 @@ Notice that we do not clear knowledge about ``array`` and ``d`` because they
 are located in storage, even though they also have type ``uint[]``.  However,
 if ``d`` was assigned, we would need to clear knowledge about ``array`` and
 vice-versa.
+
+Real World Assumptions
+======================
+
+Some scenarios can be expressed in Solidity and the TVM, but are expected to
+never occur in practice.
+One of such cases is the length of a dynamic storage array overflowing during a
+push: If the ``push`` operation is applied to an array of length 2^256 - 1, its
+length silently overflows.
+However, this is unlikely to happen in practice, since the operations required
+to grow the array to that point would take billions of years to execute.

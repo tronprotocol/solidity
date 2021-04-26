@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @author Gav Wood <g@ethdev.com>
@@ -29,6 +30,7 @@
 #include <libsolidity/analysis/ContractLevelChecker.h>
 #include <libsolidity/analysis/DeclarationTypeChecker.h>
 #include <libsolidity/analysis/DocStringAnalyser.h>
+#include <libsolidity/analysis/DocStringTagParser.h>
 #include <libsolidity/analysis/GlobalContext.h>
 #include <libsolidity/analysis/NameAndTypeResolver.h>
 #include <libsolidity/analysis/PostTypeChecker.h>
@@ -82,7 +84,7 @@ static int g_compilerStackCounts = 0;
 
 CompilerStack::CompilerStack(ReadCallback::Callback _readFile):
 	m_readFile{std::move(_readFile)},
-	m_enabledSMTSolvers{smt::SMTSolverChoice::All()},
+	m_enabledSMTSolvers{smtutil::SMTSolverChoice::All()},
 	m_generateIR{false},
 	m_generateEwasm{false},
 	m_errorList{},
@@ -136,7 +138,7 @@ void CompilerStack::setEVMVersion(langutil::EVMVersion _version)
 	m_evmVersion = _version;
 }
 
-void CompilerStack::setSMTSolverChoice(smt::SMTSolverChoice _enabledSMTSolvers)
+void CompilerStack::setSMTSolverChoice(smtutil::SMTSolverChoice _enabledSMTSolvers)
 {
 	if (m_stackState >= ParsingPerformed)
 		BOOST_THROW_EXCEPTION(CompilerError() << errinfo_comment("Must set enabled SMT solvers before parsing."));
@@ -205,7 +207,7 @@ void CompilerStack::reset(bool _keepSettings)
 		m_remappings.clear();
 		m_libraries.clear();
 		m_evmVersion = langutil::EVMVersion();
-		m_enabledSMTSolvers = smt::SMTSolverChoice::All();
+		m_enabledSMTSolvers = smtutil::SMTSolverChoice::All();
 		m_generateIR = false;
 		m_generateEwasm = false;
 		m_revertStrings = RevertStrings::Default;
@@ -214,7 +216,6 @@ void CompilerStack::reset(bool _keepSettings)
 		m_metadataHash = MetadataHash::IPFS;
 	}
 	m_globalContext.reset();
-	m_scopes.clear();
 	m_sourceOrder.clear();
 	m_contracts.clear();
 	m_errorReporter.clear();
@@ -308,13 +309,14 @@ bool CompilerStack::analyze()
 			if (source->ast && !syntaxChecker.checkSyntax(*source->ast))
 				noErrors = false;
 
-		DocStringAnalyser docStringAnalyser(m_errorReporter);
+		DocStringTagParser DocStringTagParser(m_errorReporter);
 		for (Source const* source: m_sourceOrder)
-			if (source->ast && !docStringAnalyser.analyseDocStrings(*source->ast))
+			if (source->ast && !DocStringTagParser.parseDocStrings(*source->ast))
 				noErrors = false;
 
 		m_globalContext = make_shared<GlobalContext>();
-		NameAndTypeResolver resolver(*m_globalContext, m_evmVersion, m_scopes, m_errorReporter);
+		// We need to keep the same resolver during the whole process.
+		NameAndTypeResolver resolver(*m_globalContext, m_evmVersion, m_errorReporter);
 		for (Source const* source: m_sourceOrder)
 			if (source->ast && !resolver.registerDeclarations(*source->ast))
 				return false;
@@ -326,28 +328,28 @@ bool CompilerStack::analyze()
 			if (source->ast && !resolver.performImports(*source->ast, sourceUnitsByName))
 				return false;
 
-		// This is the main name and type resolution loop. Needs to be run for every contract, because
-		// the special variables "this" and "super" must be set appropriately.
+		for (Source const* source: m_sourceOrder)
+			if (source->ast && !resolver.resolveNamesAndTypes(*source->ast))
+				return false;
+
+		// Store contract definitions.
 		for (Source const* source: m_sourceOrder)
 			if (source->ast)
-				for (ASTPointer<ASTNode> const& node: source->ast->nodes())
+				for (
+					ContractDefinition const* contract:
+					ASTNode::filteredNodes<ContractDefinition>(source->ast->nodes())
+				)
 				{
-					if (!resolver.resolveNamesAndTypes(*node))
-						return false;
-					if (ContractDefinition* contract = dynamic_cast<ContractDefinition*>(node.get()))
-					{
-						// Note that we now reference contracts by their fully qualified names, and
-						// thus contracts can only conflict if declared in the same source file. This
-						// should already cause a double-declaration error elsewhere.
-						if (m_contracts.find(contract->fullyQualifiedName()) == m_contracts.end())
-							m_contracts[contract->fullyQualifiedName()].contract = contract;
-						else
-							solAssert(
-								m_errorReporter.hasErrors(),
-								"Contract already present (name clash?), but no error was reported."
-							);
-					}
-
+					// Note that we now reference contracts by their fully qualified names, and
+					// thus contracts can only conflict if declared in the same source file. This
+					// should already cause a double-declaration error elsewhere.
+					if (!m_contracts.count(contract->fullyQualifiedName()))
+						m_contracts[contract->fullyQualifiedName()].contract = contract;
+					else
+						solAssert(
+							m_errorReporter.hasErrors(),
+							"Contract already present (name clash?), but no error was reported."
+						);
 				}
 
 		DeclarationTypeChecker declarationTypeChecker(m_errorReporter, m_evmVersion);
@@ -367,6 +369,12 @@ bool CompilerStack::analyze()
 						if (!contractLevelChecker.check(*contract))
 							noErrors = false;
 
+		// Requires ContractLevelChecker
+		DocStringAnalyser docStringAnalyser(m_errorReporter);
+		for (Source const* source: m_sourceOrder)
+			if (source->ast && !docStringAnalyser.analyseDocStrings(*source->ast))
+				noErrors = false;
+
 		// New we run full type checks that go down to the expression level. This
 		// cannot be done earlier, because we need cross-contract types and information
 		// about whether a contract is abstract for the `new` expression.
@@ -376,11 +384,8 @@ bool CompilerStack::analyze()
 		// which is only done one step later.
 		TypeChecker typeChecker(m_evmVersion, m_errorReporter);
 		for (Source const* source: m_sourceOrder)
-			if (source->ast)
-				for (ASTPointer<ASTNode> const& node: source->ast->nodes())
-					if (ContractDefinition* contract = dynamic_cast<ContractDefinition*>(node.get()))
-						if (!typeChecker.checkTypeRequirements(*contract))
-							noErrors = false;
+			if (source->ast && !typeChecker.checkTypeRequirements(*source->ast))
+				noErrors = false;
 
 		if (noErrors)
 		{
@@ -511,7 +516,17 @@ bool CompilerStack::compile()
 			if (auto contract = dynamic_cast<ContractDefinition const*>(node.get()))
 				if (isRequestedContract(*contract))
 				{
-					compileContract(*contract, otherCompilers);
+					try
+					{
+						compileContract(*contract, otherCompilers);
+					}
+					catch (Error const& _error)
+					{
+						if (_error.type() != Error::Type::CodeGenerationError)
+							throw;
+						m_errorReporter.error(_error.errorId(), _error.type(), SourceLocation(), _error.what());
+						return false;
+					}
 					if (m_generateIR || m_generateEwasm)
 						generateIR(*contract);
 					if (m_generateEwasm)
@@ -582,9 +597,9 @@ string const* CompilerStack::sourceMapping(string const& _contractName) const
 	if (!c.sourceMapping)
 	{
 		if (auto items = assemblyItems(_contractName))
-			c.sourceMapping = make_unique<string>(evmasm::AssemblyItem::computeSourceMapping(*items, sourceIndices()));
+			c.sourceMapping.emplace(evmasm::AssemblyItem::computeSourceMapping(*items, sourceIndices()));
 	}
-	return c.sourceMapping.get();
+	return c.sourceMapping ? &*c.sourceMapping : nullptr;
 }
 
 string const* CompilerStack::runtimeSourceMapping(string const& _contractName) const
@@ -596,11 +611,11 @@ string const* CompilerStack::runtimeSourceMapping(string const& _contractName) c
 	if (!c.runtimeSourceMapping)
 	{
 		if (auto items = runtimeAssemblyItems(_contractName))
-			c.runtimeSourceMapping = make_unique<string>(
+			c.runtimeSourceMapping.emplace(
 				evmasm::AssemblyItem::computeSourceMapping(*items, sourceIndices())
 			);
 	}
-	return c.runtimeSourceMapping.get();
+	return c.runtimeSourceMapping ? &*c.runtimeSourceMapping : nullptr;
 }
 
 std::string const CompilerStack::filesystemFriendlyName(string const& _contractName) const
@@ -733,11 +748,7 @@ Json::Value const& CompilerStack::contractABI(Contract const& _contract) const
 
 	solAssert(_contract.contract, "");
 
-	// caches the result
-	if (!_contract.abi)
-		_contract.abi = make_unique<Json::Value>(ABI::generate(*_contract.contract));
-
-	return *_contract.abi;
+	return _contract.abi.init([&]{ return ABI::generate(*_contract.contract); });
 }
 
 Json::Value const& CompilerStack::storageLayout(string const& _contractName) const
@@ -755,11 +766,7 @@ Json::Value const& CompilerStack::storageLayout(Contract const& _contract) const
 
 	solAssert(_contract.contract, "");
 
-	// caches the result
-	if (!_contract.storageLayout)
-		_contract.storageLayout = make_unique<Json::Value>(StorageLayout().generate(*_contract.contract));
-
-	return *_contract.storageLayout;
+	return _contract.storageLayout.init([&]{ return StorageLayout().generate(*_contract.contract); });
 }
 
 Json::Value const& CompilerStack::natspecUser(string const& _contractName) const
@@ -777,11 +784,7 @@ Json::Value const& CompilerStack::natspecUser(Contract const& _contract) const
 
 	solAssert(_contract.contract, "");
 
-	// caches the result
-	if (!_contract.userDocumentation)
-		_contract.userDocumentation = make_unique<Json::Value>(Natspec::userDocumentation(*_contract.contract));
-
-	return *_contract.userDocumentation;
+	return _contract.userDocumentation.init([&]{ return Natspec::userDocumentation(*_contract.contract); });
 }
 
 Json::Value const& CompilerStack::natspecDev(string const& _contractName) const
@@ -799,11 +802,7 @@ Json::Value const& CompilerStack::natspecDev(Contract const& _contract) const
 
 	solAssert(_contract.contract, "");
 
-	// caches the result
-	if (!_contract.devDocumentation)
-		_contract.devDocumentation = make_unique<Json::Value>(Natspec::devDocumentation(*_contract.contract));
-
-	return *_contract.devDocumentation;
+	return _contract.devDocumentation.init([&]{ return Natspec::devDocumentation(*_contract.contract); });
 }
 
 Json::Value CompilerStack::methodIdentifiers(string const& _contractName) const
@@ -832,11 +831,7 @@ string const& CompilerStack::metadata(Contract const& _contract) const
 
 	solAssert(_contract.contract, "");
 
-	// cache the result
-	if (!_contract.metadata)
-		_contract.metadata = make_unique<string>(createMetadata(_contract));
-
-	return *_contract.metadata;
+	return _contract.metadata.init([&]{ return createMetadata(_contract); });
 }
 
 Scanner const& CompilerStack::scanner(string const& _sourceName) const
@@ -1002,7 +997,7 @@ string CompilerStack::applyRemapping(string const& _path, string const& _context
 		bestMatchTarget = util::sanitizePath(redir.target);
 	}
 	string path = bestMatchTarget;
-	path.append(_path.begin() + longestPrefix, _path.end());
+	path.append(_path.begin() + static_cast<string::difference_type>(longestPrefix), _path.end());
 	return path;
 }
 

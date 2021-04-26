@@ -12,14 +12,15 @@ A literal number can take a suffix of ``sun`` or ``trx`` to convert between the 
 ::
 
     assert(1 wei == 1);
-    assert(1 szabo == 1e12);
-    assert(1 finney == 1e15);
+    assert(1 gwei == 1e9);
     assert(1 ether == 1e18);
     assert(1 sun == 1);
     assert(1 trx == 1e6);
 
 The only effect of the subdenomination suffix is a multiplication by a power of ten.
 
+.. note::
+    The denominations ``finney`` and ``szabo`` have been removed in version 0.7.0.
 
 .. index:: time, seconds, minutes, hours, days, weeks, years
 
@@ -49,7 +50,7 @@ These suffixes cannot be applied to variables. For example, if you want to
 interpret a function parameter in days, you can in the following way::
 
     function f(uint start, uint daysAfter) public {
-        if (now >= start + daysAfter * 1 days) {
+        if (block.timestamp >= start + daysAfter * 1 days) {
           // ...
         }
     }
@@ -63,7 +64,7 @@ There are special variables and functions which always exist in the global
 namespace and are mainly used to provide information about the blockchain
 or are general-use utility functions.
 
-.. index:: abi, block, coinbase, difficulty, encode, number, block;number, timestamp, block;timestamp, msg, data, gas, sender, value, now, gas price, origin
+.. index:: abi, block, coinbase, difficulty, encode, number, block;number, timestamp, block;timestamp, msg, data, gas, sender, value, gas price, origin
 
 
 Block and Transaction Properties
@@ -80,7 +81,6 @@ Block and Transaction Properties
 - ``msg.sender`` (``address payable``): sender of the message (current call)
 - ``msg.sig`` (``bytes4``): first four bytes of the calldata (i.e. function identifier)
 - ``msg.value`` (``uint``): number of sun sent with the message
-- ``now`` (``uint``): current block timestamp (alias for ``block.timestamp``)
 - ``tx.gasprice`` (``uint``): gas price of the transaction
 - ``tx.origin`` (``address payable``): sender of the transaction (full call chain)
 
@@ -90,7 +90,7 @@ Block and Transaction Properties
     This includes calls to library functions.
 
 .. note::
-    Do not rely on ``block.timestamp``, ``now`` and ``blockhash`` as a source of randomness,
+    Do not rely on ``block.timestamp`` or ``blockhash`` as a source of randomness,
     unless you know what you are doing.
 
     Both the timestamp and the block hash can be influenced by miners to some degree.
@@ -113,6 +113,9 @@ Block and Transaction Properties
 .. note::
     The function ``gasleft`` was previously known as ``msg.gas``, which was deprecated in
     version 0.4.21 and removed in version 0.5.0.
+
+.. note::
+    In version 0.7.0, the alias ``now`` (for ``block.timestamp``) was removed.
 
 .. index:: abi, encoding, packed
 

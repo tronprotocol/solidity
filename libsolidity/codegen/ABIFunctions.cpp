@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <chris@ethereum.org>
  * @date 2017
@@ -725,7 +726,7 @@ string ABIFunctions::abiEncodingFunctionCompactStorageArray(
 			size_t itemsPerSlot = 32 / storageBytes;
 			solAssert(itemsPerSlot > 0, "");
 			// The number of elements we need to handle manually after the loop.
-			size_t spill = size_t(_from.length() % itemsPerSlot);
+			size_t spill = static_cast<size_t>(_from.length() % itemsPerSlot);
 			Whiskers templ(
 				R"(
 					// <readableTypeNameFrom> -> <readableTypeNameTo>
@@ -860,8 +861,7 @@ string ABIFunctions::abiEncodingFunctionStruct(
 		for (auto const& member: _to.members(nullptr))
 		{
 			solAssert(member.type, "");
-			if (!member.type->canLiveOutsideStorage())
-				continue;
+			solAssert(!member.type->containsNestedMapping(), "");
 			TypePointer memberTypeTo = member.type->fullEncodingType(_options.encodeAsLibraryTypes, true, false);
 			solUnimplementedAssert(memberTypeTo, "Encoding type \"" + member.type->toString() + "\" not yet implemented.");
 			auto memberTypeFrom = _from.memberType(member.name);
@@ -1357,7 +1357,7 @@ string ABIFunctions::abiDecodingFunctionStruct(StructType const& _type, bool _fr
 		for (auto const& member: _type.members(nullptr))
 		{
 			solAssert(member.type, "");
-			solAssert(member.type->canLiveOutsideStorage(), "");
+			solAssert(!member.type->containsNestedMapping(), "");
 			auto decodingType = member.type->decodingType();
 			solAssert(decodingType, "");
 			bool dynamic = decodingType->isDynamicallyEncoded();

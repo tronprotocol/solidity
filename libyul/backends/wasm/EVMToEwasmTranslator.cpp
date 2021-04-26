@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * Translates Yul code from EVM dialect to Ewasm dialect.
  */
@@ -597,11 +598,6 @@ function sstore(x1, x2, x3, x4, y1, y2, y3, y4) {
 	eth.storageStore(0, 32)
 }
 
-// Needed?
-function pc() -> z1, z2, z3, z4 {
-	// TODO implement
-	unreachable()
-}
 function gas() -> z1, z2, z3, z4 {
 	z4 := eth.getGasLeft()
 }
@@ -821,7 +817,7 @@ Object EVMToEwasmTranslator::run(Object const& _object)
 
 	ErrorList errors;
 	ErrorReporter errorReporter(errors);
-	AsmAnalyzer analyzer(*ret.analysisInfo, errorReporter, WasmDialect::instance(), {}, _object.dataNames());
+	AsmAnalyzer analyzer(*ret.analysisInfo, errorReporter, WasmDialect::instance(), {}, _object.qualifiedDataNames());
 	if (!analyzer.analyze(*ret.code))
 	{
 		// TODO the errors here are "wrong" because they have invalid source references!

@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <test/libsolidity/SyntaxTest.h>
 #include <test/Common.h>
@@ -73,12 +74,25 @@ void SyntaxTest::parseAndAnalyze()
 		try
 		{
 			if (!compiler().compile())
-				BOOST_THROW_EXCEPTION(runtime_error("Compilation failed even though analysis was successful."));
+			{
+				ErrorList const& errors = compiler().errors();
+				auto codeGeneretionErrorCount = count_if(errors.cbegin(), errors.cend(), [](auto const& error) {
+					return error->type() == Error::Type::CodeGenerationError;
+				});
+				auto errorCount = count_if(errors.cbegin(), errors.cend(), [](auto const& error) {
+					return error->type() != Error::Type::Warning;
+				});
+				// failing compilation after successful analysis is a rare case,
+				// it assumes that errors contain exactly one error, and the error is of type Error::Type::CodeGenerationError
+				if (codeGeneretionErrorCount != 1 || errorCount != 1)
+					BOOST_THROW_EXCEPTION(runtime_error("Compilation failed even though analysis was successful."));
+			}
 		}
 		catch (UnimplementedFeatureError const& _e)
 		{
 			m_errorList.emplace_back(SyntaxTestError{
 				"UnimplementedFeatureError",
+				nullopt,
 				errorMessage(_e),
 				"",
 				-1,
@@ -98,14 +112,15 @@ void SyntaxTest::filterObtainedErrors()
 		{
 			// ignore the version & license pragma inserted by the testing tool when calculating locations.
 			if (location->start >= static_cast<int>(preamble.size()))
-				locationStart = location->start - (preamble.size());
+				locationStart = location->start - static_cast<int>(preamble.size());
 			if (location->end >= static_cast<int>(preamble.size()))
-				locationEnd = location->end - (preamble.size());
+				locationEnd = location->end - static_cast<int>(preamble.size());
 			if (location->source)
 				sourceName = location->source->name();
 		}
 		m_errorList.emplace_back(SyntaxTestError{
 			currentError->typeName(),
+			currentError->errorId(),
 			errorMessage(*currentError),
 			sourceName,
 			locationStart,

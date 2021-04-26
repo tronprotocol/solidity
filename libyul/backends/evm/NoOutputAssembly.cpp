@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * Assembly interface that ignores everything. Can be used as a backend for a compilation dry-run.
  */
@@ -70,25 +71,25 @@ void NoOutputAssembly::appendLinkerSymbol(string const&)
 	yulAssert(false, "Linker symbols not yet implemented.");
 }
 
-void NoOutputAssembly::appendJump(int _stackDiffAfter)
+void NoOutputAssembly::appendJump(int _stackDiffAfter, JumpType)
 {
 	yulAssert(!m_evm15, "Plain JUMP used for EVM 1.5");
 	appendInstruction(evmasm::Instruction::JUMP);
 	m_stackHeight += _stackDiffAfter;
 }
 
-void NoOutputAssembly::appendJumpTo(LabelID _labelId, int _stackDiffAfter)
+void NoOutputAssembly::appendJumpTo(LabelID _labelId, int _stackDiffAfter, JumpType _jumpType)
 {
 	if (m_evm15)
 		m_stackHeight += _stackDiffAfter;
 	else
 	{
 		appendLabelReference(_labelId);
-		appendJump(_stackDiffAfter);
+		appendJump(_stackDiffAfter, _jumpType);
 	}
 }
 
-void NoOutputAssembly::appendJumpToIf(LabelID _labelId)
+void NoOutputAssembly::appendJumpToIf(LabelID _labelId, JumpType)
 {
 	if (m_evm15)
 		m_stackHeight--;
@@ -131,12 +132,12 @@ pair<shared_ptr<AbstractAssembly>, AbstractAssembly::SubID> NoOutputAssembly::cr
 	return {};
 }
 
-void NoOutputAssembly::appendDataOffset(AbstractAssembly::SubID)
+void NoOutputAssembly::appendDataOffset(std::vector<AbstractAssembly::SubID> const&)
 {
 	appendInstruction(evmasm::Instruction::PUSH1);
 }
 
-void NoOutputAssembly::appendDataSize(AbstractAssembly::SubID)
+void NoOutputAssembly::appendDataSize(std::vector<AbstractAssembly::SubID> const&)
 {
 	appendInstruction(evmasm::Instruction::PUSH1);
 }
@@ -162,14 +163,21 @@ NoOutputEVMDialect::NoOutputEVMDialect(EVMDialect const& _copyFrom):
 {
 	for (auto& fun: m_functions)
 	{
-		size_t parameters = fun.second.parameters.size();
 		size_t returns = fun.second.returns.size();
 		fun.second.generateCode = [=](FunctionCall const& _call, AbstractAssembly& _assembly, BuiltinContext&, std::function<void(Expression const&)> _visitExpression)
 		{
-			for (auto const& arg: _call.arguments | boost::adaptors::reversed)
-				_visitExpression(arg);
+			size_t visited = 0;
+			for (size_t j = 0; j < _call.arguments.size(); j++)
+			{
+				size_t const i = _call.arguments.size() - j - 1;
+				if (!(fun.second.literalArguments && (*fun.second.literalArguments)[i]))
+				{
+					_visitExpression(_call.arguments[i]);
+					visited++;
+				}
+			}
 
-			for (size_t i = 0; i < parameters; i++)
+			for (size_t i = 0; i < visited; i++)
 				_assembly.appendInstruction(evmasm::Instruction::POP);
 
 			for (size_t i = 0; i < returns; i++)

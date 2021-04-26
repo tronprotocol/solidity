@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <libsolidity/ast/AST.h>
 #include <libsolidity/ast/TypeProvider.h>
@@ -352,6 +353,7 @@ TypePointer TypeProvider::forLiteral(Literal const& _literal)
 	case Token::Number:
 		return rationalNumber(_literal);
 	case Token::StringLiteral:
+	case Token::UnicodeStringLiteral:
 	case Token::HexStringLiteral:
 		return stringLiteral(_literal.value());
 	default:

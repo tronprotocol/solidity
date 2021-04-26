@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author julius <djudju@protonmail.com>
  * @date 2019
@@ -92,7 +93,7 @@ SourceLocation const ASTJsonImporter::createSourceLocation(Json::Value const& _n
 {
 	astAssert(member(_node, "src").isString(), "'src' must be a string");
 
-	return solidity::langutil::parseSourceLocation(_node["src"].asString(), m_currentSourceName, int(m_sourceLocations.size()));
+	return solidity::langutil::parseSourceLocation(_node["src"].asString(), m_currentSourceName, m_sourceLocations.size());
 }
 
 template<class T>
@@ -399,7 +400,7 @@ ASTPointer<FunctionDefinition> ASTJsonImporter::createFunctionDefinition(Json::V
 	return createASTNode<FunctionDefinition>(
 		_node,
 		memberAsASTString(_node, "name"),
-		visibility(_node),
+		kind == Token::Constructor ? Visibility::Default : visibility(_node),
 		stateMutability(_node),
 		kind,
 		memberAsBool(_node, "virtual"),
@@ -441,6 +442,7 @@ ASTPointer<VariableDeclaration> ASTJsonImporter::createVariableDeclaration(Json:
 		make_shared<ASTString>(member(_node, "name").asString()),
 		nullOrCast<Expression>(member(_node, "value")),
 		visibility(_node),
+		_node["documentation"].isNull() ? nullptr : createDocumentation(member(_node, "documentation")),
 		memberAsBool(_node, "stateVariable"),
 		_node.isMember("indexed") ? memberAsBool(_node, "indexed") : false,
 		mutability,
@@ -884,7 +886,8 @@ ASTPointer<StructuredDocumentation> ASTJsonImporter::createDocumentation(Json::V
 
 Json::Value ASTJsonImporter::member(Json::Value const& _node, string const& _name)
 {
-	astAssert(_node.isMember(_name), "Node '" + _node["nodeType"].asString() + "' (id " + _node["id"].asString() + ") is missing field '" + _name + "'.");
+	if (!_node.isMember(_name))
+		return Json::nullValue;
 	return _node[_name];
 }
 
@@ -940,6 +943,10 @@ Token ASTJsonImporter::literalTokenKind(Json::Value const& _node)
 		tok = Token::Number;
 	else if (_node["kind"].asString() == "string")
 		tok = Token::StringLiteral;
+	else if (_node["kind"].asString() == "unicodeString")
+		tok = Token::UnicodeStringLiteral;
+	else if (_node["kind"].asString() == "hexString")
+		tok = Token::HexStringLiteral;
 	else if (_node["kind"].asString() == "bool")
 		tok = (member(_node, "value").asString() == "true") ? Token::TrueLiteral : Token::FalseLiteral;
 	else
@@ -1000,10 +1007,8 @@ Literal::SubDenomination ASTJsonImporter::subdenomination(Json::Value const& _no
 
 	if (subDenStr == "wei")
 		return Literal::SubDenomination::Wei;
-	else if (subDenStr == "szabo")
-		return Literal::SubDenomination::Szabo;
-	else if (subDenStr == "finney")
-		return Literal::SubDenomination::Finney;
+	else if (subDenStr == "gwei")
+		return Literal::SubDenomination::Gwei;
 	else if (subDenStr == "ether")
 		return Literal::SubDenomination::Ether;
 	else if (subDenStr == "seconds")

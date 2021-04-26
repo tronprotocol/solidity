@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -191,7 +192,7 @@ size_t ContractCompiler::packIntoContractCreator(ContractDefinition const& _cont
 	CompilerContext::LocationSetter locationSetter(m_context, _contract);
 	m_context << deployRoutine;
 
-	solAssert(m_context.runtimeSub() != size_t(-1), "Runtime sub not registered");
+	solAssert(m_context.runtimeSub() != numeric_limits<size_t>::max(), "Runtime sub not registered");
 
 	ContractType contractType(_contract);
 	auto const& immutables = contractType.immutableVariables();
@@ -227,7 +228,7 @@ size_t ContractCompiler::deployLibrary(ContractDefinition const& _contract)
 
 	CompilerContext::LocationSetter locationSetter(m_context, _contract);
 
-	solAssert(m_context.runtimeSub() != size_t(-1), "Runtime sub not registered");
+	solAssert(m_context.runtimeSub() != numeric_limits<size_t>::max(), "Runtime sub not registered");
 	m_context.pushSubroutineSize(m_context.runtimeSub());
 	m_context.pushSubroutineOffset(m_context.runtimeSub());
 	// This code replaces the address added by appendDeployTimeAddress().
@@ -355,11 +356,11 @@ void ContractCompiler::appendInternalSelector(
 		m_context << dupInstruction(1) << u256(FixedHash<4>::Arith(pivot)) << Instruction::GT;
 		evmasm::AssemblyItem lessTag{m_context.appendConditionalJump()};
 		// Here, we have funid >= pivot
-		vector<FixedHash<4>> larger{_ids.begin() + pivotIndex, _ids.end()};
+		vector<FixedHash<4>> larger{_ids.begin() + static_cast<ptrdiff_t>(pivotIndex), _ids.end()};
 		appendInternalSelector(_entryPoints, larger, _notFoundTag, _runs);
 		m_context << lessTag;
 		// Here, we have funid < pivot
-		vector<FixedHash<4>> smaller{_ids.begin(), _ids.begin() + pivotIndex};
+		vector<FixedHash<4>> smaller{_ids.begin(), _ids.begin() + static_cast<ptrdiff_t>(pivotIndex)};
 		appendInternalSelector(_entryPoints, smaller, _notFoundTag, _runs);
 	}
 	else
@@ -518,8 +519,8 @@ void ContractCompiler::appendFunctionSelector(ContractDefinition const& _contrac
 		m_context << returnTag;
 		// Return tag and input parameters get consumed.
 		m_context.adjustStackOffset(
-			CompilerUtils(m_context).sizeOnStack(functionType->returnParameterTypes()) -
-			CompilerUtils(m_context).sizeOnStack(functionType->parameterTypes()) -
+			static_cast<int>(CompilerUtils::sizeOnStack(functionType->returnParameterTypes())) -
+			static_cast<int>(CompilerUtils::sizeOnStack(functionType->parameterTypes())) -
 			1
 		);
 		// Consumes the return parameters.
@@ -595,7 +596,7 @@ bool ContractCompiler::visit(FunctionDefinition const& _function)
 	unsigned parametersSize = CompilerUtils::sizeOnStack(_function.parameters());
 	if (!_function.isConstructor())
 		// adding 1 for return address.
-		m_context.adjustStackOffset(parametersSize + 1);
+		m_context.adjustStackOffset(static_cast<int>(parametersSize) + 1);
 	for (ASTPointer<VariableDeclaration> const& variable: _function.parameters())
 	{
 		m_context.addVariable(*variable, parametersSize);
@@ -615,7 +616,7 @@ bool ContractCompiler::visit(FunctionDefinition const& _function)
 	m_breakTags.clear();
 	m_continueTags.clear();
 	m_currentFunction = &_function;
-	m_modifierDepth = -1;
+	m_modifierDepth = numeric_limits<unsigned>::max();
 	m_scopeStackHeight.clear();
 	m_context.setModifierDepth(0);
 
@@ -633,18 +634,18 @@ bool ContractCompiler::visit(FunctionDefinition const& _function)
 	unsigned const c_returnValuesSize = CompilerUtils::sizeOnStack(_function.returnParameters());
 
 	vector<int> stackLayout;
-	stackLayout.push_back(c_returnValuesSize); // target of return address
+	stackLayout.push_back(static_cast<int>(c_returnValuesSize)); // target of return address
 	stackLayout += vector<int>(c_argumentsSize, -1); // discard all arguments
-	for (unsigned i = 0; i < c_returnValuesSize; ++i)
-		stackLayout.push_back(i);
+	for (size_t i = 0; i < c_returnValuesSize; ++i)
+		stackLayout.push_back(static_cast<int>(i));
 
 	if (stackLayout.size() > 17)
 		BOOST_THROW_EXCEPTION(
-			CompilerError() <<
+			StackTooDeepError() <<
 			errinfo_sourceLocation(_function.location()) <<
 			errinfo_comment("Stack too deep, try removing local variables.")
 		);
-	while (stackLayout.back() != int(stackLayout.size() - 1))
+	while (stackLayout.back() != static_cast<int>(stackLayout.size() - 1))
 		if (stackLayout.back() < 0)
 		{
 			m_context << Instruction::POP;
@@ -652,11 +653,11 @@ bool ContractCompiler::visit(FunctionDefinition const& _function)
 		}
 		else
 		{
-			m_context << swapInstruction(stackLayout.size() - stackLayout.back() - 1);
-			swap(stackLayout[stackLayout.back()], stackLayout.back());
+			m_context << swapInstruction(stackLayout.size() - static_cast<unsigned>(stackLayout.back()) - 1u);
+			swap(stackLayout[static_cast<size_t>(stackLayout.back())], stackLayout.back());
 		}
-	for (int i = 0; i < int(stackLayout.size()); ++i)
-		if (stackLayout[i] != i)
+	for (size_t i = 0; i < stackLayout.size(); ++i)
+		if (stackLayout[i] != static_cast<int>(i))
 			solAssert(false, "Invalid stack layout on cleanup.");
 
 	for (ASTPointer<VariableDeclaration> const& variable: _function.parameters() + _function.returnParameters())
@@ -683,7 +684,7 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 	{
 		auto ref = _inlineAssembly.annotation().externalReferences.find(&_identifier);
 		if (ref == _inlineAssembly.annotation().externalReferences.end())
-			return size_t(-1);
+			return numeric_limits<size_t>::max();
 		return ref->second.valueSize;
 	};
 	identifierAccess.generateCode = [&](yul::Identifier const& _identifier, yul::IdentifierContext _context, yul::AbstractAssembly& _assembly)
@@ -702,7 +703,7 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 				functionDef = &functionDef->resolveVirtual(m_context.mostDerivedContract());
 				auto functionEntryLabel = m_context.functionEntryLabel(*functionDef).pushTag();
 				solAssert(functionEntryLabel.data() <= std::numeric_limits<size_t>::max(), "");
-				_assembly.appendLabelReference(size_t(functionEntryLabel.data()));
+				_assembly.appendLabelReference(static_cast<size_t>(functionEntryLabel.data()));
 				// If there is a runtime context, we have to merge both labels into the same
 				// stack slot in case we store it in storage.
 				if (CompilerContext* rtc = m_context.runtimeContext())
@@ -711,7 +712,7 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 					_assembly.appendInstruction(Instruction::MUL);
 					auto runtimeEntryLabel = rtc->functionEntryLabel(*functionDef).toSubAssemblyTag(m_context.runtimeSub());
 					solAssert(runtimeEntryLabel.data() <= std::numeric_limits<size_t>::max(), "");
-					_assembly.appendLabelReference(size_t(runtimeEntryLabel.data()));
+					_assembly.appendLabelReference(static_cast<size_t>(runtimeEntryLabel.data()));
 					_assembly.appendInstruction(Instruction::OR);
 				}
 			}
@@ -778,7 +779,7 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 				}
 				else if (m_context.isLocalVariable(decl))
 				{
-					int stackDiff = _assembly.stackHeight() - m_context.baseStackOffsetOfVariable(*variable);
+					unsigned stackDiff = static_cast<unsigned>(_assembly.stackHeight()) - m_context.baseStackOffsetOfVariable(*variable);
 					if (ref->second.isSlot || ref->second.isOffset)
 					{
 						solAssert(variable->type()->dataStoredIn(DataLocation::Storage), "");
@@ -804,7 +805,7 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 						solAssert(variable->type()->sizeOnStack() == 1, "");
 					if (stackDiff < 1 || stackDiff > 16)
 						BOOST_THROW_EXCEPTION(
-							CompilerError() <<
+							StackTooDeepError() <<
 							errinfo_sourceLocation(_inlineAssembly.location()) <<
 							errinfo_comment("Stack too deep, try removing local variables.")
 						);
@@ -822,7 +823,7 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 			}
 			else
 				solAssert(false, "Invalid declaration type.");
-			solAssert(_assembly.stackHeight() - depositBefore == int(ref->second.valueSize), "");
+			solAssert(_assembly.stackHeight() - depositBefore == static_cast<int>(ref->second.valueSize), "");
 		}
 		else
 		{
@@ -834,10 +835,10 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 				"Can only assign to stack variables in inline assembly."
 			);
 			solAssert(variable->type()->sizeOnStack() == 1, "");
-			int stackDiff = _assembly.stackHeight() - m_context.baseStackOffsetOfVariable(*variable) - 1;
+			unsigned stackDiff = static_cast<unsigned>(_assembly.stackHeight()) - m_context.baseStackOffsetOfVariable(*variable) - 1;
 			if (stackDiff > 16 || stackDiff < 1)
 				BOOST_THROW_EXCEPTION(
-					CompilerError() <<
+					StackTooDeepError() <<
 					errinfo_sourceLocation(_inlineAssembly.location()) <<
 					errinfo_comment("Stack too deep(" + to_string(stackDiff) + "), try removing local variables.")
 				);
@@ -881,7 +882,7 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 		false,
 		m_optimiserSettings.optimizeStackAllocation
 	);
-	m_context.setStackOffset(startStackHeight);
+	m_context.setStackOffset(static_cast<int>(startStackHeight));
 	return false;
 }
 
@@ -920,7 +921,7 @@ bool ContractCompiler::visit(TryStatement const& _tryStatement)
 				solAssert(params[i] && exprTypes[i] && *params[i]->annotation().type == *exprTypes[i], "");
 		}
 		else
-			CompilerUtils(m_context).popStackSlots(returnSize);
+			CompilerUtils(m_context).popStackSlots(static_cast<size_t>(returnSize));
 
 		_tryStatement.clauses().front()->accept(*this);
 	}
@@ -943,7 +944,7 @@ void ContractCompiler::handleCatch(vector<ASTPointer<TryCatchClause>> const& _ca
 		else
 			solAssert(false, "");
 
-	solAssert(_catchClauses.size() == size_t(1 + (structured ? 1 : 0) + (fallback ? 1 : 0)), "");
+	solAssert(_catchClauses.size() == 1ul + (structured ? 1 : 0) + (fallback ? 1 : 0), "");
 
 	evmasm::AssemblyItem endTag = m_context.newTag();
 	evmasm::AssemblyItem fallbackTag = m_context.newTag();

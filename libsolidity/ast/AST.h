@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -31,6 +32,7 @@
 #include <liblangutil/SourceLocation.h>
 #include <libevmasm/Instruction.h>
 #include <libsolutil/FixedHash.h>
+#include <libsolutil/LazyInit.h>
 
 #include <boost/noncopyable.hpp>
 #include <json/json.h>
@@ -87,7 +89,7 @@ public:
 	virtual ~ASTNode() {}
 
 	/// @returns an identifier of this AST node that is unique for a single compilation run.
-	int64_t id() const { return m_id; }
+	int64_t id() const { return int64_t(m_id); }
 
 	virtual void accept(ASTVisitor& _visitor) = 0;
 	virtual void accept(ASTConstVisitor& _visitor) const = 0;
@@ -504,8 +506,6 @@ public:
 
 	/// Returns the constructor or nullptr if no constructor was specified.
 	FunctionDefinition const* constructor() const;
-	/// @returns true iff the constructor of this contract is public (or non-existing).
-	bool constructorIsPublic() const;
 	/// @returns true iff the contract can be deployed, i.e. is not abstract and has a
 	/// public constructor.
 	/// Should only be called after the type checker has run.
@@ -536,8 +536,8 @@ private:
 	ContractKind m_contractKind;
 	bool m_abstract{false};
 
-	mutable std::unique_ptr<std::vector<std::pair<util::FixedHash<4>, FunctionTypePointer>>> m_interfaceFunctionList[2];
-	mutable std::unique_ptr<std::vector<EventDefinition const*>> m_interfaceEvents;
+	util::LazyInit<std::vector<std::pair<util::FixedHash<4>, FunctionTypePointer>>> m_interfaceFunctionList[2];
+	util::LazyInit<std::vector<EventDefinition const*>> m_interfaceEvents;
 };
 
 class InheritanceSpecifier: public ASTNode
@@ -798,6 +798,7 @@ public:
 	void accept(ASTConstVisitor& _visitor) const override;
 
 	StateMutability stateMutability() const { return m_stateMutability; }
+	bool libraryFunction() const;
 	bool isOrdinary() const { return m_kind == Token::Function; }
 	bool isConstructor() const { return m_kind == Token::Constructor; }
 	bool isFallback() const { return m_kind == Token::Fallback; }
@@ -806,15 +807,16 @@ public:
 	bool isPayable() const { return m_stateMutability == StateMutability::Payable; }
 	std::vector<ASTPointer<ModifierInvocation>> const& modifiers() const { return m_functionModifiers; }
 	Block const& body() const { solAssert(m_body, ""); return *m_body; }
+	Visibility defaultVisibility() const override;
 	bool isVisibleInContract() const override
 	{
-		return Declaration::isVisibleInContract() && isOrdinary();
+		return isOrdinary() && Declaration::isVisibleInContract();
 	}
 	bool isVisibleViaContractTypeAccess() const override
 	{
-		return visibility() >= Visibility::Public;
+		return isOrdinary() && visibility() >= Visibility::Public;
 	}
-	bool isPartOfExternalInterface() const override { return isPublic() && isOrdinary(); }
+	bool isPartOfExternalInterface() const override { return isOrdinary() && isPublic(); }
 
 	/// @returns the external signature of the function
 	/// That consists of the name of the function followed by the types of the
@@ -823,8 +825,6 @@ public:
 
 	/// @returns the external identifier of this function (the hash of the signature) as a hex string.
 	std::string externalIdentifierHex() const;
-
-	ContractKind inContractKind() const;
 
 	TypePointer type() const override;
 	TypePointer typeViaContractName() const override;
@@ -858,7 +858,7 @@ private:
  * Declaration of a variable. This can be used in various places, e.g. in function parameter
  * lists, struct definitions and even function bodies.
  */
-class VariableDeclaration: public Declaration
+class VariableDeclaration: public Declaration, public StructurallyDocumented
 {
 public:
 	enum Location { Unspecified, Storage, Memory, CallData };
@@ -881,6 +881,7 @@ public:
 		ASTPointer<ASTString> const& _name,
 		ASTPointer<Expression> _value,
 		Visibility _visibility,
+		ASTPointer<StructuredDocumentation> const _documentation = nullptr,
 		bool _isStateVar = false,
 		bool _isIndexed = false,
 		Mutability _mutability = Mutability::Mutable,
@@ -888,19 +889,23 @@ public:
 		Location _referenceLocation = Location::Unspecified
 	):
 		Declaration(_id, _location, _name, _visibility),
+		StructurallyDocumented(std::move(_documentation)),
 		m_typeName(std::move(_type)),
 		m_value(std::move(_value)),
 		m_isStateVariable(_isStateVar),
 		m_isIndexed(_isIndexed),
 		m_mutability(_mutability),
 		m_overrides(std::move(_overrides)),
-		m_location(_referenceLocation) {}
+		m_location(_referenceLocation)
+	{
+		solAssert(m_typeName, "");
+	}
 
 
 	void accept(ASTVisitor& _visitor) override;
 	void accept(ASTConstVisitor& _visitor) const override;
 
-	TypeName* typeName() const { return m_typeName.get(); }
+	TypeName const& typeName() const { return *m_typeName; }
 	ASTPointer<Expression> const& value() const { return m_value; }
 
 	bool isLValue() const override;
@@ -926,6 +931,8 @@ public:
 	/// @returns true if this variable is a parameter or return parameter of an internal function
 	/// or a function type of internal visibility.
 	bool isInternalCallableParameter() const;
+	/// @returns true if this variable is the parameter of a constructor.
+	bool isConstructorParameter() const;
 	/// @returns true iff this variable is a parameter(or return parameter of a library function
 	bool isLibraryFunctionParameter() const;
 	/// @returns true if the type of the variable does not need to be specified, i.e. it is declared
@@ -961,7 +968,7 @@ protected:
 	Visibility defaultVisibility() const override { return Visibility::Internal; }
 
 private:
-	ASTPointer<TypeName> m_typeName; ///< can be empty ("var")
+	ASTPointer<TypeName> m_typeName;
 	/// Initially assigned value, can be missing. For local variables, this is stored inside
 	/// VariableDeclarationStatement and not here.
 	ASTPointer<Expression> m_value;
@@ -2082,8 +2089,7 @@ public:
 	{
 		None = static_cast<int>(Token::Illegal),
 		Wei = static_cast<int>(Token::SubWei),
-		Szabo = static_cast<int>(Token::SubSzabo),
-		Finney = static_cast<int>(Token::SubFinney),
+		Gwei = static_cast<int>(Token::SubGwei),
 		Ether = static_cast<int>(Token::SubEther),
 		Sun = static_cast<int>(Token::SubSun),
 		Trx = static_cast<int>(Token::SubTrx),

@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2015
@@ -78,6 +79,8 @@ struct StructurallyDocumentedAnnotation
 
 	/// Mapping docstring tag name -> content.
 	std::multimap<std::string, DocTag> docTags;
+	/// contract that @inheritdoc references if it exists
+	ContractDefinition const* inheritdocReference = nullptr;
 };
 
 struct SourceUnitAnnotation: ASTAnnotation
@@ -136,6 +139,9 @@ struct StructDeclarationAnnotation: TypeDeclarationAnnotation
 	/// recursion immediately raises an error.
 	/// Will be filled in by the DeclarationTypeChecker.
 	std::optional<bool> recursive;
+	/// Whether the struct contains a mapping type, either directly or, indirectly inside another
+	/// struct or an array.
+	std::optional<bool> containsNestedMapping;
 };
 
 struct ContractDefinitionAnnotation: TypeDeclarationAnnotation, StructurallyDocumentedAnnotation
@@ -171,7 +177,7 @@ struct ModifierDefinitionAnnotation: CallableDeclarationAnnotation, Structurally
 {
 };
 
-struct VariableDeclarationAnnotation: DeclarationAnnotation
+struct VariableDeclarationAnnotation: DeclarationAnnotation, StructurallyDocumentedAnnotation
 {
 	/// Type of variable (type of identifier referencing this variable).
 	TypePointer type = nullptr;
@@ -250,7 +256,7 @@ struct ExpressionAnnotation: ASTAnnotation
 	bool lValueOfOrdinaryAssignment = false;
 
 	/// Types and - if given - names of arguments if the expr. is a function
-	/// that is called, used for overload resoultion
+	/// that is called, used for overload resolution
 	std::optional<FuncCallArguments> arguments;
 };
 

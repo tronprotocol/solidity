@@ -31,5 +31,5 @@ contract C
 // ====
 // SMTSolvers: z3
 // ----
-// Warning: (329-344): Assertion violation happens here
-// Warning: (380-395): Assertion violation happens here
+// Warning 6328: (329-344): Assertion violation happens here
+// Warning 6328: (380-395): Assertion violation happens here

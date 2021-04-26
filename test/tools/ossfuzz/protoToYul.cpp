@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <test/tools/ossfuzz/protoToYul.h>
 #include <test/tools/ossfuzz/yulOptimizerFuzzDictionary.h>
@@ -178,19 +179,27 @@ bool ProtoConverter::functionCallNotPossible(FunctionCall_Returns _type)
 		(_type == FunctionCall::MULTIASSIGN && !varDeclAvailable());
 }
 
+unsigned ProtoConverter::numVarsInScope()
+{
+	if (m_inFunctionDef)
+		return m_currentFuncVars.size();
+	else
+		return m_currentGlobalVars.size();
+}
+
 void ProtoConverter::visit(VarRef const& _x)
 {
 	if (m_inFunctionDef)
 	{
 		// Ensure that there is at least one variable declaration to reference in function scope.
 		yulAssert(m_currentFuncVars.size() > 0, "Proto fuzzer: No variables to reference.");
-		m_output << *m_currentFuncVars[_x.varnum() % m_currentFuncVars.size()];
+		m_output << *m_currentFuncVars[static_cast<size_t>(_x.varnum()) % m_currentFuncVars.size()];
 	}
 	else
 	{
 		// Ensure that there is at least one variable declaration to reference in nested scopes.
 		yulAssert(m_currentGlobalVars.size() > 0, "Proto fuzzer: No global variables to reference.");
-		m_output << *m_currentGlobalVars[_x.varnum() % m_currentGlobalVars.size()];
+		m_output << *m_currentGlobalVars[static_cast<size_t>(_x.varnum()) % m_currentGlobalVars.size()];
 	}
 }
 
@@ -622,9 +631,6 @@ void ProtoConverter::visit(NullaryOp const& _x)
 {
 	switch (_x.op())
 	{
-	case NullaryOp::PC:
-		m_output << "pc()";
-		break;
 	case NullaryOp::MSIZE:
 		m_output << "msize()";
 		break;
@@ -830,18 +836,18 @@ void ProtoConverter::visitFunctionInputParams(FunctionCall const& _x, unsigned _
 	case 4:
 		visit(_x.in_param4());
 		m_output << ", ";
-		BOOST_FALLTHROUGH;
+		[[fallthrough]];
 	case 3:
 		visit(_x.in_param3());
 		m_output << ", ";
-		BOOST_FALLTHROUGH;
+		[[fallthrough]];
 	case 2:
 		visit(_x.in_param2());
 		m_output << ", ";
-		BOOST_FALLTHROUGH;
+		[[fallthrough]];
 	case 1:
 		visit(_x.in_param1());
-		BOOST_FALLTHROUGH;
+		[[fallthrough]];
 	case 0:
 		break;
 	default:
@@ -966,23 +972,43 @@ void ProtoConverter::visit(FunctionCall const& _x)
 			"Proto fuzzer: Function call with too many output params encountered."
 		);
 
+		// Return early if numOutParams > number of available variables
+		if (numOutParams > numVarsInScope())
+			return;
+
+		// Copy variables in scope in order to prevent repeated references
+		vector<string> variables;
+		if (m_inFunctionDef)
+			for (auto var: m_currentFuncVars)
+				variables.push_back(*var);
+		else
+			for (auto var: m_currentGlobalVars)
+				variables.push_back(*var);
+
+		auto refVar = [](vector<string>& _var, unsigned _rand, bool _comma = true) -> string
+			{
+				auto index = _rand % _var.size();
+				string ref = _var[index];
+				_var.erase(_var.begin() + index);
+				if (_comma)
+					ref += ", ";
+				return ref;
+			};
+
 		// Convert LHS of multi assignment
 		// We reverse the order of out param visits since the order does not matter.
 		// This helps reduce the size of this switch statement.
 		switch (numOutParams)
 		{
 		case 4:
-			visit(_x.out_param4());
-			m_output << ", ";
-			BOOST_FALLTHROUGH;
+			m_output << refVar(variables, _x.out_param4().varnum());
+			[[fallthrough]];
 		case 3:
-			visit(_x.out_param3());
-			m_output << ", ";
-			BOOST_FALLTHROUGH;
+			m_output << refVar(variables, _x.out_param3().varnum());
+			[[fallthrough]];
 		case 2:
-			visit(_x.out_param2());
-			m_output << ", ";
-			visit(_x.out_param1());
+			m_output << refVar(variables, _x.out_param2().varnum());
+			m_output << refVar(variables, _x.out_param1().varnum(), false);
 			break;
 		default:
 			yulAssert(false, "Proto fuzzer: Function call with too many or too few input parameters.");
@@ -1819,8 +1845,12 @@ void ProtoConverter::visit(LeaveStmt const&)
 string ProtoConverter::getObjectIdentifier(unsigned _x)
 {
 	unsigned currentId = currentObjectId();
-	yulAssert(m_objectScopeTree.size() > currentId, "Proto fuzzer: Error referencing object");
-	std::vector<std::string> objectIdsInScope = m_objectScopeTree[currentId];
+	string currentObjName = "object" + to_string(currentId);
+	yulAssert(
+		m_objectScope.count(currentObjName) && m_objectScope.at(currentObjName).size() > 0,
+		"Yul proto fuzzer: Error referencing object"
+	);
+	vector<string> objectIdsInScope = m_objectScope.at(currentObjName);
 	return objectIdsInScope[_x % objectIdsInScope.size()];
 }
 
@@ -1846,31 +1876,33 @@ void ProtoConverter::visit(Object const& _x)
 	visit(_x.code());
 	if (_x.has_data())
 		visit(_x.data());
-	if (_x.has_sub_obj())
-		visit(_x.sub_obj());
+	for (auto const& subObj: _x.sub_obj())
+		visit(subObj);
 	m_output << "}\n";
 }
 
 void ProtoConverter::buildObjectScopeTree(Object const& _x)
 {
 	// Identifies object being visited
-	string objectId = newObjectId(false);
-	vector<string> node{objectId};
+	string objectName = newObjectId(false);
+	vector<string> node{objectName};
 	if (_x.has_data())
 		node.push_back(s_dataIdentifier);
-	if (_x.has_sub_obj())
+	for (auto const& subObj: _x.sub_obj())
 	{
 		// Identifies sub object whose numeric suffix is
 		// m_objectId
-		string subObjectId = "object" + to_string(m_objectId);
-		node.push_back(subObjectId);
-		// TODO: Add sub-object to object's ancestors once
-		// nested access is implemented.
-		m_objectScopeTree.push_back(node);
-		buildObjectScopeTree(_x.sub_obj());
+		unsigned subObjectId = m_objectId;
+		string subObjectName = "object" + to_string(subObjectId);
+		node.push_back(subObjectName);
+		buildObjectScopeTree(subObj);
+		// Add sub-object to object's ancestors
+		yulAssert(m_objectScope.count(subObjectName), "Yul proto fuzzer: Invalid object hierarchy");
+		for (string const& item: m_objectScope.at(subObjectName))
+			if (item != subObjectName)
+				node.push_back(subObjectName + "." + item);
 	}
-	else
-		m_objectScopeTree.push_back(node);
+	m_objectScope.emplace(objectName, node);
 }
 
 void ProtoConverter::visit(Program const& _x)

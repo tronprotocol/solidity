@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2015
@@ -173,7 +174,7 @@ BOOST_AUTO_TEST_CASE(store_keccak256)
 	char const* sourceCode = R"(
 		contract test {
 			bytes32 public shaValue;
-			constructor() public {
+			constructor() {
 				shaValue = keccak256(abi.encodePacked(this));
 			}
 		}
@@ -187,7 +188,7 @@ BOOST_AUTO_TEST_CASE(updating_store)
 		contract test {
 			uint data;
 			uint data2;
-			constructor() public {
+			constructor() {
 				data = 1;
 				data = 2;
 				data2 = 0;

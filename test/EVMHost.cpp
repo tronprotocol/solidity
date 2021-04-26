@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * EVM execution host, i.e. component that implements a simulated Ethereum blockchain
  * for testing purposes.
@@ -223,7 +224,7 @@ evmc::result EVMHost::call(evmc_message const& _message) noexcept
 
 	if (message.kind == EVMC_CREATE || message.kind == EVMC_CREATE2)
 	{
-		result.gas_left -= evmasm::GasCosts::createDataGas * result.output_size;
+		result.gas_left -= static_cast<int64_t>(evmasm::GasCosts::createDataGas * result.output_size);
 		if (result.gas_left < 0)
 		{
 			result.gas_left = 0;

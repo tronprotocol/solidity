@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2015
@@ -33,19 +34,22 @@
 #include <liblangutil/Exceptions.h>
 
 #include <libsolutil/StringUtils.h>
+#include <libsolutil/CommonData.h>
 
 #include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 using namespace std;
+using namespace solidity;
 using namespace solidity::langutil;
+using namespace solidity::frontend;
 
-namespace solidity::frontend
-{
 
 bool ReferencesResolver::resolve(ASTNode const& _root)
 {
+	auto errorWatcher = m_errorReporter.errorWatcher();
 	_root.accept(*this);
-	return !m_errorOccurred;
+	return errorWatcher.ok();
 }
 
 bool ReferencesResolver::visit(Block const& _block)
@@ -104,6 +108,14 @@ void ReferencesResolver::endVisit(VariableDeclarationStatement const& _varDeclSt
 			m_resolver.activateVariable(var->name());
 }
 
+bool ReferencesResolver::visit(VariableDeclaration const& _varDecl)
+{
+	if (_varDecl.documentation())
+		resolveInheritDoc(*_varDecl.documentation(), _varDecl.annotation());
+
+	return true;
+}
+
 bool ReferencesResolver::visit(Identifier const& _identifier)
 {
 	auto declarations = m_resolver.nameFromCurrentScope(_identifier.name());
@@ -118,7 +130,7 @@ bool ReferencesResolver::visit(Identifier const& _identifier)
 			else
 				errorMessage += " Did you mean " + std::move(suggestions) + "?";
 		}
-		declarationError(_identifier.location(), errorMessage);
+		m_errorReporter.declarationError(7576_error, _identifier.location(), errorMessage);
 	}
 	else if (declarations.size() == 1)
 		_identifier.annotation().referencedDeclaration = declarations.front();
@@ -130,6 +142,10 @@ bool ReferencesResolver::visit(Identifier const& _identifier)
 bool ReferencesResolver::visit(FunctionDefinition const& _functionDefinition)
 {
 	m_returnParameters.push_back(_functionDefinition.returnParameterList().get());
+
+	if (_functionDefinition.documentation())
+		resolveInheritDoc(*_functionDefinition.documentation(), _functionDefinition.annotation());
+
 	return true;
 }
 
@@ -139,9 +155,13 @@ void ReferencesResolver::endVisit(FunctionDefinition const&)
 	m_returnParameters.pop_back();
 }
 
-bool ReferencesResolver::visit(ModifierDefinition const&)
+bool ReferencesResolver::visit(ModifierDefinition const& _modifierDefinition)
 {
 	m_returnParameters.push_back(nullptr);
+
+	if (_modifierDefinition.documentation())
+		resolveInheritDoc(*_modifierDefinition.documentation(), _modifierDefinition.annotation());
+
 	return true;
 }
 
@@ -156,7 +176,7 @@ void ReferencesResolver::endVisit(UserDefinedTypeName const& _typeName)
 	Declaration const* declaration = m_resolver.pathFromCurrentScope(_typeName.namePath());
 	if (!declaration)
 	{
-		fatalDeclarationError(_typeName.location(), "Identifier not found or not unique.");
+		m_errorReporter.fatalDeclarationError(7920_error, _typeName.location(), "Identifier not found or not unique.");
 		return;
 	}
 
@@ -183,6 +203,10 @@ bool ReferencesResolver::visit(Return const& _return)
 
 void ReferencesResolver::operator()(yul::FunctionDefinition const& _function)
 {
+	validateYulIdentifierName(_function.name, _function.location);
+	for (yul::TypedName const& varName: _function.parameters + _function.returnVariables)
+		validateYulIdentifierName(varName.name, varName.location);
+
 	bool wasInsideFunction = m_yulInsideFunction;
 	m_yulInsideFunction = true;
 	this->operator()(_function.body);
@@ -191,9 +215,10 @@ void ReferencesResolver::operator()(yul::FunctionDefinition const& _function)
 
 void ReferencesResolver::operator()(yul::Identifier const& _identifier)
 {
-	bool isSlot = boost::algorithm::ends_with(_identifier.name.str(), "_slot");
-	bool isOffset = boost::algorithm::ends_with(_identifier.name.str(), "_offset");
+	bool isSlot = boost::algorithm::ends_with(_identifier.name.str(), ".slot");
+	bool isOffset = boost::algorithm::ends_with(_identifier.name.str(), ".offset");
 
+	// Could also use `pathFromCurrentScope`, split by '.'
 	auto declarations = m_resolver.nameFromCurrentScope(_identifier.name.str());
 	if (isSlot || isOffset)
 	{
@@ -203,27 +228,53 @@ void ReferencesResolver::operator()(yul::Identifier const& _identifier)
 			return;
 		string realName = _identifier.name.str().substr(0, _identifier.name.str().size() - (
 			isSlot ?
-			string("_slot").size() :
-			string("_offset").size()
+			string(".slot").size() :
+			string(".offset").size()
 		));
 		if (realName.empty())
 		{
-			declarationError(_identifier.location, "In variable names _slot and _offset can only be used as a suffix.");
+			m_errorReporter.declarationError(
+				4794_error,
+				_identifier.location,
+				"In variable names .slot and .offset can only be used as a suffix."
+			);
 			return;
 		}
 		declarations = m_resolver.nameFromCurrentScope(realName);
+		if (!declarations.empty())
+			// To support proper path resolution, we have to use pathFromCurrentScope.
+			solAssert(!util::contains(realName, '.'), "");
 	}
 	if (declarations.size() > 1)
 	{
-		declarationError(_identifier.location, "Multiple matching identifiers. Resolving overloaded identifiers is not supported.");
+		m_errorReporter.declarationError(
+			4718_error,
+			_identifier.location,
+			"Multiple matching identifiers. Resolving overloaded identifiers is not supported."
+		);
 		return;
 	}
 	else if (declarations.size() == 0)
+	{
+		if (
+			boost::algorithm::ends_with(_identifier.name.str(), "_slot") ||
+			boost::algorithm::ends_with(_identifier.name.str(), "_offset")
+		)
+			m_errorReporter.declarationError(
+				9467_error,
+				_identifier.location,
+				"Identifier not found. Use ``.slot`` and ``.offset`` to access storage variables."
+			);
 		return;
+	}
 	if (auto var = dynamic_cast<VariableDeclaration const*>(declarations.front()))
 		if (var->isLocalVariable() && m_yulInsideFunction)
 		{
-			declarationError(_identifier.location, "Cannot access local Solidity variables from inside an inline assembly function.");
+			m_errorReporter.declarationError(
+				6578_error,
+				_identifier.location,
+				"Cannot access local Solidity variables from inside an inline assembly function."
+			);
 			return;
 		}
 
@@ -236,14 +287,11 @@ void ReferencesResolver::operator()(yul::VariableDeclaration const& _varDecl)
 {
 	for (auto const& identifier: _varDecl.variables)
 	{
-		bool isSlot = boost::algorithm::ends_with(identifier.name.str(), "_slot");
-		bool isOffset = boost::algorithm::ends_with(identifier.name.str(), "_offset");
+		validateYulIdentifierName(identifier.name, identifier.location);
 
-		string namePrefix = identifier.name.str().substr(0, identifier.name.str().find('.'));
-		if (isSlot || isOffset)
-			declarationError(identifier.location, "In variable declarations _slot and _offset can not be used as a suffix.");
-		else if (
-			auto declarations = m_resolver.nameFromCurrentScope(namePrefix);
+
+		if (
+			auto declarations = m_resolver.nameFromCurrentScope(identifier.name.str());
 			!declarations.empty()
 		)
 		{
@@ -251,11 +299,10 @@ void ReferencesResolver::operator()(yul::VariableDeclaration const& _varDecl)
 			for (auto const* decl: declarations)
 				ssl.append("The shadowed declaration is here:", decl->location());
 			if (!ssl.infos.empty())
-				declarationError(
+				m_errorReporter.declarationError(
+					3859_error,
 					identifier.location,
 					ssl,
-					namePrefix.size() < identifier.name.str().size() ?
-					"The prefix of this declaration conflicts with a declaration outside the inline assembly block." :
 					"This declaration shadows a declaration outside the inline assembly block."
 				);
 		}
@@ -265,22 +312,61 @@ void ReferencesResolver::operator()(yul::VariableDeclaration const& _varDecl)
 		visit(*_varDecl.value);
 }
 
-void ReferencesResolver::declarationError(SourceLocation const& _location, string const& _description)
+void ReferencesResolver::resolveInheritDoc(StructuredDocumentation const& _documentation, StructurallyDocumentedAnnotation& _annotation)
 {
-	m_errorOccurred = true;
-	m_errorReporter.declarationError(8532_error, _location, _description);
+	switch (_annotation.docTags.count("inheritdoc"))
+	{
+	case 0:
+		break;
+	case 1:
+	{
+		string const& name = _annotation.docTags.find("inheritdoc")->second.content;
+		vector<string> path;
+		boost::split(path, name, boost::is_any_of("."));
+		Declaration const* result = m_resolver.pathFromCurrentScope(path);
+
+		if (result == nullptr)
+		{
+			m_errorReporter.docstringParsingError(
+				9397_error,
+				_documentation.location(),
+				"Documentation tag @inheritdoc references inexistent contract \"" +
+				name +
+				"\"."
+			);
+			return;
+		}
+		else
+		{
+			_annotation.inheritdocReference = dynamic_cast<ContractDefinition const*>(result);
+
+			if (!_annotation.inheritdocReference)
+				m_errorReporter.docstringParsingError(
+					1430_error,
+					_documentation.location(),
+					"Documentation tag @inheritdoc reference \"" +
+					name +
+					"\" is not a contract."
+				);
+		}
+		break;
+	}
+	default:
+		m_errorReporter.docstringParsingError(
+			5142_error,
+			_documentation.location(),
+			"Documentation tag @inheritdoc can only be given once."
+		);
+		break;
+	}
 }
 
-void ReferencesResolver::declarationError(SourceLocation const& _location, SecondarySourceLocation const& _ssl, string const& _description)
+void ReferencesResolver::validateYulIdentifierName(yul::YulString _name, SourceLocation const& _location)
 {
-	m_errorOccurred = true;
-	m_errorReporter.declarationError(3881_error, _location, _ssl, _description);
-}
-
-void ReferencesResolver::fatalDeclarationError(SourceLocation const& _location, string const& _description)
-{
-	m_errorOccurred = true;
-	m_errorReporter.fatalDeclarationError(6546_error, _location, _description);
-}
-
+	if (util::contains(_name.str(), '.'))
+		m_errorReporter.declarationError(
+			3927_error,
+			_location,
+			"User-defined identifiers in inline assembly cannot contain '.'."
+		);
 }

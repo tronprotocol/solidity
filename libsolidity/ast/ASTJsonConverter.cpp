@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @date 2017
  * Converts the AST into json format
@@ -37,6 +38,7 @@
 #include <utility>
 #include <vector>
 #include <algorithm>
+#include <limits>
 
 using namespace std;
 using namespace solidity::langutil;
@@ -134,7 +136,7 @@ size_t ASTJsonConverter::sourceIndexFromLocation(SourceLocation const& _location
 	if (_location.source && m_sourceIndices.count(_location.source->name()))
 		return m_sourceIndices.at(_location.source->name());
 	else
-		return size_t(-1);
+		return numeric_limits<size_t>::max();
 }
 
 string ASTJsonConverter::sourceLocationToString(SourceLocation const& _location) const
@@ -201,7 +203,7 @@ Json::Value ASTJsonConverter::inlineAssemblyIdentifierToJson(pair<yul::Identifie
 
 void ASTJsonConverter::print(ostream& _stream, ASTNode const& _node)
 {
-	_stream << util::jsonPrettyPrint(toJson(_node));
+	_stream << util::jsonPrettyPrint(util::removeNullMembers(toJson(_node)));
 }
 
 Json::Value&& ASTJsonConverter::toJson(ASTNode const& _node)
@@ -349,12 +351,18 @@ bool ASTJsonConverter::visit(OverrideSpecifier const& _node)
 
 bool ASTJsonConverter::visit(FunctionDefinition const& _node)
 {
+	Visibility visibility;
+	if (_node.isConstructor())
+		visibility = _node.annotation().contract->abstract() ? Visibility::Internal : Visibility::Public;
+	else
+		visibility = _node.visibility();
+
 	std::vector<pair<string, Json::Value>> attributes = {
 		make_pair("name", _node.name()),
 		make_pair("documentation", _node.documentation() ? toJson(*_node.documentation()) : Json::nullValue),
 		make_pair("kind", TokenTraits::toString(_node.kind())),
 		make_pair("stateMutability", stateMutabilityToString(_node.stateMutability())),
-		make_pair("visibility", Declaration::visibilityToString(_node.visibility())),
+		make_pair("visibility", Declaration::visibilityToString(visibility)),
 		make_pair("virtual", _node.markedVirtual()),
 		make_pair("overrides", _node.overrides() ? toJson(*_node.overrides()) : Json::nullValue),
 		make_pair("parameters", toJson(_node.parameterList())),
@@ -364,6 +372,7 @@ bool ASTJsonConverter::visit(FunctionDefinition const& _node)
 		make_pair("implemented", _node.isImplemented()),
 		make_pair("scope", idOrNull(_node.scope()))
 	};
+
 	if (_node.isPartOfExternalInterface())
 		attributes.emplace_back("functionSelector", _node.externalIdentifierHex());
 	if (!_node.annotation().baseFunctions.empty())
@@ -378,7 +387,7 @@ bool ASTJsonConverter::visit(VariableDeclaration const& _node)
 {
 	std::vector<pair<string, Json::Value>> attributes = {
 		make_pair("name", _node.name()),
-		make_pair("typeName", toJsonOrNull(_node.typeName())),
+		make_pair("typeName", toJson(_node.typeName())),
 		make_pair("constant", _node.isConstant()),
 		make_pair("mutability", VariableDeclaration::mutabilityToString(_node.mutability())),
 		make_pair("stateVariable", _node.isStateVariable()),
@@ -391,6 +400,8 @@ bool ASTJsonConverter::visit(VariableDeclaration const& _node)
 	};
 	if (_node.isStateVariable() && _node.isPublic())
 		attributes.emplace_back("functionSelector", _node.externalIdentifierHex());
+	if (_node.isStateVariable() && _node.documentation())
+		attributes.emplace_back("documentation", toJson(*_node.documentation()));
 	if (m_inEvent)
 		attributes.emplace_back("indexed", _node.isIndexed());
 	if (!_node.annotation().baseFunctions.empty())
@@ -908,8 +919,11 @@ string ASTJsonConverter::literalTokenKind(Token _token)
 	case Token::Number:
 		return "number";
 	case Token::StringLiteral:
-	case Token::HexStringLiteral:
 		return "string";
+	case Token::UnicodeStringLiteral:
+		return "unicodeString";
+	case Token::HexStringLiteral:
+		return "hexString";
 	case Token::TrueLiteral:
 	case Token::FalseLiteral:
 		return "bool";

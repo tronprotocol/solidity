@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <cstdint>
 #include <cstddef>
@@ -120,6 +121,8 @@ private:
 	void closeFunctionScope();
 	/// Adds @a _vars to current scope
 	void addVarsToScope(std::vector<std::string> const& _vars);
+	/// @returns number of variables that are in scope
+	unsigned numVarsInScope();
 
 	std::string createHex(std::string const& _hexBytes);
 
@@ -349,8 +352,8 @@ private:
 	std::stack<std::set<u256>> m_switchLiteralSetPerScope;
 	// Look-up table per function type that holds the number of input (output) function parameters
 	std::map<std::string, std::pair<unsigned, unsigned>> m_functionSigMap;
-	/// Tree of objects and their scopes
-	std::vector<std::vector<std::string>> m_objectScopeTree;
+	/// Map of object name to list of sub-object namespace(s) in scope
+	std::map<std::string, std::vector<std::string>> m_objectScope;
 	// mod input/output parameters impose an upper bound on the number of input/output parameters a function may have.
 	static unsigned constexpr s_modInputParams = 5;
 	static unsigned constexpr s_modOutputParams = 5;

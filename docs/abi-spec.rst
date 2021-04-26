@@ -24,7 +24,7 @@ Function Selector
 =================
 
 The first four bytes of the call data for a function call specifies the function to be called. It is the
-first (left, high-order in big-endian) four bytes of the Keccak-256 (SHA-3) hash of the signature of
+first (left, high-order in big-endian) four bytes of the Keccak-256 hash of the signature of
 the function. The signature is defined as the canonical expression of the basic prototype without data
 location specifier, i.e.
 the function name with the parenthesised list of parameter types. Parameter types are split by a single
@@ -233,7 +233,7 @@ Given the contract:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.16 <0.7.0;
+    pragma solidity >=0.4.16 <0.8.0;
 
     contract Foo {
         function bar(bytes3[2] memory) public pure {}
@@ -537,11 +537,11 @@ For example,
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.5.0 <0.7.0;
+    pragma solidity >0.6.99 <0.8.0;
 
 
     contract Test {
-        constructor() public { b = hex"12345678901234567890123456789012"; }
+        constructor() { b = hex"12345678901234567890123456789012"; }
         event Event(uint indexed a, bytes32 b);
         event Event2(uint indexed a, bytes32 b);
         function foo(uint a) public { emit Event(a, b); }
@@ -586,7 +586,7 @@ As an example, the code
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.19 <0.7.0;
+    pragma solidity >=0.4.19 <0.8.0;
     pragma experimental ABIEncoderV2;
 
     contract Test {

@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * Component that verifies overloads, abstract contracts, function clashes and others
  * checks at contract or function level.
@@ -41,8 +42,8 @@ bool hasEqualNameAndParameters(T const& _a, B const& _b)
 {
 	return
 		_a.name() == _b.name() &&
-		FunctionType(_a).asCallableFunction(false)->hasEqualParameterTypes(
-			*FunctionType(_b).asCallableFunction(false)
+		FunctionType(_a).asExternallyCallableFunction(false)->hasEqualParameterTypes(
+			*FunctionType(_b).asExternallyCallableFunction(false)
 		);
 }
 
@@ -60,6 +61,7 @@ bool ContractLevelChecker::check(ContractDefinition const& _contract)
 	checkLibraryRequirements(_contract);
 	checkBaseABICompatibility(_contract);
 	checkPayableFallbackWithoutReceive(_contract);
+	checkStorageSize(_contract);
 
 	return Error::containsOnlyWarnings(m_errorReporter.errors());
 }
@@ -120,8 +122,9 @@ void ContractLevelChecker::checkDuplicateEvents(ContractDefinition const& _contr
 	/// Checks that two events with the same name defined in this contract have different
 	/// argument types
 	map<string, vector<EventDefinition const*>> events;
-	for (EventDefinition const* event: _contract.events())
-		events[event->name()].push_back(event);
+	for (auto const* contract: _contract.annotation().linearizedBaseContracts)
+		for (EventDefinition const* event: contract->events())
+			events[event->name()].push_back(event);
 
 	findDuplicateDefinitions(events);
 }
@@ -151,13 +154,13 @@ void ContractLevelChecker::findDuplicateDefinitions(map<string, vector<T>> const
 				if constexpr (is_same_v<T, FunctionDefinition const*>)
 				{
 					error = 1686_error;
-					message = "Function with same name and arguments defined twice.";
+					message = "Function with same name and parameter types defined twice.";
 				}
 				else
 				{
 					static_assert(is_same_v<T, EventDefinition const*>, "Expected \"FunctionDefinition const*\" or \"EventDefinition const*\"");
 					error = 5883_error;
-					message = "Event with same name and arguments defined twice.";
+					message = "Event with same name and parameter types defined twice.";
 				}
 
 				ssl.limitSize(message);
@@ -345,7 +348,7 @@ void ContractLevelChecker::checkExternalTypeClashes(ContractDefinition const& _c
 				// under non error circumstances this should be true
 				if (functionType->interfaceFunctionType())
 					externalDeclarations[functionType->externalSignature()].emplace_back(
-						f, functionType->asCallableFunction(false)
+						f, functionType->asExternallyCallableFunction(false)
 					);
 			}
 		for (VariableDeclaration const* v: contract->stateVariables())
@@ -355,7 +358,7 @@ void ContractLevelChecker::checkExternalTypeClashes(ContractDefinition const& _c
 				// under non error circumstances this should be true
 				if (functionType->interfaceFunctionType())
 					externalDeclarations[functionType->externalSignature()].emplace_back(
-						v, functionType->asCallableFunction(false)
+						v, functionType->asExternallyCallableFunction(false)
 					);
 			}
 	}
@@ -457,4 +460,21 @@ void ContractLevelChecker::checkPayableFallbackWithoutReceive(ContractDefinition
 				"This contract has a payable fallback function, but no receive ether function. Consider adding a receive ether function.",
 				SecondarySourceLocation{}.append("The payable fallback function is defined here.", fallback->location())
 			);
+}
+
+void ContractLevelChecker::checkStorageSize(ContractDefinition const& _contract)
+{
+	bigint size = 0;
+	vector<VariableDeclaration const*> variables;
+	for (ContractDefinition const* contract: boost::adaptors::reverse(_contract.annotation().linearizedBaseContracts))
+		for (VariableDeclaration const* variable: contract->stateVariables())
+			if (!(variable->isConstant() || variable->immutable()))
+			{
+				size += variable->annotation().type->storageSizeUpperBound();
+				if (size >= bigint(1) << 256)
+				{
+					m_errorReporter.typeError(7676_error, _contract.location(), "Contract too large for storage.");
+					break;
+				}
+			}
 }

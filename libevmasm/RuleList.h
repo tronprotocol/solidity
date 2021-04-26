@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @date 2018
  * Templatized list of simplification rules.
@@ -28,6 +29,10 @@
 #include <libsolutil/CommonData.h>
 
 #include <boost/multiprecision/detail/min_max.hpp>
+
+#include <libyul/Dialect.h>
+#include <libyul/backends/evm/EVMDialect.h>
+#include <liblangutil/EVMVersion.h>
 
 #include <vector>
 #include <functional>
@@ -567,6 +572,20 @@ std::vector<SimplificationRule<Pattern>> simplificationRuleListPart7(
 		feasibilityFunction
 	});
 
+	rules.push_back({
+		Builtins::BYTE(A, Builtins::SHL(B, X)),
+		[=]() -> Pattern { return Builtins::BYTE(A.d() + B.d() / 8, X); },
+		false,
+		[=] { return B.d() % 8 == 0 && A.d() <= 32 && B.d() <= 256; }
+	});
+
+	rules.push_back({
+		Builtins::BYTE(A, Builtins::SHR(B, X)),
+		[=]() -> Pattern { return A.d() < B.d() / 8 ? Word(0) : Builtins::BYTE(A.d() - B.d() / 8, X); },
+		false,
+		[=] { return B.d() % 8 == 0 && A.d() < Pattern::WordSize / 8 && B.d() <= Pattern::WordSize; }
+	});
+
 	return rules;
 }
 
@@ -657,12 +676,37 @@ std::vector<SimplificationRule<Pattern>> simplificationRuleListPart9(
 	return rules;
 }
 
+template<class Pattern>
+std::vector<SimplificationRule<Pattern>> evmRuleList(
+	langutil::EVMVersion _evmVersion,
+	Pattern,
+	Pattern,
+	Pattern,
+	Pattern,
+	Pattern,
+	Pattern,
+	Pattern
+)
+{
+	using Builtins = typename Pattern::Builtins;
+	std::vector<SimplificationRule<Pattern>> rules;
+
+	if (_evmVersion.hasSelfBalance())
+		rules.push_back({
+			Builtins::BALANCE(Instruction::ADDRESS),
+			[]() -> Pattern { return Instruction::SELFBALANCE; }, false
+		});
+
+	return rules;
+}
+
 /// @returns a list of simplification rules given certain match placeholders.
 /// A, B and C should represent constants, W, X, Y, and Z arbitrary expressions.
 /// The simplifications should never change the order of evaluation of
 /// arbitrary operations.
 template <class Pattern>
 std::vector<SimplificationRule<Pattern>> simplificationRuleList(
+	std::optional<langutil::EVMVersion> _evmVersion,
 	Pattern A,
 	Pattern B,
 	Pattern C,
@@ -691,6 +735,10 @@ std::vector<SimplificationRule<Pattern>> simplificationRuleList(
 	rules += simplificationRuleListPart7(A, B, C, W, X);
 	rules += simplificationRuleListPart8(A, B, C, W, X);
 	rules += simplificationRuleListPart9(A, B, C, W, X, Y, Z);
+
+	if (_evmVersion.has_value())
+		rules += evmRuleList(*_evmVersion, A, B, C, W, X, Y, Z);
+
 	return rules;
 }
 
