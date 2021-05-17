@@ -202,7 +202,7 @@ on the type of ``X`` being
 - ``uint<M>``: ``enc(X)`` is the big-endian encoding of ``X``, padded on the higher-order
   (left) side with zero-bytes such that the length is 32 bytes.
 - ``address``: as in the ``uint160`` case
-- ``int<M>``: ``enc(X)`` is the big-endian two's complement encoding of ``X``, padded on the higher-order (left) side with ``0xff`` for negative ``X`` and with zero bytes for positive ``X`` such that the length is 32 bytes.
+- ``int<M>``: ``enc(X)`` is the big-endian two's complement encoding of ``X``, padded on the higher-order (left) side with ``0xff`` bytes for negative ``X`` and with zero-bytes for non-negative ``X`` such that the length is 32 bytes.
 - ``bool``: as in the ``uint8`` case, where ``1`` is used for ``true`` and ``0`` for ``false``
 - ``fixed<M>x<N>``: ``enc(X)`` is ``enc(X * 10**N)`` where ``X * 10**N`` is interpreted as a ``int256``.
 - ``fixed``: as in the ``fixed128x18`` case
@@ -232,8 +232,8 @@ Given the contract:
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.16 <0.7.0;
-
 
     contract Foo {
         function bar(bytes3[2] memory) public pure {}
@@ -455,7 +455,9 @@ thus ``g = 0x0000000000000000000000000000000000000000000000000000000000000140``.
 Events
 ======
 
-Events are an abstraction of the Tron logging/event-watching protocol. Log entries provide the contract's address, a series of up to four topics and some arbitrary length binary data. Events leverage the existing function ABI in order to interpret this (together with an interface spec) as a properly typed structure.
+Events are an abstraction of the Tron logging/event-watching protocol. Log entries provide the contract's
+address, a series of up to four topics and some arbitrary length binary data. Events leverage the existing function
+ABI in order to interpret this (together with an interface spec) as a properly typed structure.
 
 Given an event name and series of event parameters, we split them into two sub-series: those which are indexed and
 those which are not. Those which are indexed, which may number up to 3, are used alongside the Keccak hash of the
@@ -464,9 +466,14 @@ event signature to form the topics of the log entry. Those which are not indexed
 In effect, a log entry using this ABI is described as:
 
 - ``address``: the address of the contract (intrinsically provided by Tron);
-- ``topics[0]``: ``keccak(EVENT_NAME+"("+EVENT_ARGS.map(canonical_type_of).join(",")+")")`` (``canonical_type_of`` is a function that simply returns the canonical type of a given argument, e.g. for ``uint indexed foo``, it would return ``uint256``). If the event is declared as ``anonymous`` the ``topics[0]`` is not generated;
-- ``topics[n]``: ``abi_encode(EVENT_INDEXED_ARGS[n - 1])`` (``EVENT_INDEXED_ARGS`` is the series of ``EVENT_ARGS`` that are indexed);
-- ``data``: ABI encoding of ``EVENT_NON_INDEXED_ARGS`` (``EVENT_NON_INDEXED_ARGS`` is the series of ``EVENT_ARGS`` that are not indexed, ``abi_encode`` is the ABI encoding function used for returning a series of typed values from a function, as described above).
+- ``topics[0]``: ``keccak(EVENT_NAME+"("+EVENT_ARGS.map(canonical_type_of).join(",")+")")`` (``canonical_type_of``
+  is a function that simply returns the canonical type of a given argument, e.g. for ``uint indexed foo``, it would
+  return ``uint256``). If the event is declared as ``anonymous`` the ``topics[0]`` is not generated;
+- ``topics[n]``: ``abi_encode(EVENT_INDEXED_ARGS[n - 1])`` (``EVENT_INDEXED_ARGS`` is the series of ``EVENT_ARGS``
+  that are indexed);
+- ``data``: ABI encoding of ``EVENT_NON_INDEXED_ARGS`` (``EVENT_NON_INDEXED_ARGS`` is the series of ``EVENT_ARGS``
+  that are not indexed, ``abi_encode`` is the ABI encoding function used for returning a series of typed values
+  from a function, as described above).
 
 For all types of length at most 32 bytes, the ``EVENT_INDEXED_ARGS`` array contains
 the value directly, padded or sign-extended (for signed integers) to 32 bytes, just as for regular ABI encoding.
@@ -499,16 +506,18 @@ A function description is a JSON object with the fields:
   * ``components``: used for tuple types (more below).
 
 - ``outputs``: an array of objects similar to ``inputs``.
-- ``stateMutability``: a string with one of the following values: ``pure`` (:ref:`specified to not read blockchain state <pure-functions>`), ``view`` (:ref:`specified to not modify the blockchain state <view-functions>`), ``nonpayable`` (function does not accept Trx) and ``payable`` (function accepts Trx).
-- ``payable``: ``true`` if function accepts Trx, ``false`` otherwise.
-- ``constant``: ``true`` if function is either ``pure`` or ``view``, ``false`` otherwise.
-
-``type`` can be omitted, defaulting to ``"function"``, likewise ``payable`` and ``constant`` can be omitted, both defaulting to ``false``.
+- ``stateMutability``: a string with one of the following values: ``pure`` (:ref:`specified to not read
+  blockchain state <pure-functions>`), ``view`` (:ref:`specified to not modify the blockchain
+  state <view-functions>`), ``nonpayable`` (function does not accept Trx - the default) and ``payable`` (function accepts Trx).
 
 Constructor and fallback function never have ``name`` or ``outputs``. Fallback function doesn't have ``inputs`` either.
 
 .. note::
     Sending non-zero Trx to non-payable function will revert the transaction.
+
+.. note::
+    The state mutability ``nonpayable`` is reflected in Solidity by not specifying
+    a state mutability modifier at all.
 
 An event description is a JSON object with fairly similar fields:
 
@@ -527,6 +536,7 @@ For example,
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
 
 
@@ -575,15 +585,15 @@ As an example, the code
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.19 <0.7.0;
     pragma experimental ABIEncoderV2;
-
 
     contract Test {
         struct S { uint a; uint[] b; T[] c; }
         struct T { uint x; uint y; }
-        function f(S memory s, T memory t, uint a) public {}
-        function g() public returns (S memory s, T memory t, uint a) {}
+        function f(S memory, T memory, uint) public pure {}
+        function g() public pure returns (S memory, T memory, uint) {}
     }
 
 would result in the JSON:

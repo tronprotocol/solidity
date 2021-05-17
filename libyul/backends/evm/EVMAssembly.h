@@ -38,7 +38,7 @@ class EVMAssembly: public AbstractAssembly
 {
 public:
 	explicit EVMAssembly(bool _evm15 = false): m_evm15(_evm15) { }
-	virtual ~EVMAssembly() = default;
+	~EVMAssembly() override = default;
 
 	/// Set a new source location valid starting from the next instruction.
 	void setSourceLocation(langutil::SourceLocation const& _location) override;
@@ -82,6 +82,9 @@ public:
 	void appendDataOffset(SubID _sub) override;
 	void appendDataSize(SubID _sub) override;
 	SubID appendData(bytes const& _data) override;
+
+	void appendImmutable(std::string const& _identifier) override;
+	void appendImmutableAssignment(std::string const& _identifier) override;
 
 	/// Resolves references inside the bytecode and returns the linker object.
 	evmasm::LinkerObject finalize();

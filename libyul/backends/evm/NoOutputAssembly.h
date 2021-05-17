@@ -45,7 +45,7 @@ class NoOutputAssembly: public AbstractAssembly
 {
 public:
 	explicit NoOutputAssembly(bool _evm15 = false): m_evm15(_evm15) { }
-	virtual ~NoOutputAssembly() = default;
+	~NoOutputAssembly() override = default;
 
 	void setSourceLocation(langutil::SourceLocation const&) override {}
 	int stackHeight() const override { return m_stackHeight; }
@@ -70,6 +70,9 @@ public:
 	void appendDataOffset(SubID _sub) override;
 	void appendDataSize(SubID _sub) override;
 	SubID appendData(bytes const& _data) override;
+
+	void appendImmutable(std::string const& _identifier) override;
+	void appendImmutableAssignment(std::string const& _identifier) override;
 
 private:
 	bool m_evm15 = false; ///< if true, switch to evm1.5 mode

@@ -43,11 +43,9 @@ public:
 	explicit ContractCompiler(
 		ContractCompiler* _runtimeCompiler,
 		CompilerContext& _context,
-		OptimiserSettings _optimiserSettings,
-		RevertStrings _revertStrings
+		OptimiserSettings _optimiserSettings
 	):
 		m_optimiserSettings(std::move(_optimiserSettings)),
-		m_revertStrings(_revertStrings),
 		m_runtimeCompiler(_runtimeCompiler),
 		m_context(_context)
 	{
@@ -101,6 +99,7 @@ private:
 	void appendReturnValuePacker(TypePointers const& _typeParameters, bool _isLibrary);
 
 	void registerStateVariables(ContractDefinition const& _contract);
+	void registerImmutableVariables(ContractDefinition const& _contract);
 	void initializeStateVariables(ContractDefinition const& _contract);
 
 	bool visit(VariableDeclaration const& _variableDeclaration) override;
@@ -140,7 +139,6 @@ private:
 	void storeStackHeight(ASTNode const* _node);
 
 	OptimiserSettings const m_optimiserSettings;
-	RevertStrings const m_revertStrings;
 	/// Pointer to the runtime compiler in case this is a creation compiler.
 	ContractCompiler* m_runtimeCompiler = nullptr;
 	CompilerContext& m_context;

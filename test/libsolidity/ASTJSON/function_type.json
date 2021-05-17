@@ -8,6 +8,7 @@
     ]
   },
   "id": 18,
+  "license": null,
   "nodeType": "SourceUnit",
   "nodes":
   [
@@ -53,6 +54,7 @@
               {
                 "constant": false,
                 "id": 6,
+                "mutability": "mutable",
                 "name": "x",
                 "nodeType": "VariableDeclaration",
                 "overrides": null,
@@ -85,6 +87,7 @@
                       {
                         "constant": false,
                         "id": 3,
+                        "mutability": "mutable",
                         "name": "",
                         "nodeType": "VariableDeclaration",
                         "overrides": null,
@@ -139,6 +142,7 @@
               {
                 "constant": false,
                 "id": 13,
+                "mutability": "mutable",
                 "name": "",
                 "nodeType": "VariableDeclaration",
                 "overrides": null,
@@ -171,6 +175,7 @@
                       {
                         "constant": false,
                         "id": 10,
+                        "mutability": "mutable",
                         "name": "",
                         "nodeType": "VariableDeclaration",
                         "overrides": null,

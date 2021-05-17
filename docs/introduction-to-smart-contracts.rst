@@ -17,7 +17,8 @@ Storage Example
 
 ::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.16 <0.7.0;
 
     contract SimpleStorage {
         uint storedData;
@@ -31,8 +32,12 @@ Storage Example
         }
     }
 
-The first line tells you that the source code is written for
-Solidity version 0.4.0, or a newer version of the language up to, but not including version 0.7.0.
+The first line tells you that the source code is licensed under the
+GPL version 3.0. Machine-readable license specifiers are important
+in a setting where publishing the source code is the default.
+
+The next line specifies that the source code is written for
+Solidity version 0.4.16, or a newer version of the language up to, but not including version 0.7.0.
 This is to ensure that the contract is not compilable with a new (breaking) compiler version, where it could behave differently.
 :ref:`Pragmas<pragma>` are common instructions for compilers about how to treat the
 source code (e.g. `pragma once <https://en.wikipedia.org/wiki/Pragma_once>`_).
@@ -77,6 +82,7 @@ registering with a username and password, all you need is an Ethereum keypair.
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
 
     contract Coin {
@@ -323,8 +329,8 @@ Every account has a persistent key-value store mapping 256-bit words to 256-bit
 words called **storage**.
 
 Furthermore, every account has a **balance** in
-Trx (in "Sun" to be exact, `1 Trx` is `10**6 Sun`) which can be modified by sending transactions that
-include Trx.
+Ether (in "Wei" to be exact, ``1 ether`` is ``10**18 wei``) which can be modified by sending transactions that
+include Ether.
 
 .. index:: ! transaction
 
@@ -513,16 +519,16 @@ Deactivate and Self-destruct
 ============================
 
 The only way to remove code from the blockchain is when a contract at that
-address performs the ``selfdestruct`` operation. The remaining Trx stored
+address performs the ``selfdestruct`` operation. The remaining Ether stored
 at that address is sent to a designated target and then the storage and code
 is removed from the state. Removing the contract in theory sounds like a good
 idea, but it is potentially dangerous, as if someone sends Ether to removed
 contracts, the Ether is forever lost.
 
 .. warning::
-    Even if a contract is removed by "selfdestruct", it is still part of the
+    Even if a contract is removed by ``selfdestruct``, it is still part of the
     history of the blockchain and probably retained by most Ethereum nodes.
-    So using "selfdestruct" is not the same as deleting data from a hard disk.
+    So using ``selfdestruct`` is not the same as deleting data from a hard disk.
 
 .. note::
     Even if a contract's code does not contain a call to ``selfdestruct``,

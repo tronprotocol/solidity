@@ -25,13 +25,16 @@
 #include <liblangutil/Scanner.h>
 #include <libsolidity/parsing/Parser.h>
 #include <libsolidity/analysis/NameAndTypeResolver.h>
+#include <libsolidity/analysis/DeclarationTypeChecker.h>
 #include <libsolidity/codegen/CompilerContext.h>
 #include <libsolidity/codegen/ExpressionCompiler.h>
 #include <libsolidity/ast/AST.h>
 #include <libsolidity/ast/TypeProvider.h>
 #include <libsolidity/analysis/TypeChecker.h>
 #include <liblangutil/ErrorReporter.h>
-#include <test/Options.h>
+#include <test/Common.h>
+
+#include <boost/test/unit_test.hpp>
 
 using namespace std;
 using namespace solidity::evmasm;
@@ -50,15 +53,15 @@ public:
 	FirstExpressionExtractor(ASTNode& _node): m_expression(nullptr) { _node.accept(*this); }
 	Expression* expression() const { return m_expression; }
 private:
-	virtual bool visit(Assignment& _expression) override { return checkExpression(_expression); }
-	virtual bool visit(UnaryOperation& _expression) override { return checkExpression(_expression); }
-	virtual bool visit(BinaryOperation& _expression) override { return checkExpression(_expression); }
-	virtual bool visit(FunctionCall& _expression) override { return checkExpression(_expression); }
-	virtual bool visit(MemberAccess& _expression) override { return checkExpression(_expression); }
-	virtual bool visit(IndexAccess& _expression) override { return checkExpression(_expression); }
-	virtual bool visit(Identifier& _expression) override { return checkExpression(_expression); }
-	virtual bool visit(ElementaryTypeNameExpression& _expression) override { return checkExpression(_expression); }
-	virtual bool visit(Literal& _expression) override { return checkExpression(_expression); }
+	bool visit(Assignment& _expression) override { return checkExpression(_expression); }
+	bool visit(UnaryOperation& _expression) override { return checkExpression(_expression); }
+	bool visit(BinaryOperation& _expression) override { return checkExpression(_expression); }
+	bool visit(FunctionCall& _expression) override { return checkExpression(_expression); }
+	bool visit(MemberAccess& _expression) override { return checkExpression(_expression); }
+	bool visit(IndexAccess& _expression) override { return checkExpression(_expression); }
+	bool visit(Identifier& _expression) override { return checkExpression(_expression); }
+	bool visit(ElementaryTypeNameExpression& _expression) override { return checkExpression(_expression); }
+	bool visit(Literal& _expression) override { return checkExpression(_expression); }
 	bool checkExpression(Expression& _expression)
 	{
 		if (m_expression == nullptr)
@@ -98,7 +101,7 @@ bytes compileFirstExpression(
 	{
 		ErrorList errors;
 		ErrorReporter errorReporter(errors);
-		sourceUnit = Parser(errorReporter, solidity::test::Options::get().evmVersion()).parse(
+		sourceUnit = Parser(errorReporter, solidity::test::CommonOptions::get().evmVersion()).parse(
 			make_shared<Scanner>(CharStream(_sourceCode, ""))
 		);
 		if (!sourceUnit)
@@ -114,21 +117,19 @@ bytes compileFirstExpression(
 	ErrorReporter errorReporter(errors);
 	GlobalContext globalContext;
 	map<ASTNode const*, shared_ptr<DeclarationContainer>> scopes;
-	NameAndTypeResolver resolver(globalContext, solidity::test::Options::get().evmVersion(), scopes, errorReporter);
+	NameAndTypeResolver resolver(globalContext, solidity::test::CommonOptions::get().evmVersion(), scopes, errorReporter);
 	resolver.registerDeclarations(*sourceUnit);
-
-	vector<ContractDefinition const*> inheritanceHierarchy;
 	for (ASTPointer<ASTNode> const& node: sourceUnit->nodes())
 		if (ContractDefinition* contract = dynamic_cast<ContractDefinition*>(node.get()))
-		{
 			BOOST_REQUIRE_MESSAGE(resolver.resolveNamesAndTypes(*contract), "Resolving names failed");
-			inheritanceHierarchy = vector<ContractDefinition const*>(1, contract);
-		}
+	DeclarationTypeChecker declarationTypeChecker(errorReporter, solidity::test::CommonOptions::get().evmVersion());
+	for (ASTPointer<ASTNode> const& node: sourceUnit->nodes())
+		BOOST_REQUIRE(declarationTypeChecker.check(*node));
 	for (ASTPointer<ASTNode> const& node: sourceUnit->nodes())
 		if (ContractDefinition* contract = dynamic_cast<ContractDefinition*>(node.get()))
 		{
 			ErrorReporter errorReporter(errors);
-			TypeChecker typeChecker(solidity::test::Options::get().evmVersion(), errorReporter);
+			TypeChecker typeChecker(solidity::test::CommonOptions::get().evmVersion(), errorReporter);
 			BOOST_REQUIRE(typeChecker.checkTypeRequirements(*contract));
 		}
 	for (ASTPointer<ASTNode> const& node: sourceUnit->nodes())
@@ -137,9 +138,12 @@ bytes compileFirstExpression(
 			FirstExpressionExtractor extractor(*contract);
 			BOOST_REQUIRE(extractor.expression() != nullptr);
 
-			CompilerContext context(solidity::test::Options::get().evmVersion());
+			CompilerContext context(
+				solidity::test::CommonOptions::get().evmVersion(),
+				RevertStrings::Default
+			);
 			context.resetVisitedNodes(contract);
-			context.setInheritanceHierarchy(inheritanceHierarchy);
+			context.setMostDerivedContract(*contract);
 			unsigned parametersSize = _localVariables.size(); // assume they are all one slot on the stack
 			context.adjustStackOffset(parametersSize);
 			for (vector<string> const& variable: _localVariables)
@@ -150,8 +154,7 @@ bytes compileFirstExpression(
 
 			ExpressionCompiler(
 				context,
-				RevertStrings::Default,
-				solidity::test::Options::get().optimize
+				solidity::test::CommonOptions::get().optimize
 			).compile(*extractor.expression());
 
 			for (vector<string> const& function: _functions)
@@ -282,7 +285,7 @@ BOOST_AUTO_TEST_CASE(comparison)
 	bytes code = compileFirstExpression(sourceCode);
 
 	bytes expectation;
-	if (solidity::test::Options::get().optimize)
+	if (solidity::test::CommonOptions::get().optimize)
 		expectation = {
 			uint8_t(Instruction::PUSH2), 0x11, 0xaa,
 			uint8_t(Instruction::PUSH2), 0x10, 0xaa,
@@ -345,7 +348,7 @@ BOOST_AUTO_TEST_CASE(arithmetic)
 	bytes code = compileFirstExpression(sourceCode, {}, {{"test", "f", "y"}});
 
 	bytes expectation;
-	if (solidity::test::Options::get().optimize)
+	if (solidity::test::CommonOptions::get().optimize)
 		expectation = {
 			uint8_t(Instruction::PUSH1), 0x2,
 			uint8_t(Instruction::PUSH1), 0x3,
@@ -426,7 +429,7 @@ BOOST_AUTO_TEST_CASE(unary_operators)
 	bytes code = compileFirstExpression(sourceCode, {}, {{"test", "f", "y"}});
 
 	bytes expectation;
-	if (solidity::test::Options::get().optimize)
+	if (solidity::test::CommonOptions::get().optimize)
 		expectation = {
 			uint8_t(Instruction::DUP1),
 			uint8_t(Instruction::PUSH1), 0x0,
@@ -517,7 +520,7 @@ BOOST_AUTO_TEST_CASE(assignment)
 
 	// Stack: a, b
 	bytes expectation;
-	if (solidity::test::Options::get().optimize)
+	if (solidity::test::CommonOptions::get().optimize)
 		expectation = {
 			uint8_t(Instruction::DUP1),
 			uint8_t(Instruction::DUP3),
@@ -629,7 +632,7 @@ BOOST_AUTO_TEST_CASE(selfbalance)
 
 	bytes code = compileFirstExpression(sourceCode, {}, {});
 
-	if (solidity::test::Options::get().evmVersion() == EVMVersion::istanbul())
+	if (solidity::test::CommonOptions::get().evmVersion() == EVMVersion::istanbul())
 	{
 		bytes expectation({uint8_t(Instruction::SELFBALANCE)});
 		BOOST_CHECK_EQUAL_COLLECTIONS(code.begin(), code.end(), expectation.begin(), expectation.end());

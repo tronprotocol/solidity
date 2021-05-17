@@ -34,8 +34,10 @@
 #include <libsolidity/interface/StandardCompiler.h>
 #include <libsolidity/interface/GasEstimator.h>
 #include <libsolidity/interface/DebugSettings.h>
+#include <libsolidity/interface/StorageLayout.h>
 
 #include <libyul/AssemblyStack.h>
+#include <libyul/optimiser/Suite.h>
 
 #include <libevmasm/Instruction.h>
 #include <libevmasm/GasMeter.h>
@@ -127,6 +129,7 @@ static string const g_strInterface = "interface";
 static string const g_strYul = "yul";
 static string const g_strYulDialect = "yul-dialect";
 static string const g_strIR = "ir";
+static string const g_strIROptimized = "ir-optimized";
 static string const g_strIPFS = "ipfs";
 static string const g_strLicense = "license";
 static string const g_strLibraries = "libraries";
@@ -143,9 +146,11 @@ static string const g_strOpcodes = "opcodes";
 static string const g_strOptimize = "optimize";
 static string const g_strOptimizeRuns = "optimize-runs";
 static string const g_strOptimizeYul = "optimize-yul";
+static string const g_strYulOptimizations = "yul-optimizations";
 static string const g_strOutputDir = "output-dir";
 static string const g_strOverwrite = "overwrite";
 static string const g_strRevertStrings = "revert-strings";
+static string const g_strStorageLayout = "storage-layout";
 
 /// Possible arguments to for --revert-strings
 static set<string> const g_revertStringsArgs
@@ -190,6 +195,7 @@ static string const g_argImportAst = g_strImportAst;
 static string const g_argInputFile = g_strInputFile;
 static string const g_argYul = g_strYul;
 static string const g_argIR = g_strIR;
+static string const g_argIROptimized = g_strIROptimized;
 static string const g_argEwasm = g_strEwasm;
 static string const g_argLibraries = g_strLibraries;
 static string const g_argLink = g_strLink;
@@ -205,6 +211,7 @@ static string const g_argOptimizeRuns = g_strOptimizeRuns;
 static string const g_argOutputDir = g_strOutputDir;
 static string const g_argSignatureHashes = g_strSignatureHashes;
 static string const g_argStandardJSON = g_strStandardJSON;
+static string const g_argStorageLayout = g_strStorageLayout;
 static string const g_argStrictAssembly = g_strStrictAssembly;
 static string const g_argVersion = g_strVersion;
 static string const g_stdinFileName = g_stdinFileNameStr;
@@ -229,7 +236,8 @@ static set<string> const g_combinedJsonArgs
 	g_strOpcodes,
 	g_strSignatureHashes,
 	g_strSrcMap,
-	g_strSrcMapRuntime
+	g_strSrcMapRuntime,
+	g_strStorageLayout
 };
 
 /// Possible arguments to for --machine
@@ -291,7 +299,8 @@ static bool needsHumanTargetedStdout(po::variables_map const& _args)
 		g_argNatspecUser,
 		g_argNatspecDev,
 		g_argOpcodes,
-		g_argSignatureHashes
+		g_argSignatureHashes,
+		g_argStorageLayout
 	})
 		if (_args.count(arg))
 			return true;
@@ -336,36 +345,50 @@ void CommandLineInterface::handleOpcode(string const& _contract)
 
 void CommandLineInterface::handleIR(string const& _contractName)
 {
-	if (m_args.count(g_argIR))
+	if (!m_args.count(g_argIR))
+		return;
+
+	if (m_args.count(g_argOutputDir))
+		createFile(m_compiler->filesystemFriendlyName(_contractName) + ".yul", m_compiler->yulIR(_contractName));
+	else
 	{
-		if (m_args.count(g_argOutputDir))
-			createFile(m_compiler->filesystemFriendlyName(_contractName) + ".yul", m_compiler->yulIR(_contractName));
-		else
-		{
-			sout() << "IR:" << endl;
-			sout() << m_compiler->yulIR(_contractName) << endl;
-		}
+		sout() << "IR:" << endl;
+		sout() << m_compiler->yulIR(_contractName) << endl;
+	}
+}
+
+void CommandLineInterface::handleIROptimized(string const& _contractName)
+{
+	if (!m_args.count(g_argIROptimized))
+		return;
+
+	if (m_args.count(g_argOutputDir))
+		createFile(m_compiler->filesystemFriendlyName(_contractName) + "_opt.yul", m_compiler->yulIROptimized(_contractName));
+	else
+	{
+		sout() << "Optimized IR:" << endl;
+		sout() << m_compiler->yulIROptimized(_contractName) << endl;
 	}
 }
 
 void CommandLineInterface::handleEwasm(string const& _contractName)
 {
-	if (m_args.count(g_argEwasm))
+	if (!m_args.count(g_argEwasm))
+		return;
+
+	if (m_args.count(g_argOutputDir))
 	{
-		if (m_args.count(g_argOutputDir))
-		{
-			createFile(m_compiler->filesystemFriendlyName(_contractName) + ".wast", m_compiler->ewasm(_contractName));
-			createFile(
-				m_compiler->filesystemFriendlyName(_contractName) + ".wasm",
-				asString(m_compiler->ewasmObject(_contractName).bytecode)
-			);
-		}
-		else
-		{
-			sout() << "Ewasm text:" << endl;
-			sout() << m_compiler->ewasm(_contractName) << endl;
-			sout() << "Ewasm binary (hex): " << m_compiler->ewasmObject(_contractName).toHex() << endl;
-		}
+		createFile(m_compiler->filesystemFriendlyName(_contractName) + ".wast", m_compiler->ewasm(_contractName));
+		createFile(
+			m_compiler->filesystemFriendlyName(_contractName) + ".wasm",
+			asString(m_compiler->ewasmObject(_contractName).bytecode)
+		);
+	}
+	else
+	{
+		sout() << "Ewasm text:" << endl;
+		sout() << m_compiler->ewasm(_contractName) << endl;
+		sout() << "Ewasm binary (hex): " << m_compiler->ewasmObject(_contractName).toHex() << endl;
 	}
 }
 
@@ -415,6 +438,18 @@ void CommandLineInterface::handleABI(string const& _contract)
 		createFile(m_compiler->filesystemFriendlyName(_contract) + ".abi", data);
 	else
 		sout() << "Contract JSON ABI" << endl << data << endl;
+}
+
+void CommandLineInterface::handleStorageLayout(string const& _contract)
+{
+	if (!m_args.count(g_argStorageLayout))
+		return;
+
+	string data = jsonCompactPrint(m_compiler->storageLayout(_contract));
+	if (m_args.count(g_argOutputDir))
+		createFile(m_compiler->filesystemFriendlyName(_contract) + "_storage.json", data);
+	else
+		sout() << "Contract Storage Layout:" << endl << data << endl;
 }
 
 void CommandLineInterface::handleNatspec(bool _natspecDev, string const& _contract)
@@ -664,7 +699,7 @@ void CommandLineInterface::createFile(string const& _fileName, string const& _da
 	string pathName = (p / _fileName).string();
 	if (fs::exists(pathName) && !m_args.count(g_strOverwrite))
 	{
-		serr() << "Refusing to overwrite existing file \"" << pathName << "\" (use --overwrite to force)." << endl;
+		serr() << "Refusing to overwrite existing file \"" << pathName << "\" (use --" << g_strOverwrite << " to force)." << endl;
 		m_error = true;
 		return;
 	}
@@ -684,10 +719,10 @@ bool CommandLineInterface::parseArguments(int _argc, char** _argv)
 	g_hasOutput = false;
 
 	// Declare the supported options.
-	po::options_description desc(R"(solc, the Solidity commandline compiler.
+	po::options_description desc((R"(solc, the Solidity commandline compiler.
 
 This program comes with ABSOLUTELY NO WARRANTY. This is free software, and you
-are welcome to redistribute it under certain conditions. See 'solc --license'
+are welcome to redistribute it under certain conditions. See 'solc --)" + g_strLicense + R"('
 for details.
 
 Usage: solc [options] [input_file...]
@@ -697,9 +732,9 @@ at standard output or in files in the output directory, if specified.
 Imports are automatically read from the filesystem, but it is also possible to
 remap paths using the context:prefix=path syntax.
 Example:
-solc --bin -o /tmp/solcoutput dapp-bin=/usr/local/lib/dapp-bin contract.sol
+solc --)" + g_argBinary + R"( -o /tmp/solcoutput dapp-bin=/usr/local/lib/dapp-bin contract.sol
 
-Allowed options)",
+Allowed options)").c_str(),
 		po::options_description::m_default_line_length,
 		po::options_description::m_default_line_length - 23
 	);
@@ -713,15 +748,6 @@ Allowed options)",
 			"Select desired EVM version. Either homestead, tangerineWhistle, spuriousDragon, "
 			"byzantium, constantinople, petersburg, istanbul (default) or berlin."
 		)
-		(g_argOptimize.c_str(), "Enable bytecode optimizer.")
-		(
-			g_argOptimizeRuns.c_str(),
-			po::value<unsigned>()->value_name("n")->default_value(200),
-			"Set for how many contract runs to optimize."
-			"Lower values will optimize more for initial deployment cost, higher values will optimize more for high-frequency usage."
-		)
-		(g_strOptimizeYul.c_str(), "Enable Yul optimizer in Solidity. Legacy option: the yul optimizer is enabled as part of the general --optimize option.")
-		(g_strNoOptimizeYul.c_str(), "Disable Yul optimizer in Solidity.")
 		(g_argPrettyJson.c_str(), "Output JSON in pretty format. Currently it only works with the combined JSON output.")
 		(
 			g_argLibraries.c_str(),
@@ -750,25 +776,31 @@ Allowed options)",
 		(
 			g_argStandardJSON.c_str(),
 			"Switch to Standard JSON input / output mode, ignoring all options. "
-			"It reads from standard input and provides the result on the standard output."
+			"It reads from standard input, if no input file was given, otherwise it reads from the provided input file. The result will be written to standard output."
 		)
 		(
 			g_argImportAst.c_str(),
-			"Import ASTs to be compiled, assumes input holds the AST in compact JSON format."
-			" Supported Inputs is the output of the standard-json or the one produced by --combined-json ast,compact-format"
+			("Import ASTs to be compiled, assumes input holds the AST in compact JSON format. "
+			"Supported Inputs is the output of the --" + g_argStandardJSON + " or the one produced by "
+			"--" + g_argCombinedJson + " " + g_strAst + "," + g_strCompactJSON).c_str()
 		)
-
 		(
 			g_argAssemble.c_str(),
-			"Switch to assembly mode, ignoring all options except --machine, --yul-dialect and --optimize and assumes input is assembly."
+			("Switch to assembly mode, ignoring all options except "
+			"--" + g_argMachine + ", --" + g_strYulDialect + ", --" + g_argOptimize + " and --" + g_strYulOptimizations + " "
+			"and assumes input is assembly.").c_str()
 		)
 		(
 			g_argYul.c_str(),
-			"Switch to Yul mode, ignoring all options except --machine, --yul-dialect and --optimize and assumes input is Yul."
+			("Switch to Yul mode, ignoring all options except "
+			"--" + g_argMachine + ", --" + g_strYulDialect + ", --" + g_argOptimize + " and --" + g_strYulOptimizations + " "
+			"and assumes input is Yul.").c_str()
 		)
 		(
 			g_argStrictAssembly.c_str(),
-			"Switch to strict assembly mode, ignoring all options except --machine, --yul-dialect and --optimize and assumes input is strict assembly."
+			("Switch to strict assembly mode, ignoring all options except "
+			"--" + g_argMachine + ", --" + g_strYulDialect + ", --" + g_argOptimize + " and --" + g_strYulOptimizations + " "
+			"and assumes input is strict assembly.").c_str()
 		)
 		(
 			g_strYulDialect.c_str(),
@@ -782,8 +814,8 @@ Allowed options)",
 		)
 		(
 			g_argLink.c_str(),
-			"Switch to linker mode, ignoring all options apart from --libraries "
-			"and modify binaries in place."
+			("Switch to linker mode, ignoring all options apart from --" + g_argLibraries + " "
+			"and modify binaries in place.").c_str()
 		)
 		(
 			g_argMetadataHash.c_str(),
@@ -801,6 +833,23 @@ Allowed options)",
 		(g_argOldReporter.c_str(), "Enables old diagnostics reporter.")
 		(g_argErrorRecovery.c_str(), "Enables additional parser error recovery.")
 		(g_argIgnoreMissingFiles.c_str(), "Ignore missing files.");
+	po::options_description optimizerOptions("Optimizer options");
+	optimizerOptions.add_options()
+		(g_argOptimize.c_str(), "Enable bytecode optimizer.")
+		(
+			g_argOptimizeRuns.c_str(),
+			po::value<unsigned>()->value_name("n")->default_value(200),
+			"Set for how many contract runs to optimize. "
+			"Lower values will optimize more for initial deployment cost, higher values will optimize more for high-frequency usage."
+		)
+		(g_strOptimizeYul.c_str(), ("Legacy option, ignored. Use the general --" + g_argOptimize + " to enable Yul optimizer.").c_str())
+		(g_strNoOptimizeYul.c_str(), "Disable Yul optimizer in Solidity.")
+		(
+			g_strYulOptimizations.c_str(),
+			po::value<string>()->value_name("steps"),
+			"Forces yul optimizer to use the specified sequence of optimization steps instead of the built-in one."
+		);
+	desc.add(optimizerOptions);
 	po::options_description outputComponents("Output Components");
 	outputComponents.add_options()
 		(g_argAstJson.c_str(), "AST of all source files in JSON format.")
@@ -812,11 +861,13 @@ Allowed options)",
 		(g_argBinaryRuntime.c_str(), "Binary of the runtime part of the contracts in hex.")
 		(g_argAbi.c_str(), "ABI specification of the contracts.")
 		(g_argIR.c_str(), "Intermediate Representation (IR) of all contracts (EXPERIMENTAL).")
+		(g_argIROptimized.c_str(), "Optimized intermediate Representation (IR) of all contracts (EXPERIMENTAL).")
 		(g_argEwasm.c_str(), "Ewasm text representation of all contracts (EXPERIMENTAL).")
 		(g_argSignatureHashes.c_str(), "Function signature hashes of the contracts.")
 		(g_argNatspecUser.c_str(), "Natspec user documentation of all contracts.")
 		(g_argNatspecDev.c_str(), "Natspec developer documentation of all contracts.")
-		(g_argMetadata.c_str(), "Combined Metadata JSON whose Swarm hash is stored on-chain.");
+		(g_argMetadata.c_str(), "Combined Metadata JSON whose Swarm hash is stored on-chain.")
+		(g_argStorageLayout.c_str(), "Slots, offsets and types of the contract's state variables.");
 	desc.add(outputComponents);
 
 	po::options_description allOptions = desc;
@@ -875,9 +926,9 @@ Allowed options)",
 			serr() << "Invalid option for --" << g_strRevertStrings << ": " << revertStringsString << endl;
 			return false;
 		}
-		if (*revertStrings != RevertStrings::Default && *revertStrings != RevertStrings::Strip)
+		if (*revertStrings == RevertStrings::VerboseDebug)
 		{
-			serr() << "Only \"default\" and \"strip\" are implemented for --" << g_strRevertStrings << " for now." << endl;
+			serr() << "Only \"default\", \"strip\" and \"debug\" are implemented for --" << g_strRevertStrings << " for now." << endl;
 			return false;
 		}
 		m_revertStrings = *revertStrings;
@@ -889,7 +940,7 @@ Allowed options)",
 		for (string const& item: boost::split(requests, m_args[g_argCombinedJson].as<string>(), boost::is_any_of(",")))
 			if (!g_combinedJsonArgs.count(item))
 			{
-				serr() << "Invalid option to --combined-json: " << item << endl;
+				serr() << "Invalid option to --" << g_argCombinedJson << ": " << item << endl;
 				return false;
 			}
 	}
@@ -909,7 +960,10 @@ bool CommandLineInterface::processInput()
 					"ReadFile callback used as callback kind " +
 					_kind
 				));
-			auto path = boost::filesystem::path(_path);
+			string validPath = _path;
+			if (validPath.find("file://") == 0)
+				validPath.erase(0, 7);
+			auto path = boost::filesystem::path(validPath);
 			auto canonicalPath = boost::filesystem::weakly_canonical(path);
 			bool isAllowed = false;
 			for (auto const& allowedDir: m_allowedDirectories)
@@ -965,7 +1019,22 @@ bool CommandLineInterface::processInput()
 
 	if (m_args.count(g_argStandardJSON))
 	{
-		string input = readStandardInput();
+		vector<string> inputFiles;
+		string jsonFile;
+		if (m_args.count(g_argInputFile))
+			inputFiles = m_args[g_argInputFile].as<vector<string>>();
+		if (inputFiles.size() == 1)
+			jsonFile = inputFiles[0];
+		else if (inputFiles.size() > 1)
+		{
+			serr() << "If --" << g_argStandardJSON << " is used, only zero or one input files are supported." << endl;
+			return false;
+		}
+		string input;
+		if (jsonFile.empty())
+			input = readStandardInput();
+		else
+			input = readFileAsString(jsonFile);
 		StandardCompiler compiler(fileReader);
 		sout() << compiler.compile(std::move(input)) << endl;
 		return true;
@@ -985,7 +1054,7 @@ bool CommandLineInterface::processInput()
 		std::optional<langutil::EVMVersion> versionOption = langutil::EVMVersion::fromString(versionOptionStr);
 		if (!versionOption)
 		{
-			serr() << "Invalid option for --evm-version: " << versionOptionStr << endl;
+			serr() << "Invalid option for --" << g_strEVMVersion << ": " << versionOptionStr << endl;
 			return false;
 		}
 		m_evmVersion = *versionOption;
@@ -1002,14 +1071,37 @@ bool CommandLineInterface::processInput()
 		bool optimize = m_args.count(g_argOptimize);
 		if (m_args.count(g_strOptimizeYul))
 		{
-			serr() << "--optimize-yul is invalid in assembly mode. Use --optimize instead." << endl;
+			serr() << "--" << g_strOptimizeYul << " is invalid in assembly mode. Use --" << g_argOptimize << " instead." << endl;
 			return false;
 		}
 		if (m_args.count(g_strNoOptimizeYul))
 		{
-			serr() << "--no-optimize-yul is invalid in assembly mode. Optimization is disabled by default and can be enabled with --optimize." << endl;
+			serr() << "--" << g_strNoOptimizeYul << " is invalid in assembly mode. Optimization is disabled by default and can be enabled with --" << g_argOptimize << "." << endl;
 			return false;
 		}
+
+		optional<string> yulOptimiserSteps;
+		if (m_args.count(g_strYulOptimizations))
+		{
+			if (!optimize)
+			{
+				serr() << "--" << g_strYulOptimizations << " is invalid if Yul optimizer is disabled" << endl;
+				return false;
+			}
+
+			try
+			{
+				yul::OptimiserSuite::validateSequence(m_args[g_strYulOptimizations].as<string>());
+			}
+			catch (yul::OptimizerException const& _exception)
+			{
+				serr() << "Invalid optimizer step sequence in --" << g_strYulOptimizations << ": " << _exception.what() << endl;
+				return false;
+			}
+
+			yulOptimiserSteps = m_args[g_strYulOptimizations].as<string>();
+		}
+
 		if (m_args.count(g_argMachine))
 		{
 			string machine = m_args[g_argMachine].as<string>();
@@ -1021,7 +1113,7 @@ bool CommandLineInterface::processInput()
 				targetMachine = Machine::Ewasm;
 			else
 			{
-				serr() << "Invalid option for --machine: " << machine << endl;
+				serr() << "Invalid option for --" << g_argMachine << ": " << machine << endl;
 				return false;
 			}
 		}
@@ -1037,13 +1129,14 @@ bool CommandLineInterface::processInput()
 				inputLanguage = Input::Ewasm;
 				if (targetMachine != Machine::Ewasm)
 				{
-					serr() << "If you select Ewasm as --yul-dialect, --machine has to be Ewasm as well." << endl;
+					serr() << "If you select Ewasm as --" << g_strYulDialect << ", ";
+					serr() << "--" << g_argMachine << " has to be Ewasm as well." << endl;
 					return false;
 				}
 			}
 			else
 			{
-				serr() << "Invalid option for --yul-dialect: " << dialect << endl;
+				serr() << "Invalid option for --" << g_strYulDialect << ": " << dialect << endl;
 				return false;
 			}
 		}
@@ -1060,7 +1153,7 @@ bool CommandLineInterface::processInput()
 			"Warning: Yul is still experimental. Please use the output with care." <<
 			endl;
 
-		return assemble(inputLanguage, targetMachine, optimize);
+		return assemble(inputLanguage, targetMachine, optimize, yulOptimiserSteps);
 	}
 	if (m_args.count(g_argLink))
 	{
@@ -1080,7 +1173,7 @@ bool CommandLineInterface::processInput()
 			m_metadataHash = CompilerStack::MetadataHash::None;
 		else
 		{
-			serr() << "Invalid option for --metadata-hash: " << hashStr << endl;
+			serr() << "Invalid option for --" << g_argMetadataHash << ": " << hashStr << endl;
 			return false;
 		}
 	}
@@ -1108,13 +1201,33 @@ bool CommandLineInterface::processInput()
 		m_compiler->setRevertStringBehaviour(m_revertStrings);
 		// TODO: Perhaps we should not compile unless requested
 
-		m_compiler->enableIRGeneration(m_args.count(g_argIR));
+		m_compiler->enableIRGeneration(m_args.count(g_argIR) || m_args.count(g_argIROptimized));
 		m_compiler->enableEwasmGeneration(m_args.count(g_argEwasm));
 
 		OptimiserSettings settings = m_args.count(g_argOptimize) ? OptimiserSettings::standard() : OptimiserSettings::minimal();
 		settings.expectedExecutionsPerDeployment = m_args[g_argOptimizeRuns].as<unsigned>();
 		if (m_args.count(g_strNoOptimizeYul))
 			settings.runYulOptimiser = false;
+		if (m_args.count(g_strYulOptimizations))
+		{
+			if (!settings.runYulOptimiser)
+			{
+				serr() << "--" << g_strYulOptimizations << " is invalid if Yul optimizer is disabled" << endl;
+				return false;
+			}
+
+			try
+			{
+				yul::OptimiserSuite::validateSequence(m_args[g_strYulOptimizations].as<string>());
+			}
+			catch (yul::OptimizerException const& _exception)
+			{
+				serr() << "Invalid optimizer step sequence in --" << g_strYulOptimizations << ": " << _exception.what() << endl;
+				return false;
+			}
+
+			settings.yulOptimiserSteps = m_args[g_strYulOptimizations].as<string>();
+		}
 		settings.optimizeStackAllocation = settings.runYulOptimiser;
 		m_compiler->setOptimiserSettings(settings);
 
@@ -1243,7 +1356,9 @@ void CommandLineInterface::handleCombinedJSON()
 		if (requests.count(g_strOpcodes) && m_compiler->compilationSuccessful())
 			contractData[g_strOpcodes] = evmasm::disassemble(m_compiler->object(contractName).bytecode);
 		if (requests.count(g_strAsm) && m_compiler->compilationSuccessful())
-			contractData[g_strAsm] = m_compiler->assemblyJSON(contractName, m_sourceCodes);
+			contractData[g_strAsm] = m_compiler->assemblyJSON(contractName);
+		if (requests.count(g_strStorageLayout) && m_compiler->compilationSuccessful())
+			contractData[g_strStorageLayout] = jsonCompactPrint(m_compiler->storageLayout(contractName));
 		if (requests.count(g_strSrcMap) && m_compiler->compilationSuccessful())
 		{
 			auto map = m_compiler->sourceMapping(contractName);
@@ -1450,18 +1565,21 @@ string CommandLineInterface::objectWithLinkRefsHex(evmasm::LinkerObject const& _
 bool CommandLineInterface::assemble(
 	yul::AssemblyStack::Language _language,
 	yul::AssemblyStack::Machine _targetMachine,
-	bool _optimize
+	bool _optimize,
+	optional<string> _yulOptimiserSteps
 )
 {
+	solAssert(_optimize || !_yulOptimiserSteps.has_value(), "");
+
 	bool successful = true;
 	map<string, yul::AssemblyStack> assemblyStacks;
 	for (auto const& src: m_sourceCodes)
 	{
-		auto& stack = assemblyStacks[src.first] = yul::AssemblyStack(
-			m_evmVersion,
-			_language,
-			_optimize ? OptimiserSettings::full() : OptimiserSettings::minimal()
-		);
+		OptimiserSettings settings = _optimize ? OptimiserSettings::full() : OptimiserSettings::minimal();
+		if (_yulOptimiserSteps.has_value())
+			settings.yulOptimiserSteps = _yulOptimiserSteps.value();
+
+		auto& stack = assemblyStacks[src.first] = yul::AssemblyStack(m_evmVersion, _language, settings);
 		try
 		{
 			if (!stack.parseAndAnalyze(src.first, src.second))
@@ -1597,7 +1715,7 @@ void CommandLineInterface::outputCompilationResults()
 		{
 			string ret;
 			if (m_args.count(g_argAsmJson))
-				ret = jsonPrettyPrint(m_compiler->assemblyJSON(contract, m_sourceCodes));
+				ret = jsonPrettyPrint(m_compiler->assemblyJSON(contract));
 			else
 				ret = m_compiler->assemblyString(contract, m_sourceCodes);
 
@@ -1616,10 +1734,12 @@ void CommandLineInterface::outputCompilationResults()
 
 		handleBytecode(contract);
 		handleIR(contract);
+		handleIROptimized(contract);
 		handleEwasm(contract);
 		handleSignatureHashes(contract);
 		handleMetadata(contract);
 		handleABI(contract);
+		handleStorageLayout(contract);
 		handleNatspec(true, contract);
 		handleNatspec(false, contract);
 	} // end of contracts iteration

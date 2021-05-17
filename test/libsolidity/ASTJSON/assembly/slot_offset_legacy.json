@@ -8,7 +8,8 @@
       [
         11
       ]
-    }
+    },
+    "license": null
   },
   "children":
   [
@@ -50,6 +51,7 @@
               "attributes":
               {
                 "constant": false,
+                "mutability": "mutable",
                 "name": "x",
                 "overrides": null,
                 "scope": 3,
@@ -85,6 +87,7 @@
           "attributes":
           {
             "constant": false,
+            "mutability": "mutable",
             "name": "s",
             "overrides": null,
             "scope": 11,

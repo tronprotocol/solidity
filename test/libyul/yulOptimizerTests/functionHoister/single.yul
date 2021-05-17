@@ -3,11 +3,12 @@
     function f() {}
 }
 // ====
-// step: functionHoister
 // dialect: yul
 // ----
+// step: functionHoister
+//
 // {
-//     let a:u256
+//     let a
 //     function f()
 //     { }
 // }

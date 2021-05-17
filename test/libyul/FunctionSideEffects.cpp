@@ -16,7 +16,7 @@
 */
 
 #include <test/libyul/FunctionSideEffects.h>
-#include <test/Options.h>
+#include <test/Common.h>
 #include <test/libyul/Common.h>
 
 #include <libsolutil/AnsiColorized.h>
@@ -47,28 +47,25 @@ string toString(SideEffects const& _sideEffects)
 {
 	vector<string> ret;
 	if (_sideEffects.movable)
-		ret.push_back("movable");
+		ret.emplace_back("movable");
 	if (_sideEffects.sideEffectFree)
-		ret.push_back("sideEffectFree");
+		ret.emplace_back("sideEffectFree");
 	if (_sideEffects.sideEffectFreeIfNoMSize)
-		ret.push_back("sideEffectFreeIfNoMSize");
+		ret.emplace_back("sideEffectFreeIfNoMSize");
 	if (_sideEffects.invalidatesStorage)
-		ret.push_back("invalidatesStorage");
+		ret.emplace_back("invalidatesStorage");
 	if (_sideEffects.invalidatesMemory)
-		ret.push_back("invalidatesMemory");
+		ret.emplace_back("invalidatesMemory");
 	return joinHumanReadable(ret);
 }
 }
 
-FunctionSideEffects::FunctionSideEffects(string const& _filename)
+FunctionSideEffects::FunctionSideEffects(string const& _filename):
+	TestCase(_filename)
 {
-	ifstream file(_filename);
-	if (!file)
-		BOOST_THROW_EXCEPTION(runtime_error("Cannot open test input: \"" + _filename + "\"."));
-	file.exceptions(ios::badbit);
-
-	m_source = parseSourceAndSettings(file);
-	m_expectation = parseSimpleExpectations(file);}
+	m_source = m_reader.source();
+	m_expectation = m_reader.simpleExpectations();
+}
 
 TestCase::TestResult FunctionSideEffects::run(ostream& _stream, string const& _linePrefix, bool _formatted)
 {

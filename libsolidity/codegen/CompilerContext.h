@@ -27,12 +27,17 @@
 #include <libsolidity/ast/Types.h>
 #include <libsolidity/codegen/ABIFunctions.h>
 
+#include <libsolidity/interface/DebugSettings.h>
 #include <libsolidity/interface/OptimiserSettings.h>
 
 #include <libevmasm/Assembly.h>
 #include <libevmasm/Instruction.h>
+#include <liblangutil/ErrorReporter.h>
 #include <liblangutil/EVMVersion.h>
 #include <libsolutil/Common.h>
+
+#include <libyul/AsmAnalysisInfo.h>
+#include <libyul/backends/evm/EVMDialect.h>
 
 #include <functional>
 #include <ostream>
@@ -51,11 +56,18 @@ class Compiler;
 class CompilerContext
 {
 public:
-	explicit CompilerContext(langutil::EVMVersion _evmVersion, CompilerContext* _runtimeContext = nullptr):
+	explicit CompilerContext(
+		langutil::EVMVersion _evmVersion,
+		RevertStrings _revertStrings,
+		CompilerContext* _runtimeContext = nullptr
+	):
 		m_asm(std::make_shared<evmasm::Assembly>()),
 		m_evmVersion(_evmVersion),
+		m_revertStrings(_revertStrings),
+		m_reservedMemory{0},
 		m_runtimeContext(_runtimeContext),
-		m_abiFunctions(m_evmVersion)
+		m_abiFunctions(m_evmVersion, m_revertStrings, m_yulFunctionCollector),
+		m_yulUtilFunctions(m_evmVersion, m_revertStrings, m_yulFunctionCollector)
 	{
 		if (m_runtimeContext)
 			m_runtimeSub = size_t(m_asm->newSub(m_runtimeContext->m_asm).data());
@@ -69,6 +81,16 @@ public:
 	bool experimentalFeatureActive(ExperimentalFeature _feature) const { return m_experimentalFeatures.count(_feature); }
 
 	void addStateVariable(VariableDeclaration const& _declaration, u256 const& _storageOffset, unsigned _byteOffset);
+	void addImmutable(VariableDeclaration const& _declaration);
+
+	/// @returns the reserved memory for storing the value of the immutable @a _variable during contract creation.
+	size_t immutableMemoryOffset(VariableDeclaration const& _variable) const;
+	/// @returns a list of slot names referring to the stack slots of an immutable variable.
+	static std::vector<std::string> immutableVariableSlotNames(VariableDeclaration const& _variable);
+
+	/// @returns the reserved memory and resets it to mark it as used.
+	size_t reservedMemory();
+
 	void addVariable(VariableDeclaration const& _declaration, unsigned _offsetToCurrent = 0);
 	void removeVariable(Declaration const& _declaration);
 	/// Removes all local variables currently allocated above _stackHeight.
@@ -92,15 +114,12 @@ public:
 	/// @returns the entry label of the given function. Might return an AssemblyItem of type
 	/// UndefinedItem if it does not exist yet.
 	evmasm::AssemblyItem functionEntryLabelIfExists(Declaration const& _declaration) const;
-	/// @returns the entry label of the given function and takes overrides into account.
-	FunctionDefinition const& resolveVirtualFunction(FunctionDefinition const& _function);
 	/// @returns the function that overrides the given declaration from the most derived class just
 	/// above _base in the current inheritance hierarchy.
 	FunctionDefinition const& superFunction(FunctionDefinition const& _function, ContractDefinition const& _base);
-	/// @returns the next constructor in the inheritance hierarchy.
-	FunctionDefinition const* nextConstructor(ContractDefinition const& _contract) const;
-	/// Sets the current inheritance hierarchy from derived to base.
-	void setInheritanceHierarchy(std::vector<ContractDefinition const*> const& _hierarchy) { m_inheritanceHierarchy = _hierarchy; }
+	/// Sets the contract currently being compiled - the most derived one.
+	void setMostDerivedContract(ContractDefinition const& _contract) { m_mostDerivedContract = &_contract; }
+	ContractDefinition const& mostDerivedContract() const;
 
 	/// @returns the next function in the queue of functions that are still to be compiled
 	/// (i.e. that were referenced during compilation but where we did not yet generate code for).
@@ -121,6 +140,14 @@ public:
 		unsigned _outArgs,
 		std::function<void(CompilerContext&)> const& _generator
 	);
+
+	/// Appends a call to a yul function and registers the function as externally used.
+	void callYulFunction(
+		std::string const& _name,
+		unsigned _inArgs,
+		unsigned _outArgs
+	);
+
 	/// Returns the tag of the named low-level function and inserts the generator into the
 	/// list of low-level-functions to be generated, unless it already exists.
 	/// Note that the generator should not assume that objects are still alive when it is called,
@@ -134,8 +161,14 @@ public:
 	/// Generates the code for missing low-level functions, i.e. calls the generators passed above.
 	void appendMissingLowLevelFunctions();
 	ABIFunctions& abiFunctions() { return m_abiFunctions; }
+	YulUtilFunctions& utilFunctions() { return m_yulUtilFunctions; }
+	/// @returns concatenation of all generated functions and a set of the
+	/// externally used functions.
+	/// Clears the internal list, i.e. calling it again will result in an
+	/// empty return value.
+	std::pair<std::string, std::set<std::string>> requestedYulFunctions();
+	bool requestedYulFunctionsRan() const { return m_requestedYulFunctionsRan; }
 
-	ModifierDefinition const& resolveVirtualFunctionModifier(ModifierDefinition const& _modifier) const;
 	/// Returns the distance of the given local variable from the bottom of the stack (of the current function).
 	unsigned baseStackOffsetOfVariable(Declaration const& _declaration) const;
 	/// If supplied by a value returned by @ref baseStackOffsetOfVariable(variable), returns
@@ -160,12 +193,14 @@ public:
 	/// Appends a conditional INVALID instruction
 	CompilerContext& appendConditionalInvalid();
 	/// Appends a REVERT(0, 0) call
-	CompilerContext& appendRevert();
+	/// @param _message is an optional revert message used in debug mode
+	CompilerContext& appendRevert(std::string const& _message = "");
 	/// Appends a conditional REVERT-call, either forwarding the RETURNDATA or providing the
 	/// empty string. Consumes the condition.
 	/// If the current EVM version does not support RETURNDATA, uses REVERT but does not forward
 	/// the data.
-	CompilerContext& appendConditionalRevert(bool _forwardReturnData = false);
+	/// @param _message is an optional revert message used in debug mode
+	CompilerContext& appendConditionalRevert(bool _forwardReturnData = false, std::string const& _message = "");
 	/// Appends a JUMP to a specific tag
 	CompilerContext& appendJumpTo(
 		evmasm::AssemblyItem const& _tag,
@@ -190,6 +225,10 @@ public:
 	evmasm::AssemblyItem appendData(bytes const& _data) { return m_asm->append(_data); }
 	/// Appends the address (virtual, will be filled in by linker) of a library.
 	void appendLibraryAddress(std::string const& _identifier) { m_asm->appendLibraryAddress(_identifier); }
+	/// Appends an immutable variable. The value will be filled in by the constructor.
+	void appendImmutable(std::string const& _identifier) { m_asm->appendImmutable(_identifier); }
+	/// Appends an assignment to an immutable variable. Only valid in creation code.
+	void appendImmutableAssignment(std::string const& _identifier) { m_asm->appendImmutableAssignment(_identifier); }
 	/// Appends a zero-address that can be replaced by something else at deploy time (if the
 	/// position in bytecode is known).
 	void appendDeployTimeAddress() { m_asm->append(evmasm::PushDeployTimeAddress); }
@@ -219,6 +258,13 @@ public:
 		OptimiserSettings const& _optimiserSettings = OptimiserSettings::none()
 	);
 
+	/// If m_revertStrings is debug, @returns inline assembly code that
+	/// stores @param _message in memory position 0 and reverts.
+	/// Otherwise returns "revert(0, 0)".
+	std::string revertReasonIfDebug(std::string const& _message = "");
+
+	void optimizeYul(yul::Object& _object, yul::EVMDialect const& _dialect, OptimiserSettings const& _optimiserSetting, std::set<yul::YulString> const& _externalIdentifiers = {});
+
 	/// Appends arbitrary data to the end of the bytecode.
 	void appendAuxiliaryData(bytes const& _data) { m_asm->appendAuxiliaryDataToEnd(_data); }
 
@@ -243,12 +289,12 @@ public:
 	}
 
 	/// @arg _sourceCodes is the map of input files to source code strings
-	Json::Value assemblyJSON(StringMap const& _sourceCodes = StringMap()) const
+	Json::Value assemblyJSON(std::map<std::string, unsigned> const& _indicies = std::map<std::string, unsigned>()) const
 	{
-		return m_asm->assemblyJSON(_sourceCodes);
+		return m_asm->assemblyJSON(_indicies);
 	}
 
-	evmasm::LinkerObject const& assembledObject() const { return m_asm->assemble(); }
+	evmasm::LinkerObject const& assembledObject() const;
 	evmasm::LinkerObject const& assembledRuntimeObject(size_t _subIndex) const { return m_asm->sub(_subIndex).assemble(); }
 
 	/**
@@ -263,15 +309,9 @@ public:
 
 	void setModifierDepth(size_t _modifierDepth) { m_asm->m_currentModifierDepth = _modifierDepth; }
 
+	RevertStrings revertStrings() const { return m_revertStrings; }
+
 private:
-	/// Searches the inheritance hierarchy towards the base starting from @a _searchStart and returns
-	/// the first function definition that is overwritten by _function.
-	FunctionDefinition const& resolveVirtualFunction(
-		FunctionDefinition const& _function,
-		std::vector<ContractDefinition const*>::const_iterator _searchStart
-	);
-	/// @returns an iterator to the contract directly above the given contract.
-	std::vector<ContractDefinition const*>::const_iterator superContract(ContractDefinition const& _contract) const;
 	/// Updates source location set in the assembly.
 	void updateSourceLocation();
 
@@ -312,19 +352,26 @@ private:
 	evmasm::AssemblyPointer m_asm;
 	/// Version of the EVM to compile against.
 	langutil::EVMVersion m_evmVersion;
+	RevertStrings const m_revertStrings;
 	/// Activated experimental features.
 	std::set<ExperimentalFeature> m_experimentalFeatures;
 	/// Other already compiled contracts to be used in contract creation calls.
 	std::map<ContractDefinition const*, std::shared_ptr<Compiler const>> m_otherCompilers;
 	/// Storage offsets of state variables
 	std::map<Declaration const*, std::pair<u256, unsigned>> m_stateVariables;
+	/// Memory offsets reserved for the values of immutable variables during contract creation.
+	std::map<VariableDeclaration const*, size_t> m_immutableVariables;
+	/// Total amount of reserved memory. Reserved memory is used to store immutable variables during contract creation.
+	/// This has to be finalized before initialiseFreeMemoryPointer() is called. That function
+	/// will reset the optional to verify that.
+	std::optional<size_t> m_reservedMemory = {0};
 	/// Offsets of local variables on the stack (relative to stack base).
 	/// This needs to be a stack because if a modifier contains a local variable and this
 	/// modifier is applied twice, the position of the variable needs to be restored
 	/// after the nested modifier is left.
 	std::map<Declaration const*, std::vector<unsigned>> m_localVariables;
-	/// List of current inheritance hierarchy from derived to base.
-	std::vector<ContractDefinition const*> m_inheritanceHierarchy;
+	/// The contract currently being compiled. Virtual function lookup starts from this contarct.
+	ContractDefinition const* m_mostDerivedContract = nullptr;
 	/// Stack of current visited AST nodes, used for location attachment
 	std::stack<ASTNode const*> m_visitedNodes;
 	/// The runtime context if in Creation mode, this is used for generating tags that would be stored into the storage and then used at runtime.
@@ -333,10 +380,18 @@ private:
 	size_t m_runtimeSub = -1;
 	/// An index of low-level function labels by name.
 	std::map<std::string, evmasm::AssemblyItem> m_lowLevelFunctions;
+	/// Collector for yul functions.
+	MultiUseYulFunctionCollector m_yulFunctionCollector;
+	/// Set of externally used yul functions.
+	std::set<std::string> m_externallyUsedYulFunctions;
 	/// Container for ABI functions to be generated.
 	ABIFunctions m_abiFunctions;
+	/// Container for Yul Util functions to be generated.
+	YulUtilFunctions m_yulUtilFunctions;
 	/// The queue of low-level functions to generate.
 	std::queue<std::tuple<std::string, unsigned, unsigned, std::function<void(CompilerContext&)>>> m_lowLevelFunctionGenerationQueue;
+	/// Flag to check that requestedYulFunctions() was called exactly once
+	bool m_requestedYulFunctionsRan = false;
 };
 
 }

@@ -28,16 +28,18 @@
 #include <libsolutil/Keccak256.h>
 
 #include <boost/algorithm/string.hpp>
+
 #include <algorithm>
 #include <functional>
+#include <utility>
 
 using namespace std;
 using namespace solidity;
 using namespace solidity::frontend;
 
-ASTNode::ASTNode(int64_t _id, SourceLocation const& _location):
+ASTNode::ASTNode(int64_t _id, SourceLocation _location):
 	m_id(_id),
-	m_location(_location)
+	m_location(std::move(_location))
 {
 }
 
@@ -96,9 +98,9 @@ bool ContractDefinition::derivesFrom(ContractDefinition const& _base) const
 	return util::contains(annotation().linearizedBaseContracts, &_base);
 }
 
-map<util::FixedHash<4>, FunctionTypePointer> ContractDefinition::interfaceFunctions() const
+map<util::FixedHash<4>, FunctionTypePointer> ContractDefinition::interfaceFunctions(bool _includeInheritedFunctions) const
 {
-	auto exportedFunctionList = interfaceFunctionList();
+	auto exportedFunctionList = interfaceFunctionList(_includeInheritedFunctions);
 
 	map<util::FixedHash<4>, FunctionTypePointer> exportedFunctions;
 	for (auto const& it: exportedFunctionList)
@@ -174,14 +176,16 @@ vector<EventDefinition const*> const& ContractDefinition::interfaceEvents() cons
 	return *m_interfaceEvents;
 }
 
-vector<pair<util::FixedHash<4>, FunctionTypePointer>> const& ContractDefinition::interfaceFunctionList() const
+vector<pair<util::FixedHash<4>, FunctionTypePointer>> const& ContractDefinition::interfaceFunctionList(bool _includeInheritedFunctions) const
 {
-	if (!m_interfaceFunctionList)
+	if (!m_interfaceFunctionList[_includeInheritedFunctions])
 	{
 		set<string> signaturesSeen;
-		m_interfaceFunctionList = make_unique<vector<pair<util::FixedHash<4>, FunctionTypePointer>>>();
+		m_interfaceFunctionList[_includeInheritedFunctions] = make_unique<vector<pair<util::FixedHash<4>, FunctionTypePointer>>>();
 		for (ContractDefinition const* contract: annotation().linearizedBaseContracts)
 		{
+			if (_includeInheritedFunctions == false && contract != this)
+				continue;
 			vector<FunctionTypePointer> functions;
 			for (FunctionDefinition const* f: contract->definedFunctions())
 				if (f->isPartOfExternalInterface())
@@ -199,12 +203,12 @@ vector<pair<util::FixedHash<4>, FunctionTypePointer>> const& ContractDefinition:
 				{
 					signaturesSeen.insert(functionSignature);
 					util::FixedHash<4> hash(util::keccak256(functionSignature));
-					m_interfaceFunctionList->emplace_back(hash, fun);
+					m_interfaceFunctionList[_includeInheritedFunctions]->emplace_back(hash, fun);
 				}
 			}
 		}
 	}
-	return *m_interfaceFunctionList;
+	return *m_interfaceFunctionList[_includeInheritedFunctions];
 }
 
 TypePointer ContractDefinition::type() const
@@ -217,6 +221,37 @@ ContractDefinitionAnnotation& ContractDefinition::annotation() const
 	return initAnnotation<ContractDefinitionAnnotation>();
 }
 
+ContractDefinition const* ContractDefinition::superContract(ContractDefinition const& _mostDerivedContract) const
+{
+	auto const& hierarchy = _mostDerivedContract.annotation().linearizedBaseContracts;
+	auto it = find(hierarchy.begin(), hierarchy.end(), this);
+	solAssert(it != hierarchy.end(), "Base not found in inheritance hierarchy.");
+	++it;
+	if (it == hierarchy.end())
+		return nullptr;
+	else
+	{
+		solAssert(*it != this, "");
+		return *it;
+	}
+}
+
+FunctionDefinition const* ContractDefinition::nextConstructor(ContractDefinition const& _mostDerivedContract) const
+{
+	ContractDefinition const* next = superContract(_mostDerivedContract);
+	if (next == nullptr)
+		return nullptr;
+	for (ContractDefinition const* c: _mostDerivedContract.annotation().linearizedBaseContracts)
+		if (c == next || next == nullptr)
+		{
+			if (c->constructor())
+				return c->constructor();
+			next = nullptr;
+		}
+
+	return nullptr;
+}
+
 TypeNameAnnotation& TypeName::annotation() const
 {
 	return initAnnotation<TypeNameAnnotation>();
@@ -224,12 +259,13 @@ TypeNameAnnotation& TypeName::annotation() const
 
 TypePointer StructDefinition::type() const
 {
+	solAssert(annotation().recursive.has_value(), "Requested struct type before DeclarationTypeChecker.");
 	return TypeProvider::typeType(TypeProvider::structType(*this, DataLocation::Storage));
 }
 
-TypeDeclarationAnnotation& StructDefinition::annotation() const
+StructDeclarationAnnotation& StructDefinition::annotation() const
 {
-	return initAnnotation<TypeDeclarationAnnotation>();
+	return initAnnotation<StructDeclarationAnnotation>();
 }
 
 TypePointer EnumValue::type() const
@@ -319,6 +355,37 @@ FunctionDefinitionAnnotation& FunctionDefinition::annotation() const
 	return initAnnotation<FunctionDefinitionAnnotation>();
 }
 
+FunctionDefinition const& FunctionDefinition::resolveVirtual(
+	ContractDefinition const& _mostDerivedContract,
+	ContractDefinition const* _searchStart
+) const
+{
+	solAssert(!isConstructor(), "");
+	// If we are not doing super-lookup and the function is not virtual, we can stop here.
+	if (_searchStart == nullptr && !virtualSemantics())
+		return *this;
+
+	solAssert(!dynamic_cast<ContractDefinition const&>(*scope()).isLibrary(), "");
+
+	FunctionType const* functionType = TypeProvider::function(*this)->asCallableFunction(false);
+
+	for (ContractDefinition const* c: _mostDerivedContract.annotation().linearizedBaseContracts)
+	{
+		if (_searchStart != nullptr && c != _searchStart)
+			continue;
+		_searchStart = nullptr;
+		for (FunctionDefinition const* function: c->definedFunctions())
+			if (
+				function->name() == name() &&
+				!function->isConstructor() &&
+				FunctionType(*function).asCallableFunction(false)->hasEqualParameterTypes(*functionType)
+			)
+				return *function;
+	}
+	solAssert(false, "Virtual function " + name() + " not found.");
+	return *this; // not reached
+}
+
 TypePointer ModifierDefinition::type() const
 {
 	return TypeProvider::modifier(*this);
@@ -328,6 +395,33 @@ ModifierDefinitionAnnotation& ModifierDefinition::annotation() const
 {
 	return initAnnotation<ModifierDefinitionAnnotation>();
 }
+
+ModifierDefinition const& ModifierDefinition::resolveVirtual(
+	ContractDefinition const& _mostDerivedContract,
+	ContractDefinition const* _searchStart
+) const
+{
+	solAssert(_searchStart == nullptr, "Used super in connection with modifiers.");
+
+	// If we are not doing super-lookup and the modifier is not virtual, we can stop here.
+	if (_searchStart == nullptr && !virtualSemantics())
+		return *this;
+
+	solAssert(!dynamic_cast<ContractDefinition const&>(*scope()).isLibrary(), "");
+
+	for (ContractDefinition const* c: _mostDerivedContract.annotation().linearizedBaseContracts)
+	{
+		if (_searchStart != nullptr && c != _searchStart)
+			continue;
+		_searchStart = nullptr;
+		for (ModifierDefinition const* modifier: c->functionModifiers())
+			if (modifier->name() == name())
+				return *modifier;
+	}
+	solAssert(false, "Virtual modifier " + name() + " not found.");
+	return *this; // not reached
+}
+
 
 TypePointer EventDefinition::type() const
 {
@@ -390,7 +484,7 @@ DeclarationAnnotation& Declaration::annotation() const
 bool VariableDeclaration::isLValue() const
 {
 	// Constant declared variables are Read-Only
-	if (m_isConstant)
+	if (isConstant())
 		return false;
 	// External function arguments of reference type are Read-Only
 	if (isExternalCallableParameter() && dynamic_cast<ReferenceType const*>(type()))
@@ -467,6 +561,18 @@ bool VariableDeclaration::isExternalCallableParameter() const
 	return false;
 }
 
+bool VariableDeclaration::isPublicCallableParameter() const
+{
+	if (!isCallableOrCatchParameter())
+		return false;
+
+	if (auto const* callable = dynamic_cast<CallableDeclaration const*>(scope()))
+		if (callable->visibility() == Visibility::Public)
+			return !isReturnParameter();
+
+	return false;
+}
+
 bool VariableDeclaration::isInternalCallableParameter() const
 {
 	if (!isCallableOrCatchParameter())
@@ -508,8 +614,6 @@ set<VariableDeclaration::Location> VariableDeclaration::allowedDataLocations() c
 
 	if (!hasReferenceOrMappingType() || isStateVariable() || isEventParameter())
 		return set<Location>{ Location::Unspecified };
-	else if (isStateVariable() && isConstant())
-		return set<Location>{ Location::Memory };
 	else if (isExternalCallableParameter())
 	{
 		set<Location> locations{ Location::CallData };
@@ -527,12 +631,20 @@ set<VariableDeclaration::Location> VariableDeclaration::allowedDataLocations() c
 	else if (isLocalVariable())
 	{
 		solAssert(typeName(), "");
-		solAssert(typeName()->annotation().type, "Can only be called after reference resolution");
-		if (typeName()->annotation().type->category() == Type::Category::Mapping)
-			return set<Location>{ Location::Storage };
-		else
-			//  TODO: add Location::Calldata once implemented for local variables.
-			return set<Location>{ Location::Memory, Location::Storage };
+		auto dataLocations = [](TypePointer _type, auto&& _recursion) -> set<Location> {
+			solAssert(_type, "Can only be called after reference resolution");
+			switch (_type->category())
+			{
+				case Type::Category::Array:
+					return _recursion(dynamic_cast<ArrayType const*>(_type)->baseType(), _recursion);
+				case Type::Category::Mapping:
+					return set<Location>{ Location::Storage };
+				default:
+					//  TODO: add Location::Calldata once implemented for local variables.
+					return set<Location>{ Location::Memory, Location::Storage };
+			}
+		};
+		return dataLocations(typeName()->annotation().type, dataLocations);
 	}
 	else
 		// Struct members etc.
@@ -668,4 +780,26 @@ string Literal::getChecksummedAddress() const
 		return string();
 	address.insert(address.begin(), 40 - address.size(), '0');
 	return util::getChecksummedAddress(address);
+}
+
+TryCatchClause const* TryStatement::successClause() const
+{
+	solAssert(m_clauses.size() > 0, "");
+	return m_clauses[0].get();
+}
+
+TryCatchClause const* TryStatement::structuredClause() const
+{
+	for (size_t i = 1; i < m_clauses.size(); ++i)
+		if (m_clauses[i]->errorName() == "Error")
+			return m_clauses[i].get();
+	return nullptr;
+}
+
+TryCatchClause const* TryStatement::fallbackClause() const
+{
+	for (size_t i = 1; i < m_clauses.size(); ++i)
+		if (m_clauses[i]->errorName().empty())
+			return m_clauses[i].get();
+	return nullptr;
 }

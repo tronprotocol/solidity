@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include <test/Options.h>
+#include <test/Common.h>
 
 #include <libsolidity/interface/OptimiserSettings.h>
 #include <libsolidity/interface/DebugSettings.h>
@@ -33,6 +33,8 @@
 #include <libsolutil/Keccak256.h>
 
 #include <functional>
+
+#include <boost/test/unit_test.hpp>
 
 namespace solidity::test
 {
@@ -174,8 +176,8 @@ public:
 		return _padLeft ? padding + _value : _value + padding;
 	}
 	static bytes encode(std::string const& _value) { return encode(util::asBytes(_value), false); }
-	template <class _T>
-	static bytes encode(std::vector<_T> const& _value)
+	template <class T>
+	static bytes encode(std::vector<T> const& _value)
 	{
 		bytes ret;
 		for (auto const& v: _value)
@@ -246,6 +248,8 @@ private:
 	}
 
 protected:
+	void reset();
+
 	void sendMessage(bytes const& _data, bool _isCreation, u256 const& _value = 0);
 	void sendEther(Address const& _to, u256 const& _value);
 	size_t currentTimestamp();

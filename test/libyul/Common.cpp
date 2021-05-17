@@ -21,7 +21,7 @@
 
 #include <test/libyul/Common.h>
 
-#include <test/Options.h>
+#include <test/Common.h>
 
 #include <liblangutil/SourceReferenceFormatter.h>
 
@@ -31,6 +31,7 @@
 #include <libyul/AsmPrinter.h>
 #include <libyul/AssemblyStack.h>
 #include <libyul/backends/evm/EVMDialect.h>
+#include <libyul/backends/wasm/WasmDialect.h>
 
 #include <liblangutil/Scanner.h>
 #include <liblangutil/ErrorReporter.h>
@@ -48,7 +49,7 @@ namespace
 {
 Dialect const& defaultDialect(bool _yul)
 {
-	return _yul ? yul::Dialect::yul() : yul::EVMDialect::strictAssemblyForEVM(solidity::test::Options::get().evmVersion());
+	return _yul ? yul::Dialect::yulDeprecated() : yul::EVMDialect::strictAssemblyForEVM(solidity::test::CommonOptions::get().evmVersion());
 }
 }
 
@@ -64,9 +65,9 @@ void yul::test::printErrors(ErrorList const& _errors)
 pair<shared_ptr<Block>, shared_ptr<yul::AsmAnalysisInfo>> yul::test::parse(string const& _source, bool _yul)
 {
 	AssemblyStack stack(
-		solidity::test::Options::get().evmVersion(),
+		solidity::test::CommonOptions::get().evmVersion(),
 		_yul ? AssemblyStack::Language::Yul : AssemblyStack::Language::StrictAssembly,
-		solidity::test::Options::get().optimize ?
+		solidity::test::CommonOptions::get().optimize ?
 			solidity::frontend::OptimiserSettings::standard() :
 			solidity::frontend::OptimiserSettings::minimal()
 	);
@@ -105,4 +106,52 @@ yul::Block yul::test::disambiguate(string const& _source, bool _yul)
 string yul::test::format(string const& _source, bool _yul)
 {
 	return yul::AsmPrinter()(*parse(_source, _yul).first);
+}
+
+namespace
+{
+std::map<string const, yul::Dialect const& (*)(langutil::EVMVersion)> const validDialects = {
+	{
+		"evm",
+		[](langutil::EVMVersion _evmVersion) -> yul::Dialect const&
+		{ return yul::EVMDialect::strictAssemblyForEVMObjects(_evmVersion); }
+	},
+	{
+		"evmTyped",
+		[](langutil::EVMVersion _evmVersion) -> yul::Dialect const&
+		{ return yul::EVMDialectTyped::instance(_evmVersion); }
+	},
+	{
+		"yul",
+		[](langutil::EVMVersion) -> yul::Dialect const&
+		{ return yul::Dialect::yulDeprecated(); }
+	},
+	{
+		"ewasm",
+		[](langutil::EVMVersion) -> yul::Dialect const&
+		{ return yul::WasmDialect::instance(); }
+	}
+};
+
+vector<string> validDialectNames()
+{
+	vector<string> names{size(validDialects), ""};
+	transform(begin(validDialects), end(validDialects), names.begin(), [](auto const& dialect) { return dialect.first; });
+
+	return names;
+}
+}
+
+yul::Dialect const& yul::test::dialect(std::string const& _name, langutil::EVMVersion _evmVersion)
+{
+	if (!validDialects.count(_name))
+		BOOST_THROW_EXCEPTION(runtime_error{
+			"Invalid Dialect \"" +
+			_name +
+			"\". Valid dialects are " +
+			util::joinHumanReadable(validDialectNames(), ", ", " and ") +
+			"."
+		});
+
+	return validDialects.at(_name)(_evmVersion);
 }

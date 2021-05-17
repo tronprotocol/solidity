@@ -13,7 +13,8 @@ This can be done by using the ``abstract`` keyword as shown in the following exa
 defined as abstract, because the function ``utterance()`` was defined, but no implementation was
 provided (no implementation body ``{ }`` was given).::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.6.0 <0.7.0;
 
     abstract contract Feline {
         function utterance() public virtual returns (bytes32);
@@ -22,6 +23,7 @@ provided (no implementation body ``{ }`` was given).::
 Such abstract contracts can not be instantiated directly. This is also true, if an abstract contract itself does implement
 all defined functions. The usage of an abstract contract as a base class is shown in the following example::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity ^0.6.0;
 
     abstract contract Feline {
@@ -52,3 +54,8 @@ facilitating patterns like the `Template method <https://en.wikipedia.org/wiki/T
 Abstract contracts are useful in the same way that defining methods
 in an interface is useful. It is a way for the designer of the
 abstract contract to say "any child of mine must implement this method".
+
+.. note::
+
+  Abstract contracts cannot override an implemented virtual function with an
+  unimplemented one.

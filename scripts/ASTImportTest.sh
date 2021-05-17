@@ -4,12 +4,13 @@
 # first exporting a .sol file to JSON, then loading it into the compiler
 # and exporting it again. The second JSON should be identical to the first
 
-REPO_ROOT=$(realpath "$(dirname "$0")"/..)
-SOLIDITY_BUILD_DIR=${SOLIDITY_BUILD_DIR:-build}
-SOLC=${REPO_ROOT}/${SOLIDITY_BUILD_DIR}/solc/solc
+REPO_ROOT=$(readlink -f "$(dirname "$0")"/..)
+SOLIDITY_BUILD_DIR=${SOLIDITY_BUILD_DIR:-${REPO_ROOT}/build}
+SOLC=${SOLIDITY_BUILD_DIR}/solc/solc
 SPLITSOURCES=${REPO_ROOT}/scripts/splitSources.py
 
 SYNTAXTESTS_DIR="${REPO_ROOT}/test/libsolidity/syntaxTests"
+ASTJSONTESTS_DIR="${REPO_ROOT}/test/libsolidity/ASTJSON"
 NSOURCES="$(find $SYNTAXTESTS_DIR -type f | wc -l)"
 
 # DEV_DIR="${REPO_ROOT}/../tmp/contracts/"
@@ -20,8 +21,8 @@ UNCOMPILABLE=0
 TESTED=0
 
 if [ $(ls | wc -l) -ne 0 ]; then
-	echo "Test directory not empty. Skipping!"
-	exit -1
+    echo "Test directory not empty. Skipping!"
+    exit -1
 fi
 
 # function tests whether exporting and importing again leaves the JSON ast unchanged
@@ -39,11 +40,11 @@ function testImportExportEquivalence {
         $SOLC --import-ast --combined-json ast,compact-format --pretty-json expected.json > obtained.json 2> /dev/null
         if [ $? -ne 0 ]
         then
-               # For investigating, use exit 1 here so the script stops at the
-               # first failing test
-               # exit 1
-               FAILED=$((FAILED + 1))
-               return 1
+            # For investigating, use exit 1 here so the script stops at the
+            # first failing test
+            # exit 1
+            FAILED=$((FAILED + 1))
+            return 1
         fi
         DIFF="$(diff expected.json obtained.json)"
         if [ "$DIFF" != "" ]
@@ -75,11 +76,11 @@ echo "Looking at $NSOURCES .sol files..."
 WORKINGDIR=$PWD
 
 # for solfile in $(find $DEV_DIR -name *.sol)
-for solfile in $(find $SYNTAXTESTS_DIR -name *.sol)
+for solfile in $(find $SYNTAXTESTS_DIR $ASTJSONTESTS_DIR -name *.sol)
 do
     echo -n "."
     # create a temporary sub-directory
-    FILETMP=$(mktemp -d -p $WORKINGDIR)
+    FILETMP=$(mktemp -d)
     cd $FILETMP
 
     OUTPUT=$($SPLITSOURCES $solfile)

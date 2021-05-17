@@ -91,6 +91,10 @@ KnownState::StoreOperation KnownState::feedItem(AssemblyItem const& _item, bool 
 	{
 		// can be ignored
 	}
+	else if (_item.type() == AssignImmutable)
+		// Since AssignImmutable breaks blocks, it should be fine to only consider its changes to the stack, which
+		// is the same as POP.
+		return feedItem(AssemblyItem(Instruction::POP), _copyItem);
 	else if (_item.type() != Operation)
 	{
 		assertThrow(_item.deposit() == 1, InvalidDeposit, "");
@@ -179,7 +183,7 @@ KnownState::StoreOperation KnownState::feedItem(AssemblyItem const& _item, bool 
 
 /// Helper function for KnownState::reduceToCommonKnowledge, removes everything from
 /// _this which is not in or not equal to the value in _other.
-template <class _Mapping> void intersect(_Mapping& _this, _Mapping const& _other)
+template <class Mapping> void intersect(Mapping& _this, Mapping const& _other)
 {
 	for (auto it = _this.begin(); it != _this.end();)
 		if (_other.count(it->first) && _other.at(it->first) == it->second)

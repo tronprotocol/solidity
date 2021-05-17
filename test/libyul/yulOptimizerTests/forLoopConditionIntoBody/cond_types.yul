@@ -6,9 +6,9 @@
   for { } a { } { }
   for { } add(a, a) { } { }
 }
-// ====
-// step: forLoopConditionIntoBody
 // ----
+// step: forLoopConditionIntoBody
+//
 // {
 //     let a := 1
 //     for { } 42 { }
@@ -19,7 +19,7 @@
 //     { }
 //     for { } a { }
 //     { }
-//     for { } 1 { }
+//     for { } true { }
 //     {
 //         if iszero(add(a, a)) { break }
 //     }

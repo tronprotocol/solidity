@@ -40,6 +40,9 @@ Operators:
 * Shift operators: ``<<`` (left shift), ``>>`` (right shift)
 * Arithmetic operators: ``+``, ``-``, unary ``-``, ``*``, ``/``, ``%`` (modulo), ``**`` (exponentiation)
 
+For an integer type ``X``, you can use ``type(X).min`` and ``type(X).max`` to
+access the minimum and maximum value representable by the type.
+
 .. warning::
 
   Integers in Solidity are restricted to a certain range. For example, with ``uint32``, this is ``0`` up to ``2**32 - 1``.
@@ -301,6 +304,11 @@ The ``gas`` option is available on all three methods, while the ``value`` option
 supported for ``delegatecall``.
 
 .. note::
+    It is best to avoid relying on hardcoded gas values in your smart contract code,
+    regardless of whether state is read from or written to, as this can have many pitfalls.
+    Also, access to gas might change in the future.
+
+.. note::
     All contracts can be converted to ``address`` type, so it is possible to query the balance of the
     current contract using ``address(this).balance``.
 
@@ -327,7 +335,7 @@ the :ref:`address type<address>`.
     Before version 0.5.0, contracts directly derived from the address type
     and there was no distinction between ``address`` and ``address payable``.
 
-If you declare a local variable of contract type (`MyContract c`), you can call
+If you declare a local variable of contract type (``MyContract c``), you can call
 functions on that contract. Take care to assign it from somewhere that is the
 same contract type.
 
@@ -535,6 +543,7 @@ subsequent unsigned integer values starting from ``0``.
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.16 <0.7.0;
 
     contract test {
@@ -645,8 +654,9 @@ External (or public) functions have the following members:
 
 Example that shows how to use the members::
 
-    pragma solidity >=0.4.16 <0.7.0;
-
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.6.0 <0.7.0;
+    // This will report a warning
 
     contract Example {
         function f() public payable returns (bytes4) {
@@ -663,8 +673,8 @@ Example that shows how to use the members::
 
 Example that shows how to use internal function types::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.16 <0.7.0;
-
 
     library ArrayUtils {
         // internal functions can be used in internal library functions because
@@ -721,6 +731,7 @@ Example that shows how to use internal function types::
 
 Another example that uses external function types::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.22 <0.7.0;
 
 

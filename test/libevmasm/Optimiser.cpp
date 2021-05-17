@@ -20,7 +20,7 @@
  * Tests for the Solidity optimizer.
  */
 
-#include <test/Options.h>
+#include <test/Common.h>
 
 #include <libevmasm/CommonSubexpressionEliminator.h>
 #include <libevmasm/PeepholeOptimiser.h>
@@ -72,7 +72,7 @@ namespace
 
 		for (AssemblyItem const& item: output)
 		{
-			BOOST_CHECK(item == Instruction::POP || !item.location().isEmpty());
+			BOOST_CHECK(item == Instruction::POP || item.location().isValid());
 		}
 		return output;
 	}
@@ -111,6 +111,44 @@ namespace
 }
 
 BOOST_AUTO_TEST_SUITE(Optimiser)
+
+BOOST_AUTO_TEST_CASE(cse_push_immutable_same)
+{
+	AssemblyItem pushImmutable{PushImmutable, 0x1234};
+	checkCSE({pushImmutable, pushImmutable}, {pushImmutable, Instruction::DUP1});
+}
+
+BOOST_AUTO_TEST_CASE(cse_push_immutable_different)
+{
+	AssemblyItems input{{PushImmutable, 0x1234},{PushImmutable, 0xABCD}};
+	checkCSE(input, input);
+}
+
+BOOST_AUTO_TEST_CASE(cse_assign_immutable)
+{
+	{
+		AssemblyItems input{u256(0x42), {AssignImmutable, 0x1234}};
+		checkCSE(input, input);
+	}
+	{
+		AssemblyItems input{{AssignImmutable, 0x1234}};
+		checkCSE(input, input);
+	}
+}
+
+
+BOOST_AUTO_TEST_CASE(cse_assign_immutable_breaks)
+{
+	AssemblyItems input = addDummyLocations(AssemblyItems{
+		u256(0x42),
+		{AssignImmutable, 0x1234},
+		Instruction::ORIGIN
+	});
+
+	evmasm::CommonSubexpressionEliminator cse{evmasm::KnownState()};
+	// Make sure CSE breaks after AssignImmutable.
+	BOOST_REQUIRE(cse.feedItems(input.begin(), input.end(), false) == input.begin() + 2);
+}
 
 BOOST_AUTO_TEST_CASE(cse_intermediate_swap)
 {
@@ -236,7 +274,7 @@ BOOST_AUTO_TEST_CASE(cse_associativity2)
 
 BOOST_AUTO_TEST_CASE(cse_double_shift_right_overflow)
 {
-	if (solidity::test::Options::get().evmVersion().hasBitwiseShifting())
+	if (solidity::test::CommonOptions::get().evmVersion().hasBitwiseShifting())
 	{
 		AssemblyItems input{
 			Instruction::CALLVALUE,
@@ -251,7 +289,7 @@ BOOST_AUTO_TEST_CASE(cse_double_shift_right_overflow)
 
 BOOST_AUTO_TEST_CASE(cse_double_shift_left_overflow)
 {
-	if (solidity::test::Options::get().evmVersion().hasBitwiseShifting())
+	if (solidity::test::CommonOptions::get().evmVersion().hasBitwiseShifting())
 	{
 		AssemblyItems input{
 			Instruction::DUP1,
@@ -798,6 +836,68 @@ BOOST_AUTO_TEST_CASE(block_deduplicator)
 	BOOST_CHECK_EQUAL(pushTags.size(), 2);
 }
 
+BOOST_AUTO_TEST_CASE(block_deduplicator_assign_immutable_same)
+{
+	AssemblyItems blocks{
+		AssemblyItem(Tag, 1),
+		u256(42),
+		AssemblyItem{AssignImmutable, 0x1234},
+		Instruction::JUMP,
+		AssemblyItem(Tag, 2),
+		u256(42),
+		AssemblyItem{AssignImmutable, 0x1234},
+		Instruction::JUMP
+	};
+
+	AssemblyItems input = AssemblyItems{
+		AssemblyItem(PushTag, 2),
+		AssemblyItem(PushTag, 1),
+	} + blocks;
+	AssemblyItems output = AssemblyItems{
+		AssemblyItem(PushTag, 1),
+		AssemblyItem(PushTag, 1),
+	} + blocks;
+	BlockDeduplicator dedup(input);
+	dedup.deduplicate();
+	BOOST_CHECK_EQUAL_COLLECTIONS(input.begin(), input.end(), output.begin(), output.end());
+}
+
+BOOST_AUTO_TEST_CASE(block_deduplicator_assign_immutable_different_value)
+{
+	AssemblyItems input{
+		AssemblyItem(PushTag, 2),
+		AssemblyItem(PushTag, 1),
+		AssemblyItem(Tag, 1),
+		u256(42),
+		AssemblyItem{AssignImmutable, 0x1234},
+		Instruction::JUMP,
+		AssemblyItem(Tag, 2),
+		u256(23),
+		AssemblyItem{AssignImmutable, 0x1234},
+		Instruction::JUMP
+	};
+	BlockDeduplicator dedup(input);
+	BOOST_CHECK(!dedup.deduplicate());
+}
+
+BOOST_AUTO_TEST_CASE(block_deduplicator_assign_immutable_different_hash)
+{
+	AssemblyItems input{
+		AssemblyItem(PushTag, 2),
+		AssemblyItem(PushTag, 1),
+		AssemblyItem(Tag, 1),
+		u256(42),
+		AssemblyItem{AssignImmutable, 0x1234},
+		Instruction::JUMP,
+		AssemblyItem(Tag, 2),
+		u256(42),
+		AssemblyItem{AssignImmutable, 0xABCD},
+		Instruction::JUMP
+	};
+	BlockDeduplicator dedup(input);
+	BOOST_CHECK(!dedup.deduplicate());
+}
+
 BOOST_AUTO_TEST_CASE(block_deduplicator_loops)
 {
 	AssemblyItems input{
@@ -1132,7 +1232,7 @@ BOOST_AUTO_TEST_CASE(jumpdest_removal_subassemblies)
 	main.append(t1.toSubAssemblyTag(subId));
 	main.append(u256(8));
 
-	main.optimise(true, solidity::test::Options::get().evmVersion(), false, 200);
+	main.optimise(true, solidity::test::CommonOptions::get().evmVersion(), false, 200);
 
 	AssemblyItems expectationMain{
 		AssemblyItem(PushSubSize, 0),
@@ -1178,7 +1278,7 @@ BOOST_AUTO_TEST_CASE(cse_sub_zero)
 
 BOOST_AUTO_TEST_CASE(cse_remove_redundant_shift_masking)
 {
-	if (!solidity::test::Options::get().evmVersion().hasBitwiseShifting())
+	if (!solidity::test::CommonOptions::get().evmVersion().hasBitwiseShifting())
 		return;
 
 	for (int i = 1; i < 256; i++)
@@ -1326,7 +1426,7 @@ BOOST_AUTO_TEST_CASE(cse_remove_unwanted_masking_of_address)
 
 BOOST_AUTO_TEST_CASE(cse_replace_too_large_shift)
 {
-	if (!solidity::test::Options::get().evmVersion().hasBitwiseShifting())
+	if (!solidity::test::CommonOptions::get().evmVersion().hasBitwiseShifting())
 		return;
 
 	checkCSE({

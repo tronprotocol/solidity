@@ -8,7 +8,8 @@
       [
         39
       ]
-    }
+    },
+    "license": null
   },
   "children":
   [
@@ -41,6 +42,7 @@
           {
             "constant": false,
             "functionSelector": "97682884",
+            "mutability": "mutable",
             "name": "m",
             "overrides": null,
             "scope": 39,
@@ -118,6 +120,7 @@
                   "attributes":
                   {
                     "constant": false,
+                    "mutability": "mutable",
                     "name": "arg",
                     "overrides": null,
                     "scope": 38,
@@ -157,6 +160,7 @@
                   "attributes":
                   {
                     "constant": false,
+                    "mutability": "mutable",
                     "name": "r",
                     "overrides": null,
                     "scope": 38,
@@ -206,6 +210,7 @@
                       "attributes":
                       {
                         "constant": false,
+                        "mutability": "mutable",
                         "name": "a",
                         "overrides": null,
                         "scope": 37,
@@ -359,6 +364,7 @@
                       "attributes":
                       {
                         "constant": false,
+                        "mutability": "mutable",
                         "name": "c",
                         "overrides": null,
                         "scope": 37,

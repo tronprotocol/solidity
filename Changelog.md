@@ -1,3 +1,136 @@
+### 0.6.8 (2020-05-14)
+
+Important Bugfixes:
+ * Add missing callvalue check to the creation code of a contract that does not define a constructor but has a base that does define a constructor.
+ * Disallow array slices of arrays with dynamically encoded base types.
+ * String literals containing backslash characters can no longer cause incorrect code to be generated when passed directly to function calls or encoding functions when ABIEncoderV2 is active.
+
+
+Language Features:
+ * Implemented ``type(T).min`` and ``type(T).max`` for every integer type ``T`` that returns the smallest and largest value representable by the type.
+
+
+Compiler Features:
+ * Commandline Interface: Don't ignore `--yul-optimizations` in assembly mode.
+ * Allow using abi encoding functions for calldata array slices without explicit casts.
+ * Wasm binary output: Implement ``br`` and ``br_if``.
+
+
+Bugfixes:
+ * ABI: Skip ``private`` or ``internal`` constructors.
+ * Fixed an "Assembly Exception in Bytecode" error where requested functions were generated twice.
+ * Natspec: Fixed a bug that ignored ``@return`` tag when no other developer-documentation tags were present.
+ * Type Checker: Checks if a literal exponent in the ``**`` operation is too large or fractional.
+ * Type Checker: Disallow accessing ``runtimeCode`` for contract types that contain immutable state variables.
+ * Yul Assembler: Fix source location of variable declarations without value.
+
+
+### 0.6.7 (2020-05-04)
+
+Language Features:
+ * Add support for EIP 165 interface identifiers with `type(I).interfaceId`.
+ * Allow virtual modifiers inside abstract contracts to have empty body.
+
+
+Compiler Features:
+ * Optimizer: Simplify repeated AND and OR operations.
+ * Standard Json Input: Support the prefix ``file://`` in the field ``urls``.
+ * Add option to specify optimization steps to be performed by Yul optimizer with `--yul-optimizations` in the commandline interface or `optimizer.details.yulDetails.optimizerSteps` in standard-json.
+
+Bugfixes:
+ * SMTChecker: Fix internal error when fixed points are used.
+ * SMTChecker: Fix internal error when using array slices.
+ * Type Checker: Disallow ``virtual`` and ``override`` for constructors.
+ * Type Checker: Fix several internal errors by performing size and recursiveness checks of types before the full type checking.
+ * Type Checker: Fix internal error when assigning to empty tuples.
+ * Type Checker: Fix internal error when applying unary operators to tuples with empty components.
+ * Type Checker: Perform recursiveness check on structs declared at the file level.
+
+Build System:
+ * soltest.sh: ``SOLIDITY_BUILD_DIR`` is no longer relative to ``REPO_ROOT`` to allow for build directories outside of the source tree.
+
+
+
+### 0.6.6 (2020-04-09)
+
+Important Bugfixes:
+ * Fix tuple assignments with components occupying multiple stack slots and different stack size on left- and right-hand-side.
+
+
+Bugfixes:
+ * AST export: Export `immutable` property in the field `mutability`.
+ * SMTChecker: Fix internal error in the CHC engine when calling inherited functions internally.
+ * Type Checker: Error when trying to encode functions with call options gas and value set.
+
+
+
+### 0.6.5 (2020-04-06)
+
+Important Bugfixes:
+ * Code Generator: Restrict the length of dynamic memory arrays to 64 bits during creation at runtime fixing a possible overflow.
+
+
+Language Features:
+ * Allow local storage variables to be declared without initialization, as long as they are assigned before they are accessed.
+ * State variables can be marked ``immutable`` which causes them to be read-only, but assignable in the constructor. The value will be stored directly in the code.
+
+
+Compiler Features:
+ * Commandline Interface: Enable output of storage layout with `--storage-layout`.
+ * Metadata: Added support for IPFS hashes of large files that need to be split in multiple chunks.
+
+
+Bugfixes:
+ * Inheritance: Allow public state variables to override functions with dynamic memory types in their return values.
+ * Inline Assembly: Fix internal error when accessing invalid constant variables.
+ * Inline Assembly: Fix internal error when accessing functions.
+ * JSON AST: Always add pointer suffix for memory reference types.
+ * Reference Resolver: Fix internal error when accessing invalid struct members.
+ * Type Checker: Fix internal errors when assigning nested tuples.
+
+
+### 0.6.4 (2020-03-10)
+
+Language Features:
+ * General: Deprecated `value(...)` and `gas(...)` in favor of `{value: ...}` and `{gas: ...}`
+ * Inline Assembly: Allow assigning to `_slot` of local storage variable pointers.
+ * Inline Assembly: Perform control flow analysis on inline assembly. Allows storage returns to be set in assembly only.
+
+
+Compiler Features:
+ * AssemblyStack: Support for source locations (source mappings) and thus debugging Yul sources.
+ * Commandline Interface: Enable output of experimental optimized IR via ``--ir-optimized``.
+
+
+Bugfixes:
+ * Inheritance: Fix incorrect error on calling unimplemented base functions.
+ * Reference Resolver: Fix scoping issue following try/catch statements.
+ * Standard-JSON-Interface: Fix a bug related to empty filenames and imports.
+ * SMTChecker: Fix internal errors when analysing tuples.
+ * Yul AST Import: correctly import blocks as statements, switch statements and string literals.
+
+### 0.6.3 (2020-02-18)
+
+Language Features:
+ * Allow contract types and enums as keys for mappings.
+ * Allow function selectors to be used as compile-time constants.
+ * Report source locations for structured documentation errors.
+
+
+Compiler Features:
+ * AST: Add a new node for doxygen-style, structured documentation that can be received by contract, function, event and modifier definitions.
+ * Code Generator: Use ``calldatacopy`` instead of ``codecopy`` to zero out memory past input.
+ * Debug: Provide reason strings for compiler-generated internal reverts when using the ``--revert-strings`` option or the ``settings.debug.revertStrings`` setting on ``debug`` mode.
+ * Yul Optimizer: Prune functions that call each other but are otherwise unreferenced.
+ * SMTChecker: CHC support to internal function calls.
+
+
+Bugfixes:
+ * Assembly: Added missing `source` field to legacy assembly json output to complete the source reference.
+ * Parser: Fix an internal error for ``abstract`` without ``contract``.
+ * Type Checker: Make invalid calls to uncallable types fatal errors instead of regular.
+
+
 ### 0.6.2 (2020-01-27)
 
 Language Features:
@@ -76,6 +209,12 @@ Language Features:
 Compiler Features:
  * Allow revert strings to be stripped from the binary using the ``--revert-strings`` option or the ``settings.debug.revertStrings`` setting.
  * ABIEncoderV2: Do not warn about enabled ABIEncoderV2 anymore (the pragma is still needed, though).
+
+
+### 0.5.17 (2020-03-17)
+
+Bugfixes:
+ * Type Checker: Disallow overriding of private functions.
 
 
 ### 0.5.16 (2020-01-02)

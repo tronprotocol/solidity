@@ -56,7 +56,12 @@ private:
 	/// @returns the full object with library placeholder hints in hex.
 	static std::string objectWithLinkRefsHex(evmasm::LinkerObject const& _obj);
 
-	bool assemble(yul::AssemblyStack::Language _language, yul::AssemblyStack::Machine _targetMachine, bool _optimize);
+	bool assemble(
+		yul::AssemblyStack::Language _language,
+		yul::AssemblyStack::Machine _targetMachine,
+		bool _optimize,
+		std::optional<std::string> _yulOptimiserSteps = std::nullopt
+	);
 
 	void outputCompilationResults();
 
@@ -65,6 +70,7 @@ private:
 	void handleBinary(std::string const& _contract);
 	void handleOpcode(std::string const& _contract);
 	void handleIR(std::string const& _contract);
+	void handleIROptimized(std::string const& _contract);
 	void handleEwasm(std::string const& _contract);
 	void handleBytecode(std::string const& _contract);
 	void handleSignatureHashes(std::string const& _contract);
@@ -73,6 +79,7 @@ private:
 	void handleNatspec(bool _natspecDev, std::string const& _contract);
 	void handleGasEstimation(std::string const& _contract);
 	void handleFormal();
+	void handleStorageLayout(std::string const& _contract);
 
 	/// Fills @a m_sourceCodes initially and @a m_redirects.
 	bool readInputFilesAndConfigureRemappings();

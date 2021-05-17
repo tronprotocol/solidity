@@ -106,7 +106,8 @@ Target options
 Below is a list of target EVM versions and the compiler-relevant changes introduced
 at each version. Backward compatibility is not guaranteed between each version.
 
-- ``homestead`` (oldest version)
+- ``homestead``
+   - (oldest version)
 - ``tangerineWhistle``
    - Gas cost for access to other accounts increased, relevant for gas estimation and the optimizer.
    - All gas sent by default for external calls, previously a certain amount had to be retained.
@@ -230,7 +231,10 @@ Input Description
             "yulDetails": {
               // Improve allocation of stack slots for variables, can free up stack slots early.
               // Activated by default if the Yul optimizer is activated.
-              "stackAllocation": true
+              "stackAllocation": true,
+              // Select optimization steps to be applied.
+              // Optional, the optimizer will use the default sequence if omitted.
+              "optimizerSteps": "dhfoDgvulfnTUtnIf..."
             }
           }
         },
@@ -244,7 +248,7 @@ Input Description
           // "default", "strip", "debug" and "verboseDebug".
           // "default" does not inject compiler-generated revert strings and keeps user-supplied ones.
           // "strip" removes all revert strings (if possible, i.e. if literals are used) keeping side-effects
-          // "debug" injects strings for compiler-generated internal reverts (not yet implemented)
+          // "debug" injects strings for compiler-generated internal reverts, implemented for ABI encoders V1 and V2 for now.
           // "verboseDebug" even appends further information to user-supplied revert strings (not yet implemented)
           "revertStrings": "default"
         }
@@ -302,7 +306,8 @@ Input Description
         //   evm.bytecode.opcodes - Opcodes list
         //   evm.bytecode.sourceMap - Source mapping (useful for debugging)
         //   evm.bytecode.linkReferences - Link references (if unlinked object)
-        //   evm.deployedBytecode* - Deployed bytecode (has the same options as evm.bytecode)
+        //   evm.deployedBytecode* - Deployed bytecode (has all the options that evm.bytecode has)
+        //   evm.deployedBytecode.immutableReferences - Map from AST ids to bytecode ranges that reference immutables
         //   evm.methodIdentifiers - The list of function hashes
         //   evm.gasEstimates - Function gas estimates
         //   ewasm.wast - eWASM S-expressions format (not supported at the moment)
@@ -424,8 +429,14 @@ Output Description
                   }
                 }
               },
-              // The same layout as above.
-              "deployedBytecode": { },
+              "deployedBytecode": {
+                ..., // The same layout as above.
+                "immutableReferences": [
+                  // There are two references to the immutable with AST ID 3, both 32 bytes long. One is
+                  // at bytecode offset 42, the other at bytecode offset 80.
+                  "3": [{ "start": 42, "length": 32 }, { "start": 80, "length": 32 }]
+                ]
+              },
               // The list of function hashes
               "methodIdentifiers": {
                 "delegate(address)": "5c19a95c"
@@ -474,3 +485,242 @@ Error types
 11. ``CompilerError``: Invalid use of the compiler stack - this should be reported as an issue.
 12. ``FatalError``: Fatal error not processed correctly - this should be reported as an issue.
 13. ``Warning``: A warning, which didn't stop the compilation, but should be addressed if possible.
+
+
+.. _compiler-tools:
+
+Compiler tools
+**************
+
+solidity-upgrade
+----------------
+
+``solidity-upgrade`` can help you to semi-automatically upgrade your contracts
+to breaking language changes. While it does not and cannot implement all
+required changes for every breaking release, it still supports the ones, that
+would need plenty of repetitive manual adjustments otherwise.
+
+.. note::
+
+    ``solidity-upgrade`` carries out a large part of the work, but your
+    contracts will most likely need further manual adjustments. We recommend
+    using a version control system for your files. This helps reviewing and
+    eventually rolling back the changes made.
+
+.. warning::
+
+    ``solidity-upgrade`` is not considered to be complete or free from bugs, so
+    please use with care.
+
+How it works
+~~~~~~~~~~~~
+
+You can pass (a) Solidity source file(s) to ``solidity-upgrade [files]``. If
+these make use of ``import`` statement which refer to files outside the
+current source file's directory, you need to specify directories that
+are allowed to read and import files from, by passing
+``--allow-paths [directory]``. You can ignore missing files by passing
+``--ignore-missing``.
+
+``solidity-upgrade`` is based on ``libsolidity`` and can parse, compile and
+analyse your source files, and might find applicable source upgrades in them.
+
+Source upgrades are considered to be small textual changes to your source code.
+They are applied to an in-memory representation of the source files
+given. The corresponding source file is updated by default, but you can pass
+``--dry-run`` to simulate to whole upgrade process without writing to any file.
+
+The upgrade process itself has two phases. In the first phase source files are
+parsed, and since it is not possible to upgrade source code on that level,
+errors are collected and can be logged by passing ``--verbose``. No source
+upgrades available at this point.
+
+In the second phase, all sources are compiled and all activated upgrade analysis
+modules are run alongside compilation. By default, all available modules are
+activated. Please read the documentation on
+:ref:`available modules <upgrade-modules>` for further details.
+
+
+This can result in compilation errors that may
+be fixed by source upgrades. If no errors occur, no source upgrades are being
+reported and you're done.
+If errors occur and some upgrade module reported a source upgrade, the first
+reported one gets applied and compilation is triggered again for all given
+source files. The previous step is repeated as long as source upgrades are
+reported. If errors still occur, you can log them by passing ``--verbose``.
+If no errors occur, your contracts are up to date and can be compiled with
+the latest version of the compiler.
+
+.. _upgrade-modules:
+
+Available upgrade modules
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
++-----------------+---------+--------------------------------------------------+
+| Module          | Version | Description                                      |
++=================+=========+==================================================+
+| ``constructor`` | 0.5.0   | Constructors must now be defined using the       |
+|                 |         | ``constructor`` keyword.                         |
++-----------------+---------+--------------------------------------------------+
+| ``visibility``  | 0.5.0   | Explicit function visibility is now mandatory,   |
+|                 |         | defaults to ``public``.                          |
++-----------------+---------+--------------------------------------------------+
+| ``abstract``    | 0.6.0   | The keyword ``abstract`` has to be used if a     |
+|                 |         | contract does not implement all its functions.   |
++-----------------+---------+--------------------------------------------------+
+| ``virtual``     | 0.6.0   | Functions without implementation outside an      |
+|                 |         | interface have to be marked ``virtual``.         |
++-----------------+---------+--------------------------------------------------+
+| ``override``    | 0.6.0   | When overriding a function or modifier, the new  |
+|                 |         | keyword ``override`` must be used.               |
++-----------------+---------+--------------------------------------------------+
+
+Please read :doc:`0.5.0 release notes <050-breaking-changes>` and
+:doc:`0.6.0 release notes <060-breaking-changes>` for further details.
+
+Synopsis
+~~~~~~~~
+
+.. code-block:: none
+
+    Usage: solidity-upgrade [options] contract.sol
+
+    Allowed options:
+        --help               Show help message and exit.
+        --version            Show version and exit.
+        --allow-paths path(s)
+                             Allow a given path for imports. A list of paths can be
+                             supplied by separating them with a comma.
+        --ignore-missing     Ignore missing files.
+        --modules module(s)  Only activate a specific upgrade module. A list of
+                             modules can be supplied by separating them with a comma.
+        --dry-run            Apply changes in-memory only and don't write to input
+                             file.
+        --verbose            Print logs, errors and changes. Shortens output of
+                             upgrade patches.
+        --unsafe             Accept *unsafe* changes.
+
+
+
+Bug Reports / Feature requests
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you found a bug or if you have a feature request, please
+`file an issue <https://github.com/ethereum/solidity/issues/new/choose>`_ on Github.
+
+
+Example
+~~~~~~~
+
+Assume you have the following contracts you want to update declared in ``Source.sol``:
+
+.. code-block:: none
+
+    // This will not compile after 0.5.0
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >0.4.23 <0.5.0;
+
+    contract Updateable {
+        function run() public view returns (bool);
+        function update() public;
+    }
+
+    contract Upgradable {
+        function run() public view returns (bool);
+        function upgrade();
+    }
+
+    contract Source is Updateable, Upgradable {
+        function Source() public {}
+
+        function run()
+            public
+            view
+            returns (bool) {}
+
+        function update() {}
+        function upgrade() {}
+    }
+
+
+Required changes
+^^^^^^^^^^^^^^^^
+
+To bring the contracts up to date with the current Solidity version, the
+following upgrade modules have to be executed: ``constructor``,
+``visibility``, ``abstract``, ``override`` and ``virtual``. Please read the
+documentation on :ref:`available modules <upgrade-modules>` for further details.
+
+Running the upgrade
+^^^^^^^^^^^^^^^^^^^
+
+In this example, all modules needed to upgrade the contracts above,
+are available and all of them are activated by default. Therefore you
+do not need to specify the ``--modules`` option.
+
+.. code-block:: none
+
+    $ solidity-upgrade Source.sol --dry-run
+
+.. code-block:: none
+
+    Running analysis (and upgrade) on given source files.
+    ..............
+
+    After upgrade:
+
+    Found 0 errors.
+    Found 0 upgrades.
+
+The above performs a dry-ran upgrade on the given file and logs statistics after all.
+In this case, the upgrade was successful and no further adjustments are needed.
+
+Finally, you can run the upgrade and also write to the source file.
+
+.. code-block:: none
+
+    $ solidity-upgrade Source.sol
+
+.. code-block:: none
+
+    Running analysis (and upgrade) on given source files.
+    ..............
+
+    After upgrade:
+
+    Found 0 errors.
+    Found 0 upgrades.
+
+
+Review changes
+^^^^^^^^^^^^^^
+
+The command above applies all changes as shown below. Please review them carefully.
+
+.. code-block:: solidity
+
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.6.0 <0.7.0;
+
+    abstract contract Updateable {
+        function run() public view virtual returns (bool);
+        function update() public virtual;
+    }
+
+    abstract contract Upgradable {
+        function run() public view virtual returns (bool);
+        function upgrade() public virtual;
+    }
+
+    contract Source is Updateable, Upgradable {
+        constructor() public {}
+
+        function run()
+            public
+            view
+            override(Updateable,Upgradable)
+            returns (bool) {}
+
+        function update() public override {}
+        function upgrade() public override {}
+    }

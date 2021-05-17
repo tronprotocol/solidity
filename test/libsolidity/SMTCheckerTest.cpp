@@ -16,7 +16,7 @@
 */
 
 #include <test/libsolidity/SMTCheckerTest.h>
-#include <test/Options.h>
+#include <test/Common.h>
 
 #include <libsolidity/formal/ModelChecker.h>
 
@@ -28,22 +28,26 @@ using namespace solidity::frontend::test;
 
 SMTCheckerTest::SMTCheckerTest(string const& _filename, langutil::EVMVersion _evmVersion): SyntaxTest(_filename, _evmVersion)
 {
-	if (m_settings.count("SMTSolvers"))
-	{
-		auto const& choice = m_settings.at("SMTSolvers");
-		if (choice == "any")
-			m_enabledSolvers = smt::SMTSolverChoice::All();
-		else if (choice == "z3")
-			m_enabledSolvers = smt::SMTSolverChoice::Z3();
-		else if (choice == "cvc4")
-			m_enabledSolvers = smt::SMTSolverChoice::CVC4();
-		else if (choice == "none")
-			m_enabledSolvers = smt::SMTSolverChoice::None();
-		else
-			BOOST_THROW_EXCEPTION(runtime_error("Invalid SMT solver choice."));
-	}
-	else
+	auto const& choice = m_reader.stringSetting("SMTSolvers", "any");
+	if (choice == "any")
 		m_enabledSolvers = smt::SMTSolverChoice::All();
+	else if (choice == "z3")
+		m_enabledSolvers = smt::SMTSolverChoice::Z3();
+	else if (choice == "cvc4")
+		m_enabledSolvers = smt::SMTSolverChoice::CVC4();
+	else if (choice == "none")
+		m_enabledSolvers = smt::SMTSolverChoice::None();
+	else
+		BOOST_THROW_EXCEPTION(runtime_error("Invalid SMT solver choice."));
+
+	auto available = ModelChecker::availableSolvers();
+	if (!available.z3)
+		m_enabledSolvers.z3 = false;
+	if (!available.cvc4)
+		m_enabledSolvers.cvc4 = false;
+
+	if (m_enabledSolvers.none())
+		m_shouldRun = false;
 }
 
 TestCase::TestResult SMTCheckerTest::run(ostream& _stream, string const& _linePrefix, bool _formatted)
@@ -53,19 +57,5 @@ TestCase::TestResult SMTCheckerTest::run(ostream& _stream, string const& _linePr
 	parseAndAnalyze();
 	filterObtainedErrors();
 
-	return printExpectationAndError(_stream, _linePrefix, _formatted) ? TestResult::Success : TestResult::Failure;
-}
-
-bool SMTCheckerTest::validateSettings(langutil::EVMVersion _evmVersion)
-{
-	auto available = ModelChecker::availableSolvers();
-	if (!available.z3)
-		m_enabledSolvers.z3 = false;
-	if (!available.cvc4)
-		m_enabledSolvers.cvc4 = false;
-
-	if (m_enabledSolvers.none())
-		return false;
-
-	return SyntaxTest::validateSettings(_evmVersion);
+	return conclude(_stream, _linePrefix, _formatted);
 }

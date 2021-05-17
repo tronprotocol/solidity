@@ -208,6 +208,8 @@ ASTPointer<ASTNode> ASTJsonImporter::convertJsonToASTNode(Json::Value const& _js
 		return createElementaryTypeNameExpression(_json);
 	if (nodeType == "Literal")
 		return createLiteral(_json);
+	if (nodeType == "StructuredDocumentation")
+		return createDocumentation(_json);
 	else
 		astAssert(false, "Unknown type of ASTNode: " + nodeType);
 }
@@ -216,10 +218,15 @@ ASTPointer<ASTNode> ASTJsonImporter::convertJsonToASTNode(Json::Value const& _js
 
 ASTPointer<SourceUnit> ASTJsonImporter::createSourceUnit(Json::Value const& _node, string const& _srcName)
 {
+	optional<string> license;
+	if (_node.isMember("license") && !_node["license"].isNull())
+		license = _node["license"].asString();
+
 	vector<ASTPointer<ASTNode>> nodes;
 	for (auto& child: member(_node, "nodes"))
 		nodes.emplace_back(convertJsonToASTNode(child));
-	ASTPointer<SourceUnit> tmp = createASTNode<SourceUnit>(_node, nodes);
+
+	ASTPointer<SourceUnit> tmp = createASTNode<SourceUnit>(_node, license, nodes);
 	tmp->annotation().path = _srcName;
 	return tmp;
 }
@@ -283,7 +290,7 @@ ASTPointer<ContractDefinition> ASTJsonImporter::createContractDefinition(Json::V
 	return createASTNode<ContractDefinition>(
 		_node,
 		make_shared<ASTString>(_node["name"].asString()),
-		nullOrASTString(_node, "documentation"),
+		_node["documentation"].isNull() ? nullptr : createDocumentation(member(_node, "documentation")),
 		baseContracts,
 		subNodes,
 		contractKind(_node),
@@ -397,7 +404,7 @@ ASTPointer<FunctionDefinition> ASTJsonImporter::createFunctionDefinition(Json::V
 		kind,
 		memberAsBool(_node, "virtual"),
 		_node["overrides"].isNull() ? nullptr : createOverrideSpecifier(member(_node, "overrides")),
-		nullOrASTString(_node, "documentation"),
+		_node["documentation"].isNull() ? nullptr : createDocumentation(member(_node, "documentation")),
 		createParameterList(member(_node, "parameters")),
 		modifiers,
 		createParameterList(member(_node, "returnParameters")),
@@ -409,6 +416,25 @@ ASTPointer<VariableDeclaration> ASTJsonImporter::createVariableDeclaration(Json:
 {
 	astAssert(_node["name"].isString(), "Expected 'name' to be a string!");
 
+	VariableDeclaration::Mutability mutability{};
+	astAssert(member(_node, "mutability").isString(), "'mutability' expected to be string.");
+	string const mutabilityStr = member(_node, "mutability").asString();
+	if (mutabilityStr == "constant")
+	{
+		mutability = VariableDeclaration::Mutability::Constant;
+		astAssert(memberAsBool(_node, "constant"), "");
+	}
+	else
+	{
+		astAssert(!memberAsBool(_node, "constant"), "");
+		if (mutabilityStr == "mutable")
+			mutability = VariableDeclaration::Mutability::Mutable;
+		else if (mutabilityStr == "immutable")
+			mutability = VariableDeclaration::Mutability::Immutable;
+		else
+			astAssert(false, "");
+	}
+
 	return createASTNode<VariableDeclaration>(
 		_node,
 		nullOrCast<TypeName>(member(_node, "typeName")),
@@ -417,7 +443,7 @@ ASTPointer<VariableDeclaration> ASTJsonImporter::createVariableDeclaration(Json:
 		visibility(_node),
 		memberAsBool(_node, "stateVariable"),
 		_node.isMember("indexed") ? memberAsBool(_node, "indexed") : false,
-		memberAsBool(_node, "constant"),
+		mutability,
 		_node["overrides"].isNull() ? nullptr : createOverrideSpecifier(member(_node, "overrides")),
 		location(_node)
 	);
@@ -428,11 +454,11 @@ ASTPointer<ModifierDefinition> ASTJsonImporter::createModifierDefinition(Json::V
 	return createASTNode<ModifierDefinition>(
 		_node,
 		memberAsASTString(_node, "name"),
-		nullOrASTString(_node,"documentation"),
+		_node["documentation"].isNull() ? nullptr : createDocumentation(member(_node, "documentation")),
 		createParameterList(member(_node, "parameters")),
 		memberAsBool(_node, "virtual"),
 		_node["overrides"].isNull() ? nullptr : createOverrideSpecifier(member(_node, "overrides")),
-		createBlock(member(_node, "body"))
+		_node["body"].isNull() ? nullptr: createBlock(member(_node, "body"))
 	);
 }
 
@@ -453,7 +479,7 @@ ASTPointer<EventDefinition> ASTJsonImporter::createEventDefinition(Json::Value c
 	return createASTNode<EventDefinition>(
 		_node,
 		memberAsASTString(_node, "name"),
-		nullOrASTString(_node, "documentation"),
+		_node["documentation"].isNull() ? nullptr : createDocumentation(member(_node, "documentation")),
 		createParameterList(member(_node, "parameters")),
 		memberAsBool(_node, "anonymous")
 	);
@@ -487,7 +513,7 @@ ASTPointer<UserDefinedTypeName> ASTJsonImporter::createUserDefinedTypeName(Json:
 	string nameString = member(_node, "name").asString();
 	boost::algorithm::split(strs, nameString, boost::is_any_of("."));
 	for (string s: strs)
-		namePath.push_back(ASTString(s));
+		namePath.emplace_back(s);
 	return createASTNode<UserDefinedTypeName>(
 		_node,
 		namePath
@@ -509,7 +535,7 @@ ASTPointer<Mapping> ASTJsonImporter::createMapping(Json::Value const&  _node)
 {
 	return createASTNode<Mapping>(
 		_node,
-		createElementaryTypeName(member(_node, "keyType")),
+		convertJsonToASTNode<TypeName>(member(_node, "keyType")),
 		convertJsonToASTNode<TypeName>(member(_node, "valueType"))
 	);
 }
@@ -839,6 +865,18 @@ ASTPointer<ASTNode> ASTJsonImporter::createLiteral(Json::Value const&  _node)
 		literalTokenKind(_node),
 		value,
 		member(_node, "subdenomination").isNull() ? Literal::SubDenomination::None : subdenomination(_node)
+	);
+}
+
+ASTPointer<StructuredDocumentation> ASTJsonImporter::createDocumentation(Json::Value const&  _node)
+{
+	static string const textString = "text";
+
+	astAssert(member(_node, textString).isString(), "'text' must be a string");
+
+	return createASTNode<StructuredDocumentation>(
+		_node,
+		make_shared<ASTString>(_node[textString].asString())
 	);
 }
 

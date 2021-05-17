@@ -41,7 +41,8 @@ Internal Function Calls
 Functions of the current contract can be called directly ("internally"), also recursively, as seen in
 this nonsensical example::
 
-    pragma solidity >=0.4.16 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.22 <0.7.0;
 
     contract C {
         function g(uint a) public pure returns (uint ret) { return a + f(); }
@@ -82,7 +83,8 @@ to the total balance of that contract:
 
 ::
 
-    pragma solidity >=0.4.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.6.2 <0.7.0;
 
     contract InfoFeed {
         function info() public payable returns (uint ret) { return 42; }
@@ -137,6 +139,7 @@ parameters from the function declaration, but can be in arbitrary order.
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.0 <0.7.0;
 
     contract C {
@@ -160,7 +163,8 @@ Those parameters will still be present on the stack, but they are inaccessible.
 
 ::
 
-    pragma solidity >=0.4.16 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.22 <0.7.0;
 
     contract C {
         // omitted name for parameter
@@ -183,7 +187,8 @@ is compiled so recursive creation-dependencies are not possible.
 
 ::
 
-    pragma solidity >=0.5.0 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.6.2 <0.7.0;
 
     contract D {
         uint public x;
@@ -201,7 +206,7 @@ is compiled so recursive creation-dependencies are not possible.
         }
 
         function createAndEndowD(uint arg, uint amount) public payable {
-            // Send trx along with the creation
+            // Send ether along with the creation
             D newD = new D{value: amount}(arg);
             newD.x();
         }
@@ -238,7 +243,8 @@ which only need to be created if there is a dispute.
 
 ::
 
-    pragma solidity >0.6.1 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.6.2 <0.7.0;
 
     contract D {
         uint public x;
@@ -252,7 +258,7 @@ which only need to be created if there is a dispute.
             /// This complicated expression just tells you how the address
             /// can be pre-computed. It is just there for illustration.
             /// You actually only need ``new D{salt: salt}(arg)``.
-            address predictedAddress = address(bytes20(keccak256(abi.encodePacked(
+            address predictedAddress = address(uint(keccak256(abi.encodePacked(
                 byte(0xff),
                 address(this),
                 salt,
@@ -307,7 +313,8 @@ groupings of expressions.
 
 ::
 
-    pragma solidity >0.4.23 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.5.0 <0.7.0;
 
     contract C {
         uint index;
@@ -343,18 +350,8 @@ i.e. the following is not valid: ``(x, uint y) = (1, 2);``
 Complications for Arrays and Structs
 ------------------------------------
 
-The semantics of assignments are a bit more complicated for
-non-value types like arrays and structs.
-Assigning *to* a state variable always creates an independent
-copy. On the other hand, assigning to a local variable creates
-an independent copy only for elementary types, i.e. static
-types that fit into 32 bytes. If structs or arrays (including
-``bytes`` and ``string``) are assigned from a state variable
-to a local variable, the local variable holds a reference to
-the original state variable. A second assignment to the local
-variable does not modify the state but only changes the
-reference. Assignments to members (or elements) of the local
-variable *do* change the state.
+The semantics of assignments are more complicated for non-value types like arrays and structs,
+including ``bytes`` and ``string``, see :ref:`Data location and assignment behaviour <data-location-assignment>` for details.
 
 In the example below the call to ``g(x)`` has no effect on ``x`` because it creates
 an independent copy of the storage value in memory. However, ``h(x)`` successfully modifies ``x``
@@ -362,7 +359,8 @@ because only a reference and not a copy is passed.
 
 ::
 
-    pragma solidity >=0.4.16 <0.7.0;
+    // SPDX-License-Identifier: GPL-3.0
+    pragma solidity >=0.4.22 <0.7.0;
 
     contract C {
         uint[20] x;
@@ -420,6 +418,7 @@ the two variables have the same name but disjoint scopes.
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
     contract C {
         function minimalScoping() pure public {
@@ -441,6 +440,7 @@ In any case, you will get a warning about the outer variable being shadowed.
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
     // This will report a warning
     contract C {
@@ -462,6 +462,7 @@ In any case, you will get a warning about the outer variable being shadowed.
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
     // This will not compile
     contract C {
@@ -538,9 +539,9 @@ A ``require``-style exception is generated in the following situations:
 #. If you create a contract using the ``new`` keyword but the contract
    creation :ref:`does not finish properly<creating-contracts>`.
 #. If you perform an external function call targeting a contract that contains no code.
-#. If your contract receives Trx via a public function without
+#. If your contract receives Ether via a public function without
    ``payable`` modifier (including the constructor and the fallback function).
-#. If your contract receives Trx via a public getter function.
+#. If your contract receives Ether via a public getter function.
 #. If a ``.transfer()`` fails.
 
 You can optionally provide a message string for ``require``, but not for ``assert``.
@@ -550,6 +551,7 @@ and ``assert`` for internal error checking.
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
 
     contract Sharer {
@@ -594,6 +596,7 @@ The following example shows how to use an error string together with ``revert`` 
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.5.0 <0.7.0;
 
     contract VendingMachine {
@@ -637,6 +640,7 @@ A failure in an external call can be caught using a try/catch statement, as foll
 
 ::
 
+    // SPDX-License-Identifier: GPL-3.0
     pragma solidity ^0.6.0;
 
     interface DataFeed { function getData(address token) external returns (uint value); }
@@ -717,3 +721,13 @@ in scope in the block that follows.
     in a catch block or the execution of the try/catch statement itself
     reverts (for example due to decoding failures as noted above or
     due to not providing a low-level catch clause).
+
+.. note::
+    The reason behind a failed call can be manifold. Do not assume that
+    the error message is coming directly from the called contract:
+    The error might have happened deeper down in the call chain and the
+    called contract just forwarded it. Also, it could be due to an
+    out-of-gas situation and not a deliberate error condition:
+    The caller always retains 63/64th of the gas in a call and thus
+    even if the called contract goes out of gas, the caller still
+    has some gas left.

@@ -65,7 +65,7 @@ public:
 class ASTCopier: public ExpressionCopier, public StatementCopier
 {
 public:
-	virtual ~ASTCopier() = default;
+	~ASTCopier() override = default;
 	Expression operator()(Literal const& _literal) override;
 	Expression operator()(Identifier const& _identifier) override;
 	Expression operator()(FunctionCall const&) override;
@@ -84,6 +84,7 @@ public:
 	virtual Expression translate(Expression const& _expression);
 	virtual Statement translate(Statement const& _statement);
 
+	Block translate(Block const& _block);
 protected:
 	template <typename T>
 	std::vector<T> translateVector(std::vector<T> const& _values);
@@ -94,7 +95,6 @@ protected:
 		return _v ? std::make_unique<T>(translate(*_v)) : nullptr;
 	}
 
-	Block translate(Block const& _block);
 	Case translate(Case const& _case);
 	virtual Identifier translate(Identifier const& _identifier);
 	Literal translate(Literal const& _literal);

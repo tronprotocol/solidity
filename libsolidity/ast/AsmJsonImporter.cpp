@@ -54,9 +54,11 @@ T AsmJsonImporter::createAsmNode(Json::Value const& _node)
 {
 	T r;
 	r.location = createSourceLocation(_node);
-	astAssert(!r.location.isEmpty() || !r.location.source, "Invalid source location in Asm AST");
+	astAssert(
+		r.location.source && 0 <= r.location.start && r.location.start <= r.location.end,
+		"Invalid source location in Asm AST"
+	);
 	return r;
-
 }
 
 Json::Value AsmJsonImporter::member(Json::Value const& _node, string const& _name)
@@ -102,6 +104,8 @@ yul::Statement AsmJsonImporter::createStatement(Json::Value const& _node)
 		return createContinue(_node);
 	else if (nodeType == "Leave")
 		return createLeave(_node);
+	else if (nodeType == "Block")
+		return createBlock(_node);
 	else
 		astAssert(false, "Invalid nodeType as statement");
 }
@@ -156,10 +160,9 @@ yul::Literal AsmJsonImporter::createLiteral(Json::Value const& _node)
 	lit.value = YulString{member(_node, "value").asString()};
 	lit.type= YulString{member(_node, "type").asString()};
 
-	langutil::Scanner scanner{langutil::CharStream(lit.value.str(), "")};
-
 	if (kind == "number")
 	{
+		langutil::Scanner scanner{langutil::CharStream(lit.value.str(), "")};
 		lit.kind = yul::LiteralKind::Number;
 		astAssert(
 			scanner.currentToken() == Token::Number,
@@ -168,6 +171,7 @@ yul::Literal AsmJsonImporter::createLiteral(Json::Value const& _node)
 	}
 	else if (kind == "bool")
 	{
+		langutil::Scanner scanner{langutil::CharStream(lit.value.str(), "")};
 		lit.kind = yul::LiteralKind::Boolean;
 		astAssert(
 			scanner.currentToken() == Token::TrueLiteral ||
@@ -178,7 +182,10 @@ yul::Literal AsmJsonImporter::createLiteral(Json::Value const& _node)
 	else if (kind == "string")
 	{
 		lit.kind = yul::LiteralKind::String;
-		astAssert(scanner.currentToken() == Token::StringLiteral, "Expected string literal!");
+		astAssert(
+			lit.value.str().size() <= 32,
+			"String literal too long (" + to_string(lit.value.str().size()) + " > 32)"
+		);
 	}
 	else
 		solAssert(false, "unknown type of literal");
@@ -266,7 +273,11 @@ yul::If AsmJsonImporter::createIf(Json::Value const& _node)
 yul::Case AsmJsonImporter::createCase(Json::Value const& _node)
 {
 	auto caseStatement = createAsmNode<yul::Case>(_node);
-	caseStatement.value = member(_node, "value").asString() == "default" ? nullptr : make_unique<yul::Literal>(createLiteral(member(_node, "value")));
+	auto const& value = member(_node, "value");
+	if (value.isString())
+		astAssert(value.asString() == "default", "Expected default case");
+	else
+		caseStatement.value = make_unique<yul::Literal>(createLiteral(value));
 	caseStatement.body = createBlock(member(_node, "body"));
 	return caseStatement;
 }
@@ -274,7 +285,7 @@ yul::Case AsmJsonImporter::createCase(Json::Value const& _node)
 yul::Switch AsmJsonImporter::createSwitch(Json::Value const& _node)
 {
 	auto switchStatement = createAsmNode<yul::Switch>(_node);
-	switchStatement.expression = make_unique<yul::Expression>(createExpression(member(_node, "value")));
+	switchStatement.expression = make_unique<yul::Expression>(createExpression(member(_node, "expression")));
 	for (auto const& var: member(_node, "cases"))
 		switchStatement.cases.emplace_back(createCase(var));
 	return switchStatement;

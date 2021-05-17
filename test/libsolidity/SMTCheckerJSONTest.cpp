@@ -16,14 +16,19 @@
 */
 
 #include <test/libsolidity/SMTCheckerJSONTest.h>
-#include <test/Options.h>
+#include <test/Common.h>
+
+#include <libsolidity/formal/ModelChecker.h>
 #include <libsolidity/interface/StandardCompiler.h>
 #include <libsolutil/CommonIO.h>
 #include <libsolutil/JSON.h>
+
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/test/unit_test.hpp>
 #include <boost/throw_exception.hpp>
+
 #include <fstream>
 #include <memory>
 #include <stdexcept>
@@ -49,6 +54,9 @@ SMTCheckerJSONTest::SMTCheckerJSONTest(string const& _filename, langutil::EVMVer
 		!m_smtResponses.isObject()
 	)
 		BOOST_THROW_EXCEPTION(runtime_error("Invalid JSON file."));
+
+	if (ModelChecker::availableSolvers().none())
+		m_shouldRun = false;
 }
 
 TestCase::TestResult SMTCheckerJSONTest::run(ostream& _stream, string const& _linePrefix, bool _formatted)
@@ -56,8 +64,8 @@ TestCase::TestResult SMTCheckerJSONTest::run(ostream& _stream, string const& _li
 	StandardCompiler compiler;
 
 	// Run the compiler and retrieve the smtlib2queries (1st run)
-	string versionPragma = "pragma solidity >=0.0;\n";
-	Json::Value input = buildJson(versionPragma);
+	string preamble = "pragma solidity >=0.0;\n// SPDX-License-Identifier: GPL-3.0\n";
+	Json::Value input = buildJson(preamble);
 	Json::Value result = compiler.compile(input);
 
 	// This is the list of query hashes requested by the 1st run
@@ -113,10 +121,10 @@ TestCase::TestResult SMTCheckerJSONTest::run(ostream& _stream, string const& _li
 			std::string sourceName;
 			if (location.isMember("source") && location["source"].isString())
 				sourceName = location["source"].asString();
-			if (start >= static_cast<int>(versionPragma.size()))
-				start -= versionPragma.size();
-			if (end >= static_cast<int>(versionPragma.size()))
-				end -= versionPragma.size();
+			if (start >= static_cast<int>(preamble.size()))
+				start -= preamble.size();
+			if (end >= static_cast<int>(preamble.size()))
+				end -= preamble.size();
 			m_errorList.emplace_back(SyntaxTestError{
 				error["type"].asString(),
 				error["message"].asString(),
@@ -127,7 +135,7 @@ TestCase::TestResult SMTCheckerJSONTest::run(ostream& _stream, string const& _li
 		}
 	}
 
-	return printExpectationAndError(_stream, _linePrefix, _formatted) ? TestResult::Success : TestResult::Failure;
+	return conclude(_stream, _linePrefix, _formatted);
 }
 
 vector<string> SMTCheckerJSONTest::hashesFromJson(Json::Value const& _jsonObj, string const& _auxInput, string const& _smtlib)

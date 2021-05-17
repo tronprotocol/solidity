@@ -59,12 +59,12 @@ Dialect const& languageToDialect(AssemblyStack::Language _language, EVMVersion _
 	case AssemblyStack::Language::StrictAssembly:
 		return EVMDialect::strictAssemblyForEVMObjects(_version);
 	case AssemblyStack::Language::Yul:
-		return Dialect::yul();
+		return EVMDialectTyped::instance(_version);
 	case AssemblyStack::Language::Ewasm:
 		return WasmDialect::instance();
 	}
 	yulAssert(false, "");
-	return Dialect::yul();
+	return Dialect::yulDeprecated();
 }
 
 }
@@ -157,7 +157,7 @@ void AssemblyStack::compileEVM(AbstractAssembly& _assembly, bool _evm15, bool _o
 			dialect = &EVMDialect::strictAssemblyForEVMObjects(m_evmVersion);
 			break;
 		case Language::Yul:
-			dialect = &EVMDialect::yulForEVM(m_evmVersion);
+			dialect = &EVMDialectTyped::instance(m_evmVersion);
 			break;
 		default:
 			solAssert(false, "Invalid language.");
@@ -183,7 +183,8 @@ void AssemblyStack::optimize(Object& _object, bool _isCreation)
 		dialect,
 		meter.get(),
 		_object,
-		m_optimiserSettings.optimizeStackAllocation
+		m_optimiserSettings.optimizeStackAllocation,
+		m_optimiserSettings.yulOptimiserSteps
 	);
 }
 
@@ -203,7 +204,14 @@ MachineAssemblyObject AssemblyStack::assemble(Machine _machine) const
 		EthAssemblyAdapter adapter(assembly);
 		compileEVM(adapter, false, m_optimiserSettings.optimizeStackAllocation);
 		object.bytecode = make_shared<evmasm::LinkerObject>(assembly.assemble());
+		yulAssert(object.bytecode->immutableReferences.empty(), "Leftover immutables.");
 		object.assembly = assembly.assemblyString();
+		object.sourceMappings = make_unique<string>(
+			evmasm::AssemblyItem::computeSourceMapping(
+				assembly.items(),
+				{{scanner().charStream() ? scanner().charStream()->name() : "", 0}}
+			)
+		);
 		return object;
 	}
 	case Machine::EVM15:
@@ -236,7 +244,7 @@ string AssemblyStack::print() const
 {
 	yulAssert(m_parserResult, "");
 	yulAssert(m_parserResult->code, "");
-	return m_parserResult->toString(m_language == Language::Yul) + "\n";
+	return m_parserResult->toString(&languageToDialect(m_language, m_evmVersion)) + "\n";
 }
 
 shared_ptr<Object> AssemblyStack::parserResult() const

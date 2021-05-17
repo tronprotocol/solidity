@@ -2,9 +2,9 @@
     switch calldataload(0)
     default { sstore(8, 9) }
 }
-// ====
-// step: wordSizeTransform
 // ----
+// step: wordSizeTransform
+//
 // {
 //     let _1_0 := 0
 //     let _1_1 := 0
@@ -13,7 +13,7 @@
 //     let _2_0, _2_1, _2_2, _2_3 := calldataload(_1_0, _1_1, _1_2, _1_3)
 //     let run_default
 //     switch _2_0
-//     default { run_default := 1 }
+//     default { run_default := true }
 //     if run_default
 //     {
 //         let _3_0 := 0

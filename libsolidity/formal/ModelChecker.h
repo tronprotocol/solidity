@@ -46,7 +46,7 @@ public:
 	/// should be used, even if all are available. The default choice is to use all.
 	ModelChecker(
 		langutil::ErrorReporter& _errorReporter,
-		std::map<h256, std::string> const& _smtlib2Responses,
+		std::map<solidity::util::h256, std::string> const& _smtlib2Responses,
 		ReadCallback::Callback const& _smtCallback = ReadCallback::Callback(),
 		smt::SMTSolverChoice _enabledSolvers = smt::SMTSolverChoice::All()
 	);
@@ -62,14 +62,14 @@ public:
 	static smt::SMTSolverChoice availableSolvers();
 
 private:
+	/// Stores the context of the encoding.
+	smt::EncodingContext m_context;
+
 	/// Bounded Model Checker engine.
 	BMC m_bmc;
 
 	/// Constrained Horn Clauses engine.
 	CHC m_chc;
-
-	/// Stores the context of the encoding.
-	smt::EncodingContext m_context;
 };
 
 }

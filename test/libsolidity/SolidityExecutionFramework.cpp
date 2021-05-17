@@ -21,6 +21,7 @@
  */
 
 #include <cstdlib>
+#include <iostream>
 #include <boost/test/framework.hpp>
 #include <test/libsolidity/SolidityExecutionFramework.h>
 
@@ -39,7 +40,7 @@ bytes SolidityExecutionFramework::compileContract(
 	// Silence compiler version warning
 	std::string sourceCode = "pragma solidity >=0.0;\n";
 	if (
-		solidity::test::Options::get().useABIEncoderV2 &&
+		solidity::test::CommonOptions::get().useABIEncoderV2 &&
 		_sourceCode.find("pragma experimental ABIEncoderV2;") == std::string::npos
 	)
 		sourceCode += "pragma experimental ABIEncoderV2;\n";
@@ -51,6 +52,7 @@ bytes SolidityExecutionFramework::compileContract(
 	m_compiler.setEVMVersion(m_evmVersion);
 	m_compiler.setOptimiserSettings(m_optimiserSettings);
 	m_compiler.enableIRGeneration(m_compileViaYul);
+	m_compiler.setRevertStringBehaviour(m_revertStrings);
 	if (!m_compiler.compile())
 	{
 		langutil::SourceReferenceFormatter formatter(std::cerr);
@@ -59,6 +61,7 @@ bytes SolidityExecutionFramework::compileContract(
 			formatter.printErrorInformation(*error);
 		BOOST_ERROR("Compiling contract failed");
 	}
+	std::string contractName(_contractName.empty() ? m_compiler.lastContractName() : _contractName);
 	evmasm::LinkerObject obj;
 	if (m_compileViaYul)
 	{
@@ -69,9 +72,7 @@ bytes SolidityExecutionFramework::compileContract(
 					// get code that does not exhaust the stack.
 					OptimiserSettings::full()
 					);
-		if (!asmStack.parseAndAnalyze("", m_compiler.yulIROptimized(
-			_contractName.empty() ? m_compiler.lastContractName() : _contractName
-		)))
+		if (!asmStack.parseAndAnalyze("", m_compiler.yulIROptimized(contractName)))
 		{
 			langutil::SourceReferenceFormatter formatter(std::cerr);
 
@@ -83,7 +84,9 @@ bytes SolidityExecutionFramework::compileContract(
 		obj = std::move(*asmStack.assemble(yul::AssemblyStack::Machine::EVM).bytecode);
 	}
 	else
-		obj = m_compiler.object(_contractName.empty() ? m_compiler.lastContractName() : _contractName);
+		obj = m_compiler.object(contractName);
 	BOOST_REQUIRE(obj.linkReferences.empty());
+	if (m_showMetadata)
+		cout << "metadata: " << m_compiler.metadata(contractName) << endl;
 	return obj.bytecode;
 }

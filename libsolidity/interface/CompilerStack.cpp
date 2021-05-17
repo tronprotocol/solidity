@@ -27,6 +27,7 @@
 #include <libsolidity/analysis/ControlFlowAnalyzer.h>
 #include <libsolidity/analysis/ControlFlowGraph.h>
 #include <libsolidity/analysis/ContractLevelChecker.h>
+#include <libsolidity/analysis/DeclarationTypeChecker.h>
 #include <libsolidity/analysis/DocStringAnalyser.h>
 #include <libsolidity/analysis/GlobalContext.h>
 #include <libsolidity/analysis/NameAndTypeResolver.h>
@@ -35,6 +36,7 @@
 #include <libsolidity/analysis/SyntaxChecker.h>
 #include <libsolidity/analysis/TypeChecker.h>
 #include <libsolidity/analysis/ViewPureChecker.h>
+#include <libsolidity/analysis/ImmutableValidator.h>
 
 #include <libsolidity/ast/AST.h>
 #include <libsolidity/ast/TypeProvider.h>
@@ -65,7 +67,8 @@
 
 #include <json/json.h>
 
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/replace.hpp>
+#include <utility>
 
 using namespace std;
 using namespace solidity;
@@ -77,8 +80,8 @@ using solidity::util::toHex;
 
 static int g_compilerStackCounts = 0;
 
-CompilerStack::CompilerStack(ReadCallback::Callback const& _readFile):
-	m_readFile{_readFile},
+CompilerStack::CompilerStack(ReadCallback::Callback _readFile):
+	m_readFile{std::move(_readFile)},
 	m_enabledSMTSolvers{smt::SMTSolverChoice::All()},
 	m_generateIR{false},
 	m_generateEwasm{false},
@@ -165,7 +168,7 @@ void CompilerStack::setRevertStringBehaviour(RevertStrings _revertStrings)
 {
 	if (m_stackState >= ParsingPerformed)
 		BOOST_THROW_EXCEPTION(CompilerError() << errinfo_comment("Must set revert string settings before parsing."));
-	solUnimplementedAssert(_revertStrings == RevertStrings::Default || _revertStrings == RevertStrings::Strip, "");
+	solUnimplementedAssert(_revertStrings != RevertStrings::VerboseDebug, "");
 	m_revertStrings = _revertStrings;
 }
 
@@ -236,7 +239,7 @@ bool CompilerStack::parse()
 	m_errorReporter.clear();
 
 	if (SemVerVersion{string(VersionString)}.isPrerelease())
-		m_errorReporter.warning("This is a pre-release compiler version, please do not use it in production.");
+		m_errorReporter.warning(3805_error, "This is a pre-release compiler version, please do not use it in production.");
 
 	Parser parser{m_errorReporter, m_evmVersion, m_parserErrorRecovery};
 
@@ -347,6 +350,11 @@ bool CompilerStack::analyze()
 
 				}
 
+		DeclarationTypeChecker declarationTypeChecker(m_errorReporter, m_evmVersion);
+		for (Source const* source: m_sourceOrder)
+			if (source->ast && !declarationTypeChecker.check(*source->ast))
+				return false;
+
 		// Next, we check inheritance, overrides, function collisions and other things at
 		// contract or function level.
 		// This also calculates whether a contract is abstract, which is needed by the
@@ -382,6 +390,15 @@ bool CompilerStack::analyze()
 				if (source->ast && !postTypeChecker.check(*source->ast))
 					noErrors = false;
 		}
+
+		// Check that immutable variables are never read in c'tors and assigned
+		// exactly once
+		if (noErrors)
+			for (Source const* source: m_sourceOrder)
+				if (source->ast)
+					for (ASTPointer<ASTNode> const& node: source->ast->nodes())
+						if (ContractDefinition* contract = dynamic_cast<ContractDefinition*>(node.get()))
+							ImmutableValidator(m_errorReporter, *contract).analyze();
 
 		if (noErrors)
 		{
@@ -565,7 +582,7 @@ string const* CompilerStack::sourceMapping(string const& _contractName) const
 	if (!c.sourceMapping)
 	{
 		if (auto items = assemblyItems(_contractName))
-			c.sourceMapping = make_unique<string>(computeSourceMapping(*items));
+			c.sourceMapping = make_unique<string>(evmasm::AssemblyItem::computeSourceMapping(*items, sourceIndices()));
 	}
 	return c.sourceMapping.get();
 }
@@ -579,7 +596,9 @@ string const* CompilerStack::runtimeSourceMapping(string const& _contractName) c
 	if (!c.runtimeSourceMapping)
 	{
 		if (auto items = runtimeAssemblyItems(_contractName))
-			c.runtimeSourceMapping = make_unique<string>(computeSourceMapping(*items));
+			c.runtimeSourceMapping = make_unique<string>(
+				evmasm::AssemblyItem::computeSourceMapping(*items, sourceIndices())
+			);
 	}
 	return c.runtimeSourceMapping.get();
 }
@@ -670,14 +689,14 @@ string CompilerStack::assemblyString(string const& _contractName, StringMap _sou
 }
 
 /// TODO: cache the JSON
-Json::Value CompilerStack::assemblyJSON(string const& _contractName, StringMap const& _sourceCodes) const
+Json::Value CompilerStack::assemblyJSON(string const& _contractName) const
 {
 	if (m_stackState != CompilationSuccessful)
 		BOOST_THROW_EXCEPTION(CompilerError() << errinfo_comment("Compilation was not successful."));
 
 	Contract const& currentContract = contract(_contractName);
 	if (currentContract.compiler)
-		return currentContract.compiler->assemblyJSON(_sourceCodes);
+		return currentContract.compiler->assemblyJSON(sourceIndices());
 	else
 		return Json::Value();
 }
@@ -897,8 +916,7 @@ h256 const& CompilerStack::Source::swarmHash() const
 string const& CompilerStack::Source::ipfsUrl() const
 {
 	if (ipfsUrlCached.empty())
-		if (scanner->source().size() < 1024 * 256)
-			ipfsUrlCached = "dweb:/ipfs/" + util::ipfsHashBase58(scanner->source());
+		ipfsUrlCached = "dweb:/ipfs/" + util::ipfsHashBase58(scanner->source());
 	return ipfsUrlCached;
 }
 
@@ -906,35 +924,43 @@ StringMap CompilerStack::loadMissingSources(SourceUnit const& _ast, std::string 
 {
 	solAssert(m_stackState < ParsingPerformed, "");
 	StringMap newSources;
-	for (auto const& node: _ast.nodes())
-		if (ImportDirective const* import = dynamic_cast<ImportDirective*>(node.get()))
-		{
-			solAssert(!import->path().empty(), "Import path cannot be empty.");
-
-			string importPath = util::absolutePath(import->path(), _sourcePath);
-			// The current value of `path` is the absolute path as seen from this source file.
-			// We first have to apply remappings before we can store the actual absolute path
-			// as seen globally.
-			importPath = applyRemapping(importPath, _sourcePath);
-			import->annotation().absolutePath = importPath;
-			if (m_sources.count(importPath) || newSources.count(importPath))
-				continue;
-
-			ReadCallback::Result result{false, string("File not supplied initially.")};
-			if (m_readFile)
-				result = m_readFile(ReadCallback::kindString(ReadCallback::Kind::ReadFile), importPath);
-
-			if (result.success)
-				newSources[importPath] = result.responseOrErrorMessage;
-			else
+	try
+	{
+		for (auto const& node: _ast.nodes())
+			if (ImportDirective const* import = dynamic_cast<ImportDirective*>(node.get()))
 			{
-				m_errorReporter.parserError(
-					import->location(),
-					string("Source \"" + importPath + "\" not found: " + result.responseOrErrorMessage)
-				);
-				continue;
+				solAssert(!import->path().empty(), "Import path cannot be empty.");
+
+				string importPath = util::absolutePath(import->path(), _sourcePath);
+				// The current value of `path` is the absolute path as seen from this source file.
+				// We first have to apply remappings before we can store the actual absolute path
+				// as seen globally.
+				importPath = applyRemapping(importPath, _sourcePath);
+				import->annotation().absolutePath = importPath;
+				if (m_sources.count(importPath) || newSources.count(importPath))
+					continue;
+
+				ReadCallback::Result result{false, string("File not supplied initially.")};
+				if (m_readFile)
+					result = m_readFile(ReadCallback::kindString(ReadCallback::Kind::ReadFile), importPath);
+
+				if (result.success)
+					newSources[importPath] = result.responseOrErrorMessage;
+				else
+				{
+					m_errorReporter.parserError(
+						6275_error,
+						import->location(),
+						string("Source \"" + importPath + "\" not found: " + result.responseOrErrorMessage)
+					);
+					continue;
+				}
 			}
-		}
+	}
+	catch (FatalError const&)
+	{
+		solAssert(m_errorReporter.hasErrors(), "");
+	}
 	return newSources;
 }
 
@@ -998,7 +1024,6 @@ void CompilerStack::resolveImports()
 				if (ImportDirective const* import = dynamic_cast<ImportDirective*>(node.get()))
 				{
 					string const& path = import->annotation().absolutePath;
-					solAssert(!path.empty(), "");
 					solAssert(m_sources.count(path), "");
 					import->annotation().sourceUnit = m_sources[path].ast.get();
 					toposort(&m_sources[path]);
@@ -1086,6 +1111,7 @@ void CompilerStack::compileContract(
 		compiledContract.runtimeObject.bytecode.size() > 0x6000
 	)
 		m_errorReporter.warning(
+			5574_error,
 			_contract.location(),
 			"Contract code size exceeds 24576 bytes (a limit introduced in Spurious Dragon). "
 			"This contract may not be deployable on mainnet. "
@@ -1105,15 +1131,21 @@ void CompilerStack::generateIR(ContractDefinition const& _contract)
 	if (!_contract.canBeDeployed())
 		return;
 
+	map<ContractDefinition const*, string const> otherYulSources;
+
 	Contract& compiledContract = m_contracts.at(_contract.fullyQualifiedName());
 	if (!compiledContract.yulIR.empty())
 		return;
 
+	string dependenciesSource;
 	for (auto const* dependency: _contract.annotation().contractDependencies)
+	{
 		generateIR(*dependency);
+		otherYulSources.emplace(dependency, m_contracts.at(dependency->fullyQualifiedName()).yulIR);
+	}
 
-	IRGenerator generator(m_evmVersion, m_optimiserSettings);
-	tie(compiledContract.yulIR, compiledContract.yulIROptimized) = generator.run(_contract);
+	IRGenerator generator(m_evmVersion, m_revertStrings, m_optimiserSettings);
+	tie(compiledContract.yulIR, compiledContract.yulIROptimized) = generator.run(_contract, otherYulSources);
 }
 
 void CompilerStack::generateEwasm(ContractDefinition const& _contract)
@@ -1204,6 +1236,8 @@ string CompilerStack::createMetadata(Contract const& _contract) const
 
 		solAssert(s.second.scanner, "Scanner not available");
 		meta["sources"][s.first]["keccak256"] = "0x" + toHex(s.second.keccak256().asBytes());
+		if (optional<string> licenseString = s.second.ast->licenseString())
+			meta["sources"][s.first]["license"] = *licenseString;
 		if (m_metadataLiteralSources)
 			meta["sources"][s.first]["content"] = s.second.scanner->source();
 		else
@@ -1241,6 +1275,7 @@ string CompilerStack::createMetadata(Contract const& _contract) const
 		{
 			details["yulDetails"] = Json::objectValue;
 			details["yulDetails"]["stackAllocation"] = m_optimiserSettings.optimizeStackAllocation;
+			details["yulDetails"]["optimizerSteps"] = m_optimiserSettings.yulOptimiserSteps;
 		}
 
 		meta["settings"]["optimizer"]["details"] = std::move(details);
@@ -1365,10 +1400,7 @@ bytes CompilerStack::createCBORMetadata(string const& _metadata, bool _experimen
 	MetadataCBOREncoder encoder;
 
 	if (m_metadataHash == MetadataHash::IPFS)
-	{
-		solAssert(_metadata.length() < 1024 * 256, "Metadata too large.");
 		encoder.pushBytes("ipfs", util::ipfsHash(_metadata));
-	}
 	else if (m_metadataHash == MetadataHash::Bzzr1)
 		encoder.pushBytes("tron", util::bzzr1Hash(_metadata).asBytes());
 	else
@@ -1381,95 +1413,6 @@ bytes CompilerStack::createCBORMetadata(string const& _metadata, bool _experimen
 	else
 		encoder.pushString("solc", VersionStringStrict);
 	return encoder.serialise();
-}
-
-string CompilerStack::computeSourceMapping(evmasm::AssemblyItems const& _items) const
-{
-	if (m_stackState != CompilationSuccessful)
-		BOOST_THROW_EXCEPTION(CompilerError() << errinfo_comment("Compilation was not successful."));
-
-	string ret;
-	map<string, unsigned> sourceIndicesMap = sourceIndices();
-	int prevStart = -1;
-	int prevLength = -1;
-	int prevSourceIndex = -1;
-	size_t prevModifierDepth = -1;
-	char prevJump = 0;
-	for (auto const& item: _items)
-	{
-		if (!ret.empty())
-			ret += ";";
-
-		SourceLocation const& location = item.location();
-		int length = location.start != -1 && location.end != -1 ? location.end - location.start : -1;
-		int sourceIndex =
-			location.source && sourceIndicesMap.count(location.source->name()) ?
-			sourceIndicesMap.at(location.source->name()) :
-			-1;
-		char jump = '-';
-		if (item.getJumpType() == evmasm::AssemblyItem::JumpType::IntoFunction)
-			jump = 'i';
-		else if (item.getJumpType() == evmasm::AssemblyItem::JumpType::OutOfFunction)
-			jump = 'o';
-		size_t modifierDepth = item.m_modifierDepth;
-
-		unsigned components = 5;
-		if (modifierDepth == prevModifierDepth)
-		{
-			components--;
-			if (jump == prevJump)
-			{
-				components--;
-				if (sourceIndex == prevSourceIndex)
-				{
-					components--;
-					if (length == prevLength)
-					{
-						components--;
-						if (location.start == prevStart)
-							components--;
-					}
-				}
-			}
-		}
-
-		if (components-- > 0)
-		{
-			if (location.start != prevStart)
-				ret += to_string(location.start);
-			if (components-- > 0)
-			{
-				ret += ':';
-				if (length != prevLength)
-					ret += to_string(length);
-				if (components-- > 0)
-				{
-					ret += ':';
-					if (sourceIndex != prevSourceIndex)
-						ret += to_string(sourceIndex);
-					if (components-- > 0)
-					{
-						ret += ':';
-						if (jump != prevJump)
-							ret += jump;
-						if (components-- > 0)
-						{
-							ret += ':';
-							if (modifierDepth != prevModifierDepth)
-								ret += to_string(modifierDepth);
-						}
-					}
-				}
-			}
-		}
-
-		prevStart = location.start;
-		prevLength = length;
-		prevSourceIndex = sourceIndex;
-		prevJump = jump;
-		prevModifierDepth = modifierDepth;
-	}
-	return ret;
 }
 
 namespace
