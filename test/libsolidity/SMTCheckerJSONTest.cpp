@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <test/libsolidity/SMTCheckerJSONTest.h>
 #include <test/Common.h>
@@ -116,21 +117,22 @@ TestCase::TestResult SMTCheckerJSONTest::run(ostream& _stream, string const& _li
 				!location["end"].isInt()
 			)
 				BOOST_THROW_EXCEPTION(runtime_error("Error must have a SourceLocation with start and end."));
-			int start = location["start"].asInt();
-			int end = location["end"].asInt();
+			size_t start = location["start"].asUInt();
+			size_t end = location["end"].asUInt();
 			std::string sourceName;
 			if (location.isMember("source") && location["source"].isString())
 				sourceName = location["source"].asString();
-			if (start >= static_cast<int>(preamble.size()))
+			if (start >= preamble.size())
 				start -= preamble.size();
-			if (end >= static_cast<int>(preamble.size()))
+			if (end >= preamble.size())
 				end -= preamble.size();
 			m_errorList.emplace_back(SyntaxTestError{
 				error["type"].asString(),
+				error["errorId"].isNull() ?  nullopt : optional<langutil::ErrorId>(langutil::ErrorId{error["errorId"].asUInt()}),
 				error["message"].asString(),
 				sourceName,
-				start,
-				end
+				static_cast<int>(start),
+				static_cast<int>(end)
 			});
 		}
 	}

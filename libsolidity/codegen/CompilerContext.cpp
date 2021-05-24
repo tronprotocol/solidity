@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -133,7 +134,7 @@ void CompilerContext::callLowLevelFunction(
 	*this << lowLevelFunctionTag(_name, _inArgs, _outArgs, _generator);
 
 	appendJump(evmasm::AssemblyItem::JumpType::IntoFunction);
-	adjustStackOffset(int(_outArgs) - 1 - _inArgs);
+	adjustStackOffset(static_cast<int>(_outArgs) - 1 - static_cast<int>(_inArgs));
 	*this << retTag.tag();
 }
 
@@ -146,8 +147,8 @@ void CompilerContext::callYulFunction(
 	m_externallyUsedYulFunctions.insert(_name);
 	auto const retTag = pushNewTag();
 	CompilerUtils(*this).moveIntoStack(_inArgs);
-	appendJumpTo(namedTag(_name));
-	adjustStackOffset(int(_outArgs) - 1 - _inArgs);
+	appendJumpTo(namedTag(_name), evmasm::AssemblyItem::JumpType::IntoFunction);
+	adjustStackOffset(static_cast<int>(_outArgs) - 1 - static_cast<int>(_inArgs));
 	*this << retTag.tag();
 }
 
@@ -181,7 +182,7 @@ void CompilerContext::appendMissingLowLevelFunctions()
 		tie(name, inArgs, outArgs, generator) = m_lowLevelFunctionGenerationQueue.front();
 		m_lowLevelFunctionGenerationQueue.pop();
 
-		setStackOffset(inArgs + 1);
+		setStackOffset(static_cast<int>(inArgs) + 1);
 		*this << m_lowLevelFunctions.at(name).tag();
 		generator(*this);
 		CompilerUtils(*this).moveToStackTop(outArgs);
@@ -298,12 +299,12 @@ unsigned CompilerContext::baseStackOffsetOfVariable(Declaration const& _declarat
 
 unsigned CompilerContext::baseToCurrentStackOffset(unsigned _baseOffset) const
 {
-	return m_asm->deposit() - _baseOffset - 1;
+	return static_cast<unsigned>(m_asm->deposit()) - _baseOffset - 1;
 }
 
 unsigned CompilerContext::currentToBaseStackOffset(unsigned _offset) const
 {
-	return m_asm->deposit() - _offset - 1;
+	return static_cast<unsigned>(m_asm->deposit()) - _offset - 1;
 }
 
 pair<u256, unsigned> CompilerContext::storageLocationOfVariable(Declaration const& _declaration) const
@@ -371,7 +372,7 @@ void CompilerContext::appendInlineAssembly(
 	OptimiserSettings const& _optimiserSettings
 )
 {
-	int startStackHeight = stackHeight();
+	unsigned startStackHeight = stackHeight();
 
 	set<yul::YulString> externallyUsedIdentifiers;
 	for (auto const& fun: _externallyUsedFunctions)
@@ -384,12 +385,11 @@ void CompilerContext::appendInlineAssembly(
 		yul::Identifier const& _identifier,
 		yul::IdentifierContext,
 		bool _insideFunction
-	) -> size_t
+	) -> bool
 	{
 		if (_insideFunction)
-			return size_t(-1);
-		auto it = std::find(_localVariables.begin(), _localVariables.end(), _identifier.name.str());
-		return it == _localVariables.end() ? size_t(-1) : 1;
+			return false;
+		return contains(_localVariables, _identifier.name.str());
 	};
 	identifierAccess.generateCode = [&](
 		yul::Identifier const& _identifier,
@@ -399,13 +399,13 @@ void CompilerContext::appendInlineAssembly(
 	{
 		auto it = std::find(_localVariables.begin(), _localVariables.end(), _identifier.name.str());
 		solAssert(it != _localVariables.end(), "");
-		int stackDepth = _localVariables.end() - it;
-		int stackDiff = _assembly.stackHeight() - startStackHeight + stackDepth;
+		auto stackDepth = static_cast<size_t>(distance(it, _localVariables.end()));
+		size_t stackDiff = static_cast<size_t>(_assembly.stackHeight()) - startStackHeight + stackDepth;
 		if (_context == yul::IdentifierContext::LValue)
 			stackDiff -= 1;
 		if (stackDiff < 1 || stackDiff > 16)
 			BOOST_THROW_EXCEPTION(
-				CompilerError() <<
+				StackTooDeepError() <<
 				errinfo_sourceLocation(_identifier.location) <<
 				util::errinfo_comment("Stack too deep (" + to_string(stackDiff) + "), try removing local variables.")
 			);
@@ -422,7 +422,12 @@ void CompilerContext::appendInlineAssembly(
 	ErrorReporter errorReporter(errors);
 	auto scanner = make_shared<langutil::Scanner>(langutil::CharStream(_assembly, "--CODEGEN--"));
 	yul::EVMDialect const& dialect = yul::EVMDialect::strictAssemblyForEVM(m_evmVersion);
-	shared_ptr<yul::Block> parserResult = yul::Parser(errorReporter, dialect).parse(scanner, false);
+	optional<langutil::SourceLocation> locationOverride;
+	if (!_system)
+		locationOverride = m_asm->currentSourceLocation();
+	shared_ptr<yul::Block> parserResult =
+		yul::Parser(errorReporter, dialect, std::move(locationOverride))
+		.parse(scanner, false);
 #ifdef SOL_OUTPUT_ASM
 	cout << yul::AsmPrinter(&dialect)(*parserResult) << endl;
 #endif

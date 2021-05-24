@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -491,7 +492,7 @@ BOOST_AUTO_TEST_CASE(constant_optimization_early_exit)
 #endif
 #endif
 #if __SANITIZE_ADDRESS__
-	maxDuration = size_t(-1);
+	maxDuration = numeric_limits<size_t>::max();
 	BOOST_TEST_MESSAGE("Disabled constant optimizer run time check for address sanitizer build.");
 #endif
 	BOOST_CHECK_MESSAGE(duration <= maxDuration, "Compilation of constants took longer than 20 seconds.");
@@ -708,6 +709,19 @@ BOOST_AUTO_TEST_CASE(shift_optimizer_bug)
 	compareVersions("g(uint256)", u256(-1));
 }
 
+BOOST_AUTO_TEST_CASE(avoid_double_cleanup)
+{
+	char const* sourceCode = R"(
+		contract C {
+			receive() external payable {
+				abi.encodePacked(uint200(0));
+			}
+		}
+	)";
+	compileBothVersions(sourceCode, 0, "C", 50);
+	// Check that there is no double AND instruction in the resulting code
+	BOOST_CHECK_EQUAL(numInstructions(m_nonOptimizedBytecode, Instruction::AND), 1);
+}
 
 BOOST_AUTO_TEST_SUITE_END()
 

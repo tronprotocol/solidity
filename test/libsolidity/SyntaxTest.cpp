@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <test/libsolidity/SyntaxTest.h>
 #include <test/Common.h>
@@ -79,6 +80,7 @@ void SyntaxTest::parseAndAnalyze()
 		{
 			m_errorList.emplace_back(SyntaxTestError{
 				"UnimplementedFeatureError",
+				nullopt,
 				errorMessage(_e),
 				"",
 				-1,
@@ -98,14 +100,15 @@ void SyntaxTest::filterObtainedErrors()
 		{
 			// ignore the version & license pragma inserted by the testing tool when calculating locations.
 			if (location->start >= static_cast<int>(preamble.size()))
-				locationStart = location->start - (preamble.size());
+				locationStart = location->start - static_cast<int>(preamble.size());
 			if (location->end >= static_cast<int>(preamble.size()))
-				locationEnd = location->end - (preamble.size());
+				locationEnd = location->end - static_cast<int>(preamble.size());
 			if (location->source)
 				sourceName = location->source->name();
 		}
 		m_errorList.emplace_back(SyntaxTestError{
 			currentError->typeName(),
+			currentError->errorId(),
 			errorMessage(*currentError),
 			sourceName,
 			locationStart,

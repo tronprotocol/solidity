@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <test/yulPhaser/TestHelpers.h>
 
@@ -59,7 +60,7 @@ protected:
 	shared_ptr<FitnessMetric> m_fitnessMetric = make_shared<ChromosomeLengthMetric>();
 };
 
-BOOST_AUTO_TEST_SUITE(Phaser)
+BOOST_AUTO_TEST_SUITE(Phaser, *boost::unit_test::label("nooptions"))
 BOOST_AUTO_TEST_SUITE(PopulationTest)
 
 BOOST_AUTO_TEST_CASE(isFitter_should_use_fitness_as_the_main_criterion)
@@ -135,7 +136,7 @@ BOOST_FIXTURE_TEST_CASE(makeRandom_should_get_chromosome_lengths_from_specified_
 	size_t maxLength = 5;
 	assert(chromosomeCount % maxLength == 0);
 
-	auto nextLength = [counter = 0, maxLength]() mutable { return counter++ % maxLength; };
+	auto nextLength = [counter = 0ul, maxLength]() mutable { return counter++ % maxLength; };
 	auto population = Population::makeRandom(m_fitnessMetric, chromosomeCount, nextLength);
 
 	// We can't rely on the order since the population sorts its chromosomes immediately but

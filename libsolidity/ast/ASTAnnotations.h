@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2015
@@ -78,6 +79,8 @@ struct StructurallyDocumentedAnnotation
 
 	/// Mapping docstring tag name -> content.
 	std::multimap<std::string, DocTag> docTags;
+	/// contract that @inheritdoc references if it exists
+	ContractDefinition const* inheritdocReference = nullptr;
 };
 
 struct SourceUnitAnnotation: ASTAnnotation
@@ -171,7 +174,7 @@ struct ModifierDefinitionAnnotation: CallableDeclarationAnnotation, Structurally
 {
 };
 
-struct VariableDeclarationAnnotation: DeclarationAnnotation
+struct VariableDeclarationAnnotation: DeclarationAnnotation, StructurallyDocumentedAnnotation
 {
 	/// Type of variable (type of identifier referencing this variable).
 	TypePointer type = nullptr;
@@ -250,7 +253,7 @@ struct ExpressionAnnotation: ASTAnnotation
 	bool lValueOfOrdinaryAssignment = false;
 
 	/// Types and - if given - names of arguments if the expr. is a function
-	/// that is called, used for overload resoultion
+	/// that is called, used for overload resolution
 	std::optional<FuncCallArguments> arguments;
 };
 
