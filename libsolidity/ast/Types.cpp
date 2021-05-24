@@ -3641,6 +3641,7 @@ FunctionTypePointer FunctionType::asBoundFunction() const
 		m_declaration,
 		m_gasSet,
 		m_valueSet,
+		m_tokenSet,
 		m_saltSet,
 		true
 	);
