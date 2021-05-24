@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @date 2017
  * Unit tests for interface/StandardCompiler.h.
@@ -354,9 +355,9 @@ BOOST_AUTO_TEST_CASE(basic_compilation)
 	BOOST_CHECK(contract["abi"].isArray());
 	BOOST_CHECK_EQUAL(util::jsonCompactPrint(contract["abi"]), "[]");
 	BOOST_CHECK(contract["devdoc"].isObject());
-	BOOST_CHECK_EQUAL(util::jsonCompactPrint(contract["devdoc"]), "{\"methods\":{}}");
+	BOOST_CHECK_EQUAL(util::jsonCompactPrint(contract["devdoc"]), R"({"kind":"dev","methods":{},"version":1})");
 	BOOST_CHECK(contract["userdoc"].isObject());
-	BOOST_CHECK_EQUAL(util::jsonCompactPrint(contract["userdoc"]), "{\"methods\":{}}");
+	BOOST_CHECK_EQUAL(util::jsonCompactPrint(contract["userdoc"]), R"({"kind":"user","methods":{},"version":1})");
 	BOOST_CHECK(contract["evm"].isObject());
 	/// @TODO check evm.methodIdentifiers, legacyAssembly, bytecode, deployedBytecode
 	BOOST_CHECK(contract["evm"]["bytecode"].isObject());
@@ -370,15 +371,15 @@ BOOST_AUTO_TEST_CASE(basic_compilation)
 	BOOST_CHECK(contract["evm"]["assembly"].isString());
 	BOOST_CHECK(contract["evm"]["assembly"].asString().find(
 		"    /* \"fileA\":0:14  contract A { } */\n  mstore(0x40, 0x80)\n  "
-		"callvalue\n    /* \"--CODEGEN--\":5:14   */\n  dup1\n    "
-		"/* \"--CODEGEN--\":2:4   */\n  iszero\n  tag_1\n  jumpi\n    "
-		"/* \"--CODEGEN--\":27:28   */\n  0x00\n    /* \"--CODEGEN--\":24:25   */\n  "
-		"dup1\n    /* \"--CODEGEN--\":17:29   */\n  revert\n    /* \"--CODEGEN--\":2:4   */\n"
-		"tag_1:\n    /* \"fileA\":0:14  contract A { } */\n  pop\n  dataSize(sub_0)\n  dup1\n  "
+		"callvalue\n  dup1\n  "
+		"iszero\n  tag_1\n  jumpi\n  "
+		"0x00\n  "
+		"dup1\n  revert\n"
+		"tag_1:\n  pop\n  dataSize(sub_0)\n  dup1\n  "
 		"dataOffset(sub_0)\n  0x00\n  codecopy\n  0x00\n  return\nstop\n\nsub_0: assembly {\n        "
-		"/* \"fileA\":0:14  contract A { } */\n      mstore(0x40, 0x80)\n        "
-		"/* \"--CODEGEN--\":12:13   */\n      0x00\n        /* \"--CODEGEN--\":9:10   */\n      "
-		"dup1\n        /* \"--CODEGEN--\":2:14   */\n      revert\n\n    auxdata: 0xa26469706673582212"
+		"/* \"fileA\":0:14  contract A { } */\n      mstore(0x40, 0x80)\n      "
+		"0x00\n      "
+		"dup1\n      revert\n\n    auxdata: 0xa26469706673582212"
 	) == 0);
 	BOOST_CHECK(contract["evm"]["gasEstimates"].isObject());
 	BOOST_CHECK_EQUAL(contract["evm"]["gasEstimates"].size(), 1);
@@ -402,15 +403,15 @@ BOOST_AUTO_TEST_CASE(basic_compilation)
 		"{\"begin\":0,\"end\":14,\"name\":\"PUSH\",\"source\":0,\"value\":\"40\"},"
 		"{\"begin\":0,\"end\":14,\"name\":\"MSTORE\",\"source\":0},"
 		"{\"begin\":0,\"end\":14,\"name\":\"CALLVALUE\",\"source\":0},"
-		"{\"begin\":5,\"end\":14,\"name\":\"DUP1\",\"source\":-1},"
-		"{\"begin\":2,\"end\":4,\"name\":\"ISZERO\",\"source\":-1},"
-		"{\"begin\":2,\"end\":4,\"name\":\"PUSH [tag]\",\"source\":-1,\"value\":\"1\"},"
-		"{\"begin\":2,\"end\":4,\"name\":\"JUMPI\",\"source\":-1},"
-		"{\"begin\":27,\"end\":28,\"name\":\"PUSH\",\"source\":-1,\"value\":\"0\"},"
-		"{\"begin\":24,\"end\":25,\"name\":\"DUP1\",\"source\":-1},"
-		"{\"begin\":17,\"end\":29,\"name\":\"REVERT\",\"source\":-1},"
-		"{\"begin\":2,\"end\":4,\"name\":\"tag\",\"source\":-1,\"value\":\"1\"},"
-		"{\"begin\":2,\"end\":4,\"name\":\"JUMPDEST\",\"source\":-1},"
+		"{\"begin\":0,\"end\":14,\"name\":\"DUP1\",\"source\":0},"
+		"{\"begin\":0,\"end\":14,\"name\":\"ISZERO\",\"source\":0},"
+		"{\"begin\":0,\"end\":14,\"name\":\"PUSH [tag]\",\"source\":0,\"value\":\"1\"},"
+		"{\"begin\":0,\"end\":14,\"name\":\"JUMPI\",\"source\":0},"
+		"{\"begin\":0,\"end\":14,\"name\":\"PUSH\",\"source\":0,\"value\":\"0\"},"
+		"{\"begin\":0,\"end\":14,\"name\":\"DUP1\",\"source\":0},"
+		"{\"begin\":0,\"end\":14,\"name\":\"REVERT\",\"source\":0},"
+		"{\"begin\":0,\"end\":14,\"name\":\"tag\",\"source\":0,\"value\":\"1\"},"
+		"{\"begin\":0,\"end\":14,\"name\":\"JUMPDEST\",\"source\":0},"
 		"{\"begin\":0,\"end\":14,\"name\":\"POP\",\"source\":0},"
 		"{\"begin\":0,\"end\":14,\"name\":\"PUSH #[$]\",\"source\":0,\"value\":\"0000000000000000000000000000000000000000000000000000000000000000\"},"
 		"{\"begin\":0,\"end\":14,\"name\":\"DUP1\",\"source\":0},"
@@ -466,7 +467,7 @@ BOOST_AUTO_TEST_CASE(compilation_error)
 		{
 			BOOST_CHECK_EQUAL(
 				util::jsonCompactPrint(error),
-				"{\"component\":\"general\",\"formattedMessage\":\"fileA:1:23: ParserError: Expected identifier but got '}'\\n"
+				"{\"component\":\"general\",\"errorCode\":\"2314\",\"formattedMessage\":\"fileA:1:23: ParserError: Expected identifier but got '}'\\n"
 				"contract A { function }\\n                      ^\\n\",\"message\":\"Expected identifier but got '}'\","
 				"\"severity\":\"error\",\"sourceLocation\":{\"end\":23,\"file\":\"fileA\",\"start\":22},\"type\":\"ParserError\"}"
 			);
@@ -1242,7 +1243,7 @@ BOOST_AUTO_TEST_CASE(use_stack_optimization)
 	BOOST_CHECK(result["errors"][0]["severity"] == "error");
 	BOOST_REQUIRE(result["errors"][0]["message"].isString());
 	BOOST_CHECK(result["errors"][0]["message"].asString().find("Stack too deep when compiling inline assembly") != std::string::npos);
-	BOOST_CHECK(result["errors"][0]["type"] == "YulException");
+	BOOST_CHECK(result["errors"][0]["type"] == "CompilerError");
 }
 
 BOOST_AUTO_TEST_CASE(standard_output_selection_wildcard)

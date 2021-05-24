@@ -14,12 +14,14 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <libsolidity/formal/SymbolicState.h>
 
 #include <libsolidity/formal/EncodingContext.h>
 
 using namespace std;
+using namespace solidity;
 using namespace solidity::frontend::smt;
 
 SymbolicState::SymbolicState(EncodingContext& _context):
@@ -35,22 +37,22 @@ void SymbolicState::reset()
 
 // Blockchain
 
-Expression SymbolicState::thisAddress()
+smtutil::Expression SymbolicState::thisAddress()
 {
 	return m_thisAddress.currentValue();
 }
 
-Expression SymbolicState::balance()
+smtutil::Expression SymbolicState::balance()
 {
 	return balance(m_thisAddress.currentValue());
 }
 
-Expression SymbolicState::balance(Expression _address)
+smtutil::Expression SymbolicState::balance(smtutil::Expression _address)
 {
-	return Expression::select(m_balances.currentValue(), move(_address));
+	return smtutil::Expression::select(m_balances.elements(), move(_address));
 }
 
-void SymbolicState::transfer(Expression _from, Expression _to, Expression _value)
+void SymbolicState::transfer(smtutil::Expression _from, smtutil::Expression _to, smtutil::Expression _value)
 {
 	unsigned indexBefore = m_balances.index();
 	addBalance(_from, 0 - _value);
@@ -59,7 +61,7 @@ void SymbolicState::transfer(Expression _from, Expression _to, Expression _value
 	solAssert(indexAfter > indexBefore, "");
 	m_balances.increaseIndex();
 	/// Do not apply the transfer operation if _from == _to.
-	auto newBalances = Expression::ite(
+	auto newBalances = smtutil::Expression::ite(
 		move(_from) == move(_to),
 		m_balances.valueAtIndex(indexBefore),
 		m_balances.valueAtIndex(indexAfter)
@@ -69,14 +71,16 @@ void SymbolicState::transfer(Expression _from, Expression _to, Expression _value
 
 /// Private helpers.
 
-void SymbolicState::addBalance(Expression _address, Expression _value)
+void SymbolicState::addBalance(smtutil::Expression _address, smtutil::Expression _value)
 {
-	auto newBalances = Expression::store(
-		m_balances.currentValue(),
+	auto newBalances = smtutil::Expression::store(
+		m_balances.elements(),
 		_address,
 		balance(_address) + move(_value)
 	);
+	auto oldLength = m_balances.length();
 	m_balances.increaseIndex();
-	m_context.addAssertion(newBalances == m_balances.currentValue());
+	m_context.addAssertion(m_balances.elements() == newBalances);
+	m_context.addAssertion(m_balances.length() == oldLength);
 }
 

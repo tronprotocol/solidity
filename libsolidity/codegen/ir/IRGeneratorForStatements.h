@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * Component that translates Solidity code into Yul at statement level and below.
  */
@@ -70,6 +71,7 @@ public:
 	void endVisit(Return const& _return) override;
 	void endVisit(UnaryOperation const& _unaryOperation) override;
 	bool visit(BinaryOperation const& _binOp) override;
+	bool visit(FunctionCall const& _funCall) override;
 	void endVisit(FunctionCall const& _funCall) override;
 	void endVisit(FunctionCallOptions const& _funCallOptions) override;
 	void endVisit(MemberAccess const& _memberAccess) override;

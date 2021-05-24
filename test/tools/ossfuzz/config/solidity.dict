@@ -10,6 +10,7 @@
 " ether "
 " finney "
 " gasleft() "
+" gwei "
 " hours "
 " minutes "
 " msg.data "

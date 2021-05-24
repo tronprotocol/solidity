@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -31,6 +32,7 @@
 #include <liblangutil/SourceLocation.h>
 #include <libevmasm/Instruction.h>
 #include <libsolutil/FixedHash.h>
+#include <libsolutil/LazyInit.h>
 
 #include <boost/noncopyable.hpp>
 #include <json/json.h>
@@ -87,7 +89,7 @@ public:
 	virtual ~ASTNode() {}
 
 	/// @returns an identifier of this AST node that is unique for a single compilation run.
-	int64_t id() const { return m_id; }
+	int64_t id() const { return int64_t(m_id); }
 
 	virtual void accept(ASTVisitor& _visitor) = 0;
 	virtual void accept(ASTConstVisitor& _visitor) const = 0;
@@ -536,8 +538,8 @@ private:
 	ContractKind m_contractKind;
 	bool m_abstract{false};
 
-	mutable std::unique_ptr<std::vector<std::pair<util::FixedHash<4>, FunctionTypePointer>>> m_interfaceFunctionList[2];
-	mutable std::unique_ptr<std::vector<EventDefinition const*>> m_interfaceEvents;
+	util::LazyInit<std::vector<std::pair<util::FixedHash<4>, FunctionTypePointer>>> m_interfaceFunctionList[2];
+	util::LazyInit<std::vector<EventDefinition const*>> m_interfaceEvents;
 };
 
 class InheritanceSpecifier: public ASTNode
@@ -798,6 +800,7 @@ public:
 	void accept(ASTConstVisitor& _visitor) const override;
 
 	StateMutability stateMutability() const { return m_stateMutability; }
+	bool libraryFunction() const;
 	bool isOrdinary() const { return m_kind == Token::Function; }
 	bool isConstructor() const { return m_kind == Token::Constructor; }
 	bool isFallback() const { return m_kind == Token::Fallback; }
@@ -823,8 +826,6 @@ public:
 
 	/// @returns the external identifier of this function (the hash of the signature) as a hex string.
 	std::string externalIdentifierHex() const;
-
-	ContractKind inContractKind() const;
 
 	TypePointer type() const override;
 	TypePointer typeViaContractName() const override;
@@ -858,7 +859,7 @@ private:
  * Declaration of a variable. This can be used in various places, e.g. in function parameter
  * lists, struct definitions and even function bodies.
  */
-class VariableDeclaration: public Declaration
+class VariableDeclaration: public Declaration, public StructurallyDocumented
 {
 public:
 	enum Location { Unspecified, Storage, Memory, CallData };
@@ -881,6 +882,7 @@ public:
 		ASTPointer<ASTString> const& _name,
 		ASTPointer<Expression> _value,
 		Visibility _visibility,
+		ASTPointer<StructuredDocumentation> const _documentation = nullptr,
 		bool _isStateVar = false,
 		bool _isIndexed = false,
 		Mutability _mutability = Mutability::Mutable,
@@ -888,6 +890,7 @@ public:
 		Location _referenceLocation = Location::Unspecified
 	):
 		Declaration(_id, _location, _name, _visibility),
+		StructurallyDocumented(std::move(_documentation)),
 		m_typeName(std::move(_type)),
 		m_value(std::move(_value)),
 		m_isStateVariable(_isStateVar),
@@ -926,6 +929,7 @@ public:
 	/// @returns true if this variable is a parameter or return parameter of an internal function
 	/// or a function type of internal visibility.
 	bool isInternalCallableParameter() const;
+	bool isConstructorParameter() const;
 	/// @returns true iff this variable is a parameter(or return parameter of a library function
 	bool isLibraryFunctionParameter() const;
 	/// @returns true if the type of the variable does not need to be specified, i.e. it is declared
@@ -2082,6 +2086,7 @@ public:
 	{
 		None = static_cast<int>(Token::Illegal),
 		Wei = static_cast<int>(Token::SubWei),
+		Gwei = static_cast<int>(Token::SubGwei),
 		Szabo = static_cast<int>(Token::SubSzabo),
 		Finney = static_cast<int>(Token::SubFinney),
 		Ether = static_cast<int>(Token::SubEther),

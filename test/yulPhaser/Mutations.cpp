@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <test/yulPhaser/TestHelpers.h>
 
@@ -33,7 +34,7 @@ using namespace solidity::util;
 namespace solidity::phaser::test
 {
 
-BOOST_AUTO_TEST_SUITE(Phaser)
+BOOST_AUTO_TEST_SUITE(Phaser, *boost::unit_test::label("nooptions"))
 BOOST_AUTO_TEST_SUITE(MutationsTest)
 BOOST_AUTO_TEST_SUITE(GeneRandomisationTest)
 
@@ -118,7 +119,7 @@ BOOST_AUTO_TEST_CASE(geneAddition_should_be_able_to_insert_before_first_position
 	BOOST_TEST(mutatedChromosome.length() > chromosome.length());
 
 	vector<string> suffix(
-		mutatedChromosome.optimisationSteps().end() - chromosome.length(),
+		mutatedChromosome.optimisationSteps().end() - static_cast<ptrdiff_t>(chromosome.length()),
 		mutatedChromosome.optimisationSteps().end()
 	);
 	BOOST_TEST(suffix == chromosome.optimisationSteps());
@@ -135,7 +136,7 @@ BOOST_AUTO_TEST_CASE(geneAddition_should_be_able_to_insert_after_last_position)
 
 	vector<string> prefix(
 		mutatedChromosome.optimisationSteps().begin(),
-		mutatedChromosome.optimisationSteps().begin() + chromosome.length()
+		mutatedChromosome.optimisationSteps().begin() + static_cast<ptrdiff_t>(chromosome.length())
 	);
 	BOOST_TEST(prefix == chromosome.optimisationSteps());
 }
@@ -179,8 +180,8 @@ BOOST_AUTO_TEST_CASE(alternativeMutations_should_choose_between_mutations_with_g
 	for (size_t i = 0; i < 10; ++i)
 	{
 		Chromosome mutatedChromosome = mutation(chromosome);
-		cCount += static_cast<int>(mutatedChromosome == Chromosome("c"));
-		fCount += static_cast<int>(mutatedChromosome == Chromosome("f"));
+		cCount += (mutatedChromosome == Chromosome("c") ? 1u : 0u);
+		fCount += (mutatedChromosome == Chromosome("f") ? 1u : 0u);
 	}
 
 	// This particular seed results in 7 "c"s out of 10 which looks plausible given the 80% chance.

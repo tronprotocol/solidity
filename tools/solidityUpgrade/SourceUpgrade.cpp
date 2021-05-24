@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 #include <tools/solidityUpgrade/SourceUpgrade.h>
 
 #include <liblangutil/Exceptions.h>
@@ -390,7 +391,7 @@ void SourceUpgrade::applyChange(
 
 void SourceUpgrade::printErrors() const
 {
-	auto formatter = make_unique<langutil::SourceReferenceFormatterHuman>(cout, true);
+	auto formatter = make_unique<langutil::SourceReferenceFormatterHuman>(cout, true, false);
 
 	for (auto const& error: m_compiler->errors())
 		if (error->type() != langutil::Error::Type::Warning)

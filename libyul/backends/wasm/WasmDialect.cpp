@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * Dialects for Wasm.
  */
@@ -38,13 +39,18 @@ WasmDialect::WasmDialect()
 			"add",
 			"sub",
 			"mul",
+			// TODO: div_s
 			"div_u",
+			// TODO: rem_s
 			"rem_u",
 			"and",
 			"or",
 			"xor",
 			"shl",
+			// TODO: shr_s
 			"shr_u",
+			// TODO: rotl
+			// TODO: rotr
 		})
 			addFunction(t.str() + "." + name, {t, t}, {t});
 
@@ -52,9 +58,13 @@ WasmDialect::WasmDialect()
 		for (auto const& name: {
 			"eq",
 			"ne",
+			// TODO: lt_s
 			"lt_u",
+			// TODO: gt_s
 			"gt_u",
+			// TODO: le_s
 			"le_u",
+			// TODO: ge_s
 			"ge_u"
 		})
 			addFunction(t.str() + "." + name, {t, t}, {i32});
@@ -62,8 +72,13 @@ WasmDialect::WasmDialect()
 	addFunction("i32.eqz", {i32}, {i32});
 	addFunction("i64.eqz", {i64}, {i32});
 
-	addFunction("i32.clz", {i32}, {i32});
-	addFunction("i64.clz", {i64}, {i64});
+	for (auto t: types)
+		for (auto const& name: {
+			"clz",
+			"ctz",
+			"popcnt",
+		})
+			addFunction(t.str() + "." + name, {t}, {t});
 
 	addFunction("i32.wrap_i64", {i64}, {i32});
 
@@ -73,6 +88,7 @@ WasmDialect::WasmDialect()
 	m_functions["i32.store"_yulstring].sideEffects.invalidatesStorage = false;
 	addFunction("i64.store", {i32, i64}, {}, false);
 	m_functions["i64.store"_yulstring].sideEffects.invalidatesStorage = false;
+	// TODO: add i32.store16, i64.store8, i64.store16, i64.store32
 
 	addFunction("i32.store8", {i32, i32}, {}, false);
 	m_functions["i32.store8"_yulstring].sideEffects.invalidatesStorage = false;
@@ -89,11 +105,12 @@ WasmDialect::WasmDialect()
 	m_functions["i64.load"_yulstring].sideEffects.invalidatesMemory = false;
 	m_functions["i64.load"_yulstring].sideEffects.sideEffectFree = true;
 	m_functions["i64.load"_yulstring].sideEffects.sideEffectFreeIfNoMSize = true;
+	// TODO: add i32.load8, i32.load16, i64.load8, i64.load16, i64.load32
 
 	// Drop is actually overloaded for all types, but Yul does not support that.
-	// Because of that, we introduce "i32.drop".
-	addFunction("drop", {i64}, {});
+	// Because of that, we introduce "i32.drop" and "i64.drop".
 	addFunction("i32.drop", {i32}, {});
+	addFunction("i64.drop", {i64}, {});
 
 	addFunction("nop", {}, {});
 	addFunction("unreachable", {}, {}, false);
@@ -122,7 +139,7 @@ BuiltinFunction const* WasmDialect::discardFunction(YulString _type) const
 	if (_type == "i32"_yulstring)
 		return builtin("i32.drop"_yulstring);
 	yulAssert(_type == "i64"_yulstring, "");
-	return builtin("drop"_yulstring);
+	return builtin("i64.drop"_yulstring);
 }
 
 BuiltinFunction const* WasmDialect::equalityFunction(YulString _type) const

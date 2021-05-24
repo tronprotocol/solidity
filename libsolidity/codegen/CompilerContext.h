@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -377,7 +378,7 @@ private:
 	/// The runtime context if in Creation mode, this is used for generating tags that would be stored into the storage and then used at runtime.
 	CompilerContext *m_runtimeContext;
 	/// The index of the runtime subroutine.
-	size_t m_runtimeSub = -1;
+	size_t m_runtimeSub = std::numeric_limits<size_t>::max();
 	/// An index of low-level function labels by name.
 	std::map<std::string, evmasm::AssemblyItem> m_lowLevelFunctions;
 	/// Collector for yul functions.

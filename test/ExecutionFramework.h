@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -45,9 +46,15 @@ using rational = boost::rational<bigint>;
 /// @NOTE This is not endian-specific; it's just a bunch of bytes.
 using Address = util::h160;
 
-	// The various denominations; here for ease of use where needed within code.
-    static const u256 sun = 1;
-    static const u256 trx = sun * 1000000;
+// The various denominations; here for ease of use where needed within code.
+static const u256 wei = 1;
+static const u256 shannon = u256("1000000000");
+static const u256 gwei = shannon;
+static const u256 szabo = shannon * 1000;
+static const u256 finney = szabo * 1000;
+static const u256 ether = finney * 1000;
+static const u256 sun = 1;
+static const u256 trx = sun * 1000000;
 
 class ExecutionFramework
 {
@@ -58,22 +65,28 @@ public:
 	virtual ~ExecutionFramework() = default;
 
 	virtual bytes const& compileAndRunWithoutCheck(
-		std::string const& _sourceCode,
+		std::map<std::string, std::string> const& _sourceCode,
 		u256 const& _value = 0,
 		std::string const& _contractName = "",
-		bytes const& _arguments = bytes(),
-		std::map<std::string, Address> const& _libraryAddresses = std::map<std::string, Address>()
+		bytes const& _arguments = {},
+		std::map<std::string, Address> const& _libraryAddresses = {}
 	) = 0;
 
 	bytes const& compileAndRun(
 		std::string const& _sourceCode,
 		u256 const& _value = 0,
 		std::string const& _contractName = "",
-		bytes const& _arguments = bytes(),
-		std::map<std::string, Address> const& _libraryAddresses = std::map<std::string, Address>()
+		bytes const& _arguments = {},
+		std::map<std::string, Address> const& _libraryAddresses = {}
 	)
 	{
-		compileAndRunWithoutCheck(_sourceCode, _value, _contractName, _arguments, _libraryAddresses);
+		compileAndRunWithoutCheck(
+			{{"", _sourceCode}},
+			_value,
+			_contractName,
+			_arguments,
+			_libraryAddresses
+		);
 		BOOST_REQUIRE(m_transactionSuccessful);
 		BOOST_REQUIRE(!m_output.empty());
 		return m_output;
@@ -291,4 +304,3 @@ protected:
 
 
 } // end namespaces
-
