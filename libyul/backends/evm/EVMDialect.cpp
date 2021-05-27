@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * Yul dialects for EVM.
  */
@@ -63,8 +64,8 @@ pair<YulString, BuiltinFunctionForEVM> createEVMFunction(
 	evmasm::InstructionInfo info = evmasm::instructionInfo(_instruction);
 	BuiltinFunctionForEVM f;
 	f.name = YulString{_name};
-	f.parameters.resize(info.args);
-	f.returns.resize(info.ret);
+	f.parameters.resize(static_cast<size_t>(info.args));
+	f.returns.resize(static_cast<size_t>(info.ret));
 	f.sideEffects = EVMDialect::sideEffectsOfInstruction(_instruction);
 	f.controlFlowSideEffects.terminates = evmasm::SemanticInformation::terminatesControlFlow(_instruction);
 	f.controlFlowSideEffects.reverts = evmasm::SemanticInformation::reverts(_instruction);
@@ -93,7 +94,7 @@ pair<YulString, BuiltinFunctionForEVM> createFunction(
 	std::function<void(FunctionCall const&, AbstractAssembly&, BuiltinContext&, std::function<void(Expression const&)>)> _generateCode
 )
 {
-	solAssert(_literalArguments.size() == _params || _literalArguments.empty(), "");
+	yulAssert(_literalArguments.size() == _params || _literalArguments.empty(), "");
 
 	YulString name{std::move(_name)};
 	BuiltinFunctionForEVM f;
@@ -114,23 +115,36 @@ pair<YulString, BuiltinFunctionForEVM> createFunction(
 map<YulString, BuiltinFunctionForEVM> createBuiltins(langutil::EVMVersion _evmVersion, bool _objectAccess)
 {
 	map<YulString, BuiltinFunctionForEVM> builtins;
+	// NOTE: Parser::instructions() will filter JUMPDEST and PUSHnn too
 	for (auto const& instr: Parser::instructions())
 		if (
 			!evmasm::isDupInstruction(instr.second) &&
 			!evmasm::isSwapInstruction(instr.second) &&
+			!evmasm::isPushInstruction(instr.second) &&
 			instr.second != evmasm::Instruction::JUMP &&
 			instr.second != evmasm::Instruction::JUMPI &&
+			instr.second != evmasm::Instruction::JUMPDEST &&
 			_evmVersion.hasOpcode(instr.second)
 		)
 			builtins.emplace(createEVMFunction(instr.first, instr.second));
 
 	if (_objectAccess)
 	{
+		builtins.emplace(createFunction("linkersymbol", 1, 1, SideEffects{}, {true}, [](
+			FunctionCall const& _call,
+			AbstractAssembly& _assembly,
+			BuiltinContext&,
+			function<void(Expression const&)>
+		) {
+			yulAssert(_call.arguments.size() == 1, "");
+			Expression const& arg = _call.arguments.front();
+			_assembly.appendLinkerSymbol(std::get<Literal>(arg).value.str());
+		}));
 		builtins.emplace(createFunction("datasize", 1, 1, SideEffects{}, {true}, [](
 			FunctionCall const& _call,
 			AbstractAssembly& _assembly,
 			BuiltinContext& _context,
-			std::function<void(Expression const&)>
+			std::function<void(Expression const&)> const&
 		) {
 			yulAssert(_context.currentObject, "No object available.");
 			yulAssert(_call.arguments.size() == 1, "");
@@ -140,18 +154,19 @@ map<YulString, BuiltinFunctionForEVM> createBuiltins(langutil::EVMVersion _evmVe
 				_assembly.appendAssemblySize();
 			else
 			{
-				yulAssert(
-					_context.subIDs.count(dataName) != 0,
-					"Could not find assembly object <" + dataName.str() + ">."
-				);
-				_assembly.appendDataSize(_context.subIDs.at(dataName));
+				vector<size_t> subIdPath =
+					_context.subIDs.count(dataName) == 0 ?
+						_context.currentObject->pathToSubObject(dataName) :
+						vector<size_t>{_context.subIDs.at(dataName)};
+				yulAssert(!subIdPath.empty(), "Could not find assembly object <" + dataName.str() + ">.");
+				_assembly.appendDataSize(subIdPath);
 			}
 		}));
 		builtins.emplace(createFunction("dataoffset", 1, 1, SideEffects{}, {true}, [](
 			FunctionCall const& _call,
 			AbstractAssembly& _assembly,
 			BuiltinContext& _context,
-			std::function<void(Expression const&)>
+			std::function<void(Expression const&)> const&
 		) {
 			yulAssert(_context.currentObject, "No object available.");
 			yulAssert(_call.arguments.size() == 1, "");
@@ -161,11 +176,12 @@ map<YulString, BuiltinFunctionForEVM> createBuiltins(langutil::EVMVersion _evmVe
 				_assembly.appendConstant(0);
 			else
 			{
-				yulAssert(
-					_context.subIDs.count(dataName) != 0,
-					"Could not find assembly object <" + dataName.str() + ">."
-				);
-				_assembly.appendDataOffset(_context.subIDs.at(dataName));
+				vector<size_t> subIdPath =
+					_context.subIDs.count(dataName) == 0 ?
+						_context.currentObject->pathToSubObject(dataName) :
+						vector<size_t>{_context.subIDs.at(dataName)};
+				yulAssert(!subIdPath.empty(), "Could not find assembly object <" + dataName.str() + ">.");
+				_assembly.appendDataOffset(subIdPath);
 			}
 		}));
 		builtins.emplace(createFunction(
@@ -196,7 +212,7 @@ map<YulString, BuiltinFunctionForEVM> createBuiltins(langutil::EVMVersion _evmVe
 				BuiltinContext&,
 				std::function<void(Expression const&)> _visitExpression
 			) {
-				solAssert(_call.arguments.size() == 2, "");
+				yulAssert(_call.arguments.size() == 2, "");
 
 				_visitExpression(_call.arguments[1]);
 				_assembly.setSourceLocation(_call.location);
@@ -216,7 +232,7 @@ map<YulString, BuiltinFunctionForEVM> createBuiltins(langutil::EVMVersion _evmVe
 				BuiltinContext&,
 				std::function<void(Expression const&)>
 			) {
-				solAssert(_call.arguments.size() == 1, "");
+				yulAssert(_call.arguments.size() == 1, "");
 				_assembly.appendImmutable(std::get<Literal>(_call.arguments.front()).value.str());
 			}
 		));

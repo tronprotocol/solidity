@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -37,16 +38,13 @@ namespace solidity::frontend
 NameAndTypeResolver::NameAndTypeResolver(
 	GlobalContext& _globalContext,
 	langutil::EVMVersion _evmVersion,
-	map<ASTNode const*, shared_ptr<DeclarationContainer>>& _scopes,
 	ErrorReporter& _errorReporter
 ):
-	m_scopes(_scopes),
 	m_evmVersion(_evmVersion),
 	m_errorReporter(_errorReporter),
 	m_globalContext(_globalContext)
 {
-	if (!m_scopes[nullptr])
-		m_scopes[nullptr] = make_shared<DeclarationContainer>();
+	m_scopes[nullptr] = make_shared<DeclarationContainer>();
 	for (Declaration const* declaration: _globalContext.declarations())
 	{
 		solAssert(m_scopes[nullptr]->registerDeclaration(*declaration), "Unable to register global declaration.");
@@ -126,11 +124,13 @@ bool NameAndTypeResolver::performImports(SourceUnit& _sourceUnit, map<string, So
 	return !error;
 }
 
-bool NameAndTypeResolver::resolveNamesAndTypes(ASTNode& _node, bool _resolveInsideCode)
+bool NameAndTypeResolver::resolveNamesAndTypes(SourceUnit& _source)
 {
 	try
 	{
-		return resolveNamesAndTypesInternal(_node, _resolveInsideCode);
+		for (shared_ptr<ASTNode> const& node: _source.nodes())
+			if (!resolveNamesAndTypesInternal(*node, true))
+				return false;
 	}
 	catch (langutil::FatalError const&)
 	{
@@ -138,6 +138,7 @@ bool NameAndTypeResolver::resolveNamesAndTypes(ASTNode& _node, bool _resolveInsi
 			throw; // Something is weird here, rather throw again.
 		return false;
 	}
+	return true;
 }
 
 bool NameAndTypeResolver::updateDeclaration(Declaration const& _declaration)
@@ -230,13 +231,14 @@ bool NameAndTypeResolver::resolveNamesAndTypesInternal(ASTNode& _node, bool _res
 		bool success = true;
 		setScope(contract->scope());
 		solAssert(!!m_currentScope, "");
+		solAssert(_resolveInsideCode, "");
 
 		m_globalContext.setCurrentContract(*contract);
 		updateDeclaration(*m_globalContext.currentSuper());
 		updateDeclaration(*m_globalContext.currentThis());
 
 		for (ASTPointer<InheritanceSpecifier> const& baseContract: contract->baseContracts())
-			if (!resolveNamesAndTypes(*baseContract, true))
+			if (!resolveNamesAndTypesInternal(*baseContract, true))
 				success = false;
 
 		setScope(contract);
@@ -257,15 +259,12 @@ bool NameAndTypeResolver::resolveNamesAndTypesInternal(ASTNode& _node, bool _res
 		for (ASTPointer<ASTNode> const& node: contract->subNodes())
 		{
 			setScope(contract);
-			if (!resolveNamesAndTypes(*node, false))
+			if (!resolveNamesAndTypesInternal(*node, false))
 				success = false;
 		}
 
 		if (!success)
 			return false;
-
-		if (!_resolveInsideCode)
-			return success;
 
 		setScope(contract);
 
@@ -273,7 +272,7 @@ bool NameAndTypeResolver::resolveNamesAndTypesInternal(ASTNode& _node, bool _res
 		for (ASTPointer<ASTNode> const& node: contract->subNodes())
 		{
 			setScope(contract);
-			if (!resolveNamesAndTypes(*node, true))
+			if (!resolveNamesAndTypesInternal(*node, true))
 				success = false;
 		}
 		return success;

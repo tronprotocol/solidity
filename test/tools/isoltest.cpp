@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <libsolutil/CommonIO.h>
 #include <libsolutil/AnsiColorized.h>
@@ -21,17 +22,13 @@
 #include <memory>
 #include <test/Common.h>
 #include <test/tools/IsolTestOptions.h>
-#include <test/libsolidity/AnalysisFramework.h>
 #include <test/InteractiveTests.h>
 #include <test/EVMHost.h>
 
-#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/program_options.hpp>
 
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <queue>
 #include <regex>

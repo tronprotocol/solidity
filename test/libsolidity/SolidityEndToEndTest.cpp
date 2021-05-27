@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @author Gav Wood <g@ethdev.com>
@@ -1746,7 +1747,7 @@ BOOST_AUTO_TEST_CASE(internal_constructor)
 			constructor() internal {}
 		}
 	)";
-	BOOST_CHECK(compileAndRunWithoutCheck(sourceCode, 0, "C").empty());
+	BOOST_CHECK(compileAndRunWithoutCheck({{"", sourceCode}}, 0, "C").empty());
 }
 
 BOOST_AUTO_TEST_CASE(default_fallback_throws)
@@ -3641,7 +3642,7 @@ BOOST_AUTO_TEST_CASE(evm_exceptions_in_constructor_out_of_baund)
 			}
 		}
 	)";
-	ABI_CHECK(compileAndRunWithoutCheck(sourceCode, 0, "A"), encodeArgs());
+	ABI_CHECK(compileAndRunWithoutCheck({{"", sourceCode}}, 0, "A"), encodeArgs());
 	BOOST_CHECK(!m_transactionSuccessful);
 }
 

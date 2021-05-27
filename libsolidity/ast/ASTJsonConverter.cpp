@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @date 2017
  * Converts the AST into json format
@@ -37,6 +38,7 @@
 #include <utility>
 #include <vector>
 #include <algorithm>
+#include <limits>
 
 using namespace std;
 using namespace solidity::langutil;
@@ -134,7 +136,7 @@ size_t ASTJsonConverter::sourceIndexFromLocation(SourceLocation const& _location
 	if (_location.source && m_sourceIndices.count(_location.source->name()))
 		return m_sourceIndices.at(_location.source->name());
 	else
-		return size_t(-1);
+		return numeric_limits<size_t>::max();
 }
 
 string ASTJsonConverter::sourceLocationToString(SourceLocation const& _location) const
@@ -391,6 +393,8 @@ bool ASTJsonConverter::visit(VariableDeclaration const& _node)
 	};
 	if (_node.isStateVariable() && _node.isPublic())
 		attributes.emplace_back("functionSelector", _node.externalIdentifierHex());
+	if (_node.isStateVariable() && _node.documentation())
+		attributes.emplace_back("documentation", toJson(*_node.documentation()));
 	if (m_inEvent)
 		attributes.emplace_back("indexed", _node.isIndexed());
 	if (!_node.annotation().baseFunctions.empty())

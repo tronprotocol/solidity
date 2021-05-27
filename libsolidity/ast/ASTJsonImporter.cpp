@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author julius <djudju@protonmail.com>
  * @date 2019
@@ -92,7 +93,7 @@ SourceLocation const ASTJsonImporter::createSourceLocation(Json::Value const& _n
 {
 	astAssert(member(_node, "src").isString(), "'src' must be a string");
 
-	return solidity::langutil::parseSourceLocation(_node["src"].asString(), m_currentSourceName, int(m_sourceLocations.size()));
+	return solidity::langutil::parseSourceLocation(_node["src"].asString(), m_currentSourceName, m_sourceLocations.size());
 }
 
 template<class T>
@@ -441,6 +442,7 @@ ASTPointer<VariableDeclaration> ASTJsonImporter::createVariableDeclaration(Json:
 		make_shared<ASTString>(member(_node, "name").asString()),
 		nullOrCast<Expression>(member(_node, "value")),
 		visibility(_node),
+		_node["documentation"].isNull() ? nullptr : createDocumentation(member(_node, "documentation")),
 		memberAsBool(_node, "stateVariable"),
 		_node.isMember("indexed") ? memberAsBool(_node, "indexed") : false,
 		mutability,
@@ -1000,6 +1002,8 @@ Literal::SubDenomination ASTJsonImporter::subdenomination(Json::Value const& _no
 
 	if (subDenStr == "wei")
 		return Literal::SubDenomination::Wei;
+	else if (subDenStr == "gwei")
+		return Literal::SubDenomination::Gwei;
 	else if (subDenStr == "szabo")
 		return Literal::SubDenomination::Szabo;
 	else if (subDenStr == "finney")

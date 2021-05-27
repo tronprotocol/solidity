@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <test/libsolidity/GasTest.h>
 #include <test/Common.h>
@@ -118,7 +119,7 @@ TestCase::TestResult GasTest::run(ostream& _stream, string const& _linePrefix, b
 
 	if (!compiler().parseAndAnalyze() || !compiler().compile())
 	{
-		SourceReferenceFormatterHuman formatter(_stream, _formatted);
+		SourceReferenceFormatterHuman formatter(_stream, _formatted, false);
 		for (auto const& error: compiler().errors())
 			formatter.printErrorInformation(*error);
 		return TestResult::FatalError;

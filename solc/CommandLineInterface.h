@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Lefteris <lefteris@ethdev.com>
  * @date 2014
@@ -103,6 +104,9 @@ private:
 	/// @arg _json json string to be written
 	void createJson(std::string const& _fileName, std::string const& _json);
 
+	size_t countEnabledOptions(std::vector<std::string> const& _optionNames) const;
+	static std::string joinOptionNames(std::vector<std::string> const& _optionNames, std::string _separator = ", ");
+
 	bool m_error = false; ///< If true, some error occurred.
 
 	bool m_onlyAssemble = false;
@@ -117,6 +121,8 @@ private:
 	std::vector<frontend::CompilerStack::Remapping> m_remappings;
 	/// list of allowed directories to read files from
 	std::vector<boost::filesystem::path> m_allowedDirectories;
+	/// Base path, used for resolving relative paths in imports.
+	boost::filesystem::path m_basePath;
 	/// map of library names to addresses
 	std::map<std::string, util::h160> m_libraries;
 	/// Solidity compiler stack
@@ -129,6 +135,8 @@ private:
 	CompilerStack::MetadataHash m_metadataHash = CompilerStack::MetadataHash::IPFS;
 	/// Whether or not to colorize diagnostics output.
 	bool m_coloredOutput = true;
+	/// Whether or not to output error IDs.
+	bool m_withErrorIds = false;
 };
 
 }

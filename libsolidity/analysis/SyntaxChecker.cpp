@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <libsolidity/analysis/SyntaxChecker.h>
 
@@ -273,6 +274,7 @@ bool SyntaxChecker::visit(InlineAssembly const& _inlineAssembly)
 			"The msize instruction cannot be used when the Yul optimizer is activated because "
 			"it can change its semantics. Either disable the Yul optimizer or do not use the instruction."
 		);
+
 	return false;
 }
 

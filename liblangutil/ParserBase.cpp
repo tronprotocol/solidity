@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2016
@@ -106,7 +107,7 @@ void ParserBase::expectTokenOrConsumeUntil(Token _value, string const& _currentN
 		if (m_scanner->currentToken() == Token::EOS)
 		{
 			// rollback to where the token started, and raise exception to be caught at a higher level.
-			m_scanner->setPosition(startPosition);
+			m_scanner->setPosition(static_cast<size_t>(startPosition));
 			m_inParserRecovery = true;
 			fatalParserError(1957_error, errorLoc, msg);
 		}

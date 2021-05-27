@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -38,7 +39,7 @@ using namespace solidity;
 using namespace solidity::frontend;
 
 ASTNode::ASTNode(int64_t _id, SourceLocation _location):
-	m_id(_id),
+	m_id(static_cast<size_t>(_id)),
 	m_location(std::move(_location))
 {
 }
@@ -153,10 +154,10 @@ FunctionDefinition const* ContractDefinition::receiveFunction() const
 
 vector<EventDefinition const*> const& ContractDefinition::interfaceEvents() const
 {
-	if (!m_interfaceEvents)
-	{
+	return m_interfaceEvents.init([&]{
 		set<string> eventsSeen;
-		m_interfaceEvents = make_unique<vector<EventDefinition const*>>();
+		vector<EventDefinition const*> interfaceEvents;
+
 		for (ContractDefinition const* contract: annotation().linearizedBaseContracts)
 			for (EventDefinition const* e: contract->events())
 			{
@@ -169,19 +170,20 @@ vector<EventDefinition const*> const& ContractDefinition::interfaceEvents() cons
 				if (eventsSeen.count(eventSignature) == 0)
 				{
 					eventsSeen.insert(eventSignature);
-					m_interfaceEvents->push_back(e);
+					interfaceEvents.push_back(e);
 				}
 			}
-	}
-	return *m_interfaceEvents;
+
+		return interfaceEvents;
+	});
 }
 
 vector<pair<util::FixedHash<4>, FunctionTypePointer>> const& ContractDefinition::interfaceFunctionList(bool _includeInheritedFunctions) const
 {
-	if (!m_interfaceFunctionList[_includeInheritedFunctions])
-	{
+	return m_interfaceFunctionList[_includeInheritedFunctions].init([&]{
 		set<string> signaturesSeen;
-		m_interfaceFunctionList[_includeInheritedFunctions] = make_unique<vector<pair<util::FixedHash<4>, FunctionTypePointer>>>();
+		vector<pair<util::FixedHash<4>, FunctionTypePointer>> interfaceFunctionList;
+
 		for (ContractDefinition const* contract: annotation().linearizedBaseContracts)
 		{
 			if (_includeInheritedFunctions == false && contract != this)
@@ -203,12 +205,13 @@ vector<pair<util::FixedHash<4>, FunctionTypePointer>> const& ContractDefinition:
 				{
 					signaturesSeen.insert(functionSignature);
 					util::FixedHash<4> hash(util::keccak256(functionSignature));
-					m_interfaceFunctionList[_includeInheritedFunctions]->emplace_back(hash, fun);
+					interfaceFunctionList.emplace_back(hash, fun);
 				}
 			}
 		}
-	}
-	return *m_interfaceFunctionList[_includeInheritedFunctions];
+
+		return interfaceFunctionList;
+	});
 }
 
 TypePointer ContractDefinition::type() const
@@ -285,11 +288,11 @@ TypeDeclarationAnnotation& EnumDefinition::annotation() const
 	return initAnnotation<TypeDeclarationAnnotation>();
 }
 
-ContractKind FunctionDefinition::inContractKind() const
+bool FunctionDefinition::libraryFunction() const
 {
-	auto contractDef = dynamic_cast<ContractDefinition const*>(scope());
-	solAssert(contractDef, "Enclosing Scope of FunctionDefinition was not set.");
-	return contractDef->contractKind();
+	if (auto const* contractDef = dynamic_cast<ContractDefinition const*>(scope()))
+		return contractDef->isLibrary();
+	return false;
 }
 
 FunctionTypePointer FunctionDefinition::functionType(bool _internal) const
@@ -336,8 +339,14 @@ TypePointer FunctionDefinition::type() const
 TypePointer FunctionDefinition::typeViaContractName() const
 {
 	if (annotation().contract->isLibrary())
-		return FunctionType(*this).asCallableFunction(true);
-	return TypeProvider::function(*this, FunctionType::Kind::Declaration);
+	{
+		if (isPublic())
+			return FunctionType(*this).asExternallyCallableFunction(true);
+		else
+			return TypeProvider::function(*this, FunctionType::Kind::Internal);
+	}
+	else
+		return TypeProvider::function(*this, FunctionType::Kind::Declaration);
 }
 
 string FunctionDefinition::externalSignature() const
@@ -367,7 +376,7 @@ FunctionDefinition const& FunctionDefinition::resolveVirtual(
 
 	solAssert(!dynamic_cast<ContractDefinition const&>(*scope()).isLibrary(), "");
 
-	FunctionType const* functionType = TypeProvider::function(*this)->asCallableFunction(false);
+	FunctionType const* functionType = TypeProvider::function(*this)->asExternallyCallableFunction(false);
 
 	for (ContractDefinition const* c: _mostDerivedContract.annotation().linearizedBaseContracts)
 	{
@@ -378,7 +387,7 @@ FunctionDefinition const& FunctionDefinition::resolveVirtual(
 			if (
 				function->name() == name() &&
 				!function->isConstructor() &&
-				FunctionType(*function).asCallableFunction(false)->hasEqualParameterTypes(*functionType)
+				FunctionType(*function).asExternallyCallableFunction(false)->hasEqualParameterTypes(*functionType)
 			)
 				return *function;
 	}
@@ -484,12 +493,7 @@ DeclarationAnnotation& Declaration::annotation() const
 bool VariableDeclaration::isLValue() const
 {
 	// Constant declared variables are Read-Only
-	if (isConstant())
-		return false;
-	// External function arguments of reference type are Read-Only
-	if (isExternalCallableParameter() && dynamic_cast<ReferenceType const*>(type()))
-		return false;
-	return true;
+	return !isConstant();
 }
 
 bool VariableDeclaration::isLocalVariable() const
@@ -585,6 +589,15 @@ bool VariableDeclaration::isInternalCallableParameter() const
 	return false;
 }
 
+bool VariableDeclaration::isConstructorParameter() const
+{
+	if (!isCallableOrCatchParameter())
+		return false;
+	if (auto const* function = dynamic_cast<FunctionDefinition const*>(scope()))
+		return function->isConstructor();
+	return false;
+}
+
 bool VariableDeclaration::isLibraryFunctionParameter() const
 {
 	if (!isCallableOrCatchParameter())
@@ -614,18 +627,14 @@ set<VariableDeclaration::Location> VariableDeclaration::allowedDataLocations() c
 
 	if (!hasReferenceOrMappingType() || isStateVariable() || isEventParameter())
 		return set<Location>{ Location::Unspecified };
-	else if (isExternalCallableParameter())
-	{
-		set<Location> locations{ Location::CallData };
-		if (isLibraryFunctionParameter())
-			locations.insert(Location::Storage);
-		return locations;
-	}
 	else if (isCallableOrCatchParameter())
 	{
 		set<Location> locations{ Location::Memory };
 		if (isInternalCallableParameter() || isLibraryFunctionParameter() || isTryCatchParameter())
 			locations.insert(Location::Storage);
+		if (!isTryCatchParameter() && !isConstructorParameter())
+			locations.insert(Location::CallData);
+
 		return locations;
 	}
 	else if (isLocalVariable())
@@ -640,8 +649,7 @@ set<VariableDeclaration::Location> VariableDeclaration::allowedDataLocations() c
 				case Type::Category::Mapping:
 					return set<Location>{ Location::Storage };
 				default:
-					//  TODO: add Location::Calldata once implemented for local variables.
-					return set<Location>{ Location::Memory, Location::Storage };
+					return set<Location>{ Location::Memory, Location::Storage, Location::CallData };
 			}
 		};
 		return dataLocations(typeName()->annotation().type, dataLocations);

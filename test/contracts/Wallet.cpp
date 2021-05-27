@@ -14,14 +14,18 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2015
  * Tests for a (comparatively) complex multisig wallet contract.
  */
 
+#include <libsolutil/LazyInit.h>
+
 #include <string>
 #include <tuple>
+#include <optional>
 
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -435,7 +439,7 @@ contract Wallet is multisig, multiowned, daylimit {
 }
 )DELIMITER";
 
-static unique_ptr<bytes> s_compiledWallet;
+static LazyInit<bytes> s_compiledWallet;
 
 class WalletTestFramework: public SolidityExecutionFramework
 {
@@ -447,11 +451,12 @@ protected:
 		u256 _dailyLimit = 0
 	)
 	{
-		if (!s_compiledWallet)
-			s_compiledWallet = make_unique<bytes>(compileContract(walletCode, "Wallet"));
+		bytes const& compiled = s_compiledWallet.init([&]{
+			return compileContract(walletCode, "Wallet");
+		});
 
 		bytes args = encodeArgs(u256(0x60), _required, _dailyLimit, u256(_owners.size()), _owners);
-		sendMessage(*s_compiledWallet + args, true, _value);
+		sendMessage(compiled + args, true, _value);
 		BOOST_REQUIRE(m_transactionSuccessful);
 		BOOST_REQUIRE(!m_output.empty());
 	}

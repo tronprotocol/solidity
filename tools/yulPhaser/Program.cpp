@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 
 #include <tools/yulPhaser/Program.h>
 
@@ -207,7 +208,7 @@ unique_ptr<Block> Program::applyOptimisationSteps(
 	return _ast;
 }
 
-size_t Program::computeCodeSize(Block const& _ast)
+size_t Program::computeCodeSize(Block const& _ast, CodeWeights const& _weights)
 {
-	return CodeSize::codeSizeIncludingFunctions(_ast);
+	return CodeSize::codeSizeIncludingFunctions(_ast, _weights);
 }

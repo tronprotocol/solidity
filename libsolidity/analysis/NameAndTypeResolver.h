@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with solidity.  If not, see <http://www.gnu.org/licenses/>.
 */
+// SPDX-License-Identifier: GPL-3.0
 /**
  * @author Christian <c@ethdev.com>
  * @date 2014
@@ -56,7 +57,6 @@ public:
 	NameAndTypeResolver(
 		GlobalContext& _globalContext,
 		langutil::EVMVersion _evmVersion,
-		std::map<ASTNode const*, std::shared_ptr<DeclarationContainer>>& _scopes,
 		langutil::ErrorReporter& _errorReporter
 	);
 	/// Registers all declarations found in the AST node, usually a source unit.
@@ -66,12 +66,9 @@ public:
 	bool registerDeclarations(SourceUnit& _sourceUnit, ASTNode const* _currentScope = nullptr);
 	/// Applies the effect of import directives.
 	bool performImports(SourceUnit& _sourceUnit, std::map<std::string, SourceUnit const*> const& _sourceUnits);
-	/// Resolves all names and types referenced from the given AST Node.
-	/// This is usually only called at the contract level, but with a bit of care, it can also
-	/// be called at deeper levels.
-	/// @param _resolveInsideCode if false, does not descend into nodes that contain code.
+	/// Resolves all names and types referenced from the given Source Node.
 	/// @returns false in case of error.
-	bool resolveNamesAndTypes(ASTNode& _node, bool _resolveInsideCode = true);
+	bool resolveNamesAndTypes(SourceUnit& _source);
 	/// Updates the given global declaration (used for "this"). Not to be used with declarations
 	/// that create their own scope.
 	/// @returns false in case of error.
@@ -123,7 +120,7 @@ private:
 	/// where nullptr denotes the global scope. Note that structs are not scope since they do
 	/// not contain code.
 	/// Aliases (for example `import "x" as y;`) create multiple pointers to the same scope.
-	std::map<ASTNode const*, std::shared_ptr<DeclarationContainer>>& m_scopes;
+	std::map<ASTNode const*, std::shared_ptr<DeclarationContainer>> m_scopes;
 
 	langutil::EVMVersion m_evmVersion;
 	DeclarationContainer* m_currentScope = nullptr;

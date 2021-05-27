@@ -29,5 +29,5 @@ contract C
 // ====
 // SMTSolvers: z3
 // ----
-// Warning: (323-338): Assertion violation happens here
-// Warning: (362-377): Assertion violation happens here
+// Warning 4661: (323-338): Assertion violation happens here
+// Warning 4661: (362-377): Assertion violation happens here
