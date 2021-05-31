@@ -3953,7 +3953,7 @@ string YulUtilFunctions::panicFunction(util::PanicCode _code)
 		)")
 		("functionName", functionName)
 		("selector", util::selectorFromSignature("Panic(uint256)").str())
-		("code", toCompactHexWithPrefix(_code))
+		("code", toCompactHexWithPrefix(static_cast<unsigned>(_code)))
 		.render();
 	});
 }
