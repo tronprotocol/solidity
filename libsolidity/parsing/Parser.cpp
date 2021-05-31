@@ -25,6 +25,7 @@
 
 #include <libsolidity/interface/Version.h>
 #include <libyul/AsmParser.h>
+#include <libyul/AST.h>
 #include <libyul/backends/evm/EVMDialect.h>
 #include <liblangutil/ErrorReporter.h>
 #include <liblangutil/Scanner.h>
@@ -107,8 +108,21 @@ ASTPointer<SourceUnit> Parser::parse(shared_ptr<Scanner> const& _scanner)
 			case Token::Enum:
 				nodes.push_back(parseEnumDefinition());
 				break;
+			case Token::Function:
+				nodes.push_back(parseFunctionDefinition(true));
+				break;
 			default:
-				fatalParserError(7858_error, "Expected pragma, import directive or contract/interface/library/struct/enum definition.");
+				// Constant variable.
+				if (variableDeclarationStart() && m_scanner->peekNextToken() != Token::EOS)
+				{
+					VarDeclParserOptions options;
+					options.kind = VarDeclKind::FileLevel;
+					options.allowInitialValue = true;
+					nodes.push_back(parseVariableDeclaration(options));
+					expectToken(Token::Semicolon);
+				}
+				else
+					fatalParserError(7858_error, "Expected pragma, import directive or contract/interface/library/struct/enum/constant/function definition.");
 			}
 		}
 		solAssert(m_recursionDepth == 0, "");
@@ -329,15 +343,10 @@ ASTPointer<ContractDefinition> Parser::parseContractDefinition()
 				subNodes.push_back(parseStructDefinition());
 			else if (currentTokenValue == Token::Enum)
 				subNodes.push_back(parseEnumDefinition());
-			else if (
-				currentTokenValue == Token::Identifier ||
-				currentTokenValue == Token::Mapping ||
-				TokenTraits::isElementaryTypeName(currentTokenValue) ||
-				(currentTokenValue == Token::Function && m_scanner->peekNextToken() == Token::LParen)
-			)
+			else if (variableDeclarationStart())
 			{
 				VarDeclParserOptions options;
-				options.isStateVariable = true;
+				options.kind = VarDeclKind::State;
 				options.allowInitialValue = true;
 				subNodes.push_back(parseVariableDeclaration(options));
 				expectToken(Token::Semicolon);
@@ -381,7 +390,7 @@ ASTPointer<InheritanceSpecifier> Parser::parseInheritanceSpecifier()
 {
 	RecursionGuard recursionGuard(*this);
 	ASTNodeFactory nodeFactory(*this);
-	ASTPointer<UserDefinedTypeName> name(parseUserDefinedTypeName());
+	ASTPointer<IdentifierPath> name(parseIdentifierPath());
 	unique_ptr<vector<ASTPointer<Expression>>> arguments;
 	if (m_scanner->currentToken() == Token::LParen)
 	{
@@ -425,7 +434,7 @@ ASTPointer<OverrideSpecifier> Parser::parseOverrideSpecifier()
 	solAssert(m_scanner->currentToken() == Token::Override, "");
 
 	ASTNodeFactory nodeFactory(*this);
-	std::vector<ASTPointer<UserDefinedTypeName>> overrides;
+	std::vector<ASTPointer<IdentifierPath>> overrides;
 
 	nodeFactory.markEndPosition();
 	m_scanner->next();
@@ -435,7 +444,7 @@ ASTPointer<OverrideSpecifier> Parser::parseOverrideSpecifier()
 		m_scanner->next();
 		while (true)
 		{
-			overrides.push_back(parseUserDefinedTypeName());
+			overrides.push_back(parseIdentifierPath());
 
 			if (m_scanner->currentToken() == Token::RParen)
 				break;
@@ -548,7 +557,7 @@ Parser::FunctionHeaderParserResult Parser::parseFunctionHeader(bool _isStateVari
 	return result;
 }
 
-ASTPointer<ASTNode> Parser::parseFunctionDefinition()
+ASTPointer<ASTNode> Parser::parseFunctionDefinition(bool _freeFunction)
 {
 	RecursionGuard recursionGuard(*this);
 	ASTNodeFactory nodeFactory(*this);
@@ -607,6 +616,7 @@ ASTPointer<ASTNode> Parser::parseFunctionDefinition()
 		name,
 		header.visibility,
 		header.stateMutability,
+		_freeFunction,
 		kind,
 		header.isVirtual,
 		header.overrides,
@@ -663,7 +673,7 @@ ASTPointer<EnumDefinition> Parser::parseEnumDefinition()
 			fatalParserError(1612_error, "Expected identifier after ','");
 	}
 	if (members.empty())
-		parserError(3147_error, "enum with no members is not allowed.");
+		parserError(3147_error, "Enum with no members is not allowed.");
 
 	nodeFactory.markEndPosition();
 	expectToken(Token::RBrace);
@@ -683,10 +693,10 @@ ASTPointer<VariableDeclaration> Parser::parseVariableDeclaration(
 	ASTPointer<TypeName> type = _lookAheadArrayType ? _lookAheadArrayType : parseTypeName();
 	nodeFactory.setEndPositionFromNode(type);
 
-	if (!_options.isStateVariable && documentation != nullptr)
-		parserError(2837_error, "Only state variables can have a docstring.");
+	if (_options.kind == VarDeclKind::Other && documentation != nullptr)
+		parserError(2837_error, "Only state variables or file-level variables can have a docstring.");
 
-	if (dynamic_cast<FunctionTypeName*>(type.get()) && _options.isStateVariable && m_scanner->currentToken() == Token::LBrace)
+	if (dynamic_cast<FunctionTypeName*>(type.get()) && _options.kind == VarDeclKind::State && m_scanner->currentToken() == Token::LBrace)
 		fatalParserError(
 			2915_error,
 			"Expected a state variable declaration. If you intended this as a fallback function "
@@ -704,7 +714,7 @@ ASTPointer<VariableDeclaration> Parser::parseVariableDeclaration(
 	while (true)
 	{
 		Token token = m_scanner->currentToken();
-		if (_options.isStateVariable && TokenTraits::isVariableVisibilitySpecifier(token))
+		if (_options.kind == VarDeclKind::State && TokenTraits::isVariableVisibilitySpecifier(token))
 		{
 			nodeFactory.markEndPosition();
 			if (visibility != Visibility::Default)
@@ -720,7 +730,7 @@ ASTPointer<VariableDeclaration> Parser::parseVariableDeclaration(
 			else
 				visibility = parseVisibilitySpecifier();
 		}
-		else if (_options.isStateVariable && token == Token::Override)
+		else if (_options.kind == VarDeclKind::State && token == Token::Override)
 		{
 			if (overrides)
 				parserError(9125_error, "Override already specified.");
@@ -796,7 +806,6 @@ ASTPointer<VariableDeclaration> Parser::parseVariableDeclaration(
 		value,
 		visibility,
 		documentation,
-		_options.isStateVariable,
 		isIndexed,
 		mutability,
 		overrides,
@@ -892,7 +901,7 @@ ASTPointer<UsingForDirective> Parser::parseUsingDirective()
 	ASTNodeFactory nodeFactory(*this);
 
 	expectToken(Token::Using);
-	ASTPointer<UserDefinedTypeName> library(parseUserDefinedTypeName());
+	ASTPointer<IdentifierPath> library(parseIdentifierPath());
 	ASTPointer<TypeName> typeName;
 	expectToken(Token::For);
 	if (m_scanner->currentToken() == Token::Mul)
@@ -908,7 +917,7 @@ ASTPointer<ModifierInvocation> Parser::parseModifierInvocation()
 {
 	RecursionGuard recursionGuard(*this);
 	ASTNodeFactory nodeFactory(*this);
-	ASTPointer<Identifier> name(parseIdentifier());
+	ASTPointer<IdentifierPath> name(parseIdentifierPath());
 	unique_ptr<vector<ASTPointer<Expression>>> arguments;
 	if (m_scanner->currentToken() == Token::LParen)
 	{
@@ -932,6 +941,14 @@ ASTPointer<Identifier> Parser::parseIdentifier()
 
 ASTPointer<UserDefinedTypeName> Parser::parseUserDefinedTypeName()
 {
+	ASTNodeFactory nodeFactory(*this);
+	ASTPointer<IdentifierPath> identifierPath = parseIdentifierPath();
+	nodeFactory.setEndPositionFromNode(identifierPath);
+	return nodeFactory.createNode<UserDefinedTypeName>(identifierPath);
+}
+
+ASTPointer<IdentifierPath> Parser::parseIdentifierPath()
+{
 	RecursionGuard recursionGuard(*this);
 	ASTNodeFactory nodeFactory(*this);
 	nodeFactory.markEndPosition();
@@ -942,7 +959,7 @@ ASTPointer<UserDefinedTypeName> Parser::parseUserDefinedTypeName()
 		nodeFactory.markEndPosition();
 		identifierPath.push_back(*expectIdentifierToken());
 	}
-	return nodeFactory.createNode<UserDefinedTypeName>(identifierPath);
+	return nodeFactory.createNode<IdentifierPath>(identifierPath);
 }
 
 ASTPointer<TypeName> Parser::parseTypeNameSuffix(ASTPointer<TypeName> type, ASTNodeFactory& nodeFactory)
@@ -1046,7 +1063,7 @@ ASTPointer<Mapping> Parser::parseMapping()
 	}
 	else
 		fatalParserError(1005_error, "Expected elementary type name or identifier for mapping key type");
-	expectToken(Token::Arrow);
+	expectToken(Token::DoubleArrow);
 	ASTPointer<TypeName> valueType = parseTypeName();
 	nodeFactory.markEndPosition();
 	expectToken(Token::RParen);
@@ -1080,16 +1097,23 @@ ASTPointer<ParameterList> Parser::parseParameterList(
 	return nodeFactory.createNode<ParameterList>(parameters);
 }
 
-ASTPointer<Block> Parser::parseBlock(ASTPointer<ASTString> const& _docString)
+ASTPointer<Block> Parser::parseBlock(bool _allowUnchecked, ASTPointer<ASTString> const& _docString)
 {
 	RecursionGuard recursionGuard(*this);
 	ASTNodeFactory nodeFactory(*this);
+	bool const unchecked = m_scanner->currentToken() == Token::Unchecked;
+	if (unchecked)
+	{
+		if (!_allowUnchecked)
+			parserError(5296_error, "\"unchecked\" blocks can only be used inside regular blocks.");
+		m_scanner->next();
+	}
 	expectToken(Token::LBrace);
 	vector<ASTPointer<Statement>> statements;
 	try
 	{
 		while (m_scanner->currentToken() != Token::RBrace)
-			statements.push_back(parseStatement());
+			statements.push_back(parseStatement(true));
 		nodeFactory.markEndPosition();
 	}
 	catch (FatalError const&)
@@ -1102,14 +1126,14 @@ ASTPointer<Block> Parser::parseBlock(ASTPointer<ASTString> const& _docString)
 			BOOST_THROW_EXCEPTION(FatalError()); /* Don't try to recover here. */
 		m_inParserRecovery = true;
 	}
-	if (m_parserErrorRecovery)
+	if (m_inParserRecovery)
 		expectTokenOrConsumeUntil(Token::RBrace, "Block");
 	else
 		expectToken(Token::RBrace);
-	return nodeFactory.createNode<Block>(_docString, statements);
+	return nodeFactory.createNode<Block>(_docString, unchecked, statements);
 }
 
-ASTPointer<Statement> Parser::parseStatement()
+ASTPointer<Statement> Parser::parseStatement(bool _allowUnchecked)
 {
 	RecursionGuard recursionGuard(*this);
 	ASTPointer<ASTString> docString;
@@ -1128,9 +1152,9 @@ ASTPointer<Statement> Parser::parseStatement()
 			return parseDoWhileStatement(docString);
 		case Token::For:
 			return parseForStatement(docString);
+		case Token::Unchecked:
 		case Token::LBrace:
-			return parseBlock(docString);
-			// starting from here, all statements must be terminated by a semicolon
+			return parseBlock(_allowUnchecked, docString);
 		case Token::Continue:
 			statement = ASTNodeFactory(*this).createNode<Continue>(docString);
 			m_scanner->next();
@@ -1598,7 +1622,13 @@ ASTPointer<Expression> Parser::parseBinaryExpression(
 		{
 			Token op = m_scanner->currentToken();
 			m_scanner->next();
-			ASTPointer<Expression> right = parseBinaryExpression(precedence + 1);
+
+			static_assert(TokenTraits::hasExpHighestPrecedence(), "Exp does not have the highest precedence");
+
+			// Parse a**b**c as a**(b**c)
+			ASTPointer<Expression> right = (op == Token::Exp) ?
+				parseBinaryExpression(precedence) :
+				parseBinaryExpression(precedence + 1);
 			nodeFactory.setEndPositionFromNode(right);
 			expression = nodeFactory.createNode<BinaryOperation>(expression, op, right);
 		}
@@ -1928,6 +1958,16 @@ pair<vector<ASTPointer<Expression>>, vector<ASTPointer<ASTString>>> Parser::pars
 	return ret;
 }
 
+bool Parser::variableDeclarationStart()
+{
+	Token currentToken = m_scanner->currentToken();
+	return
+		currentToken == Token::Identifier ||
+		currentToken == Token::Mapping ||
+		TokenTraits::isElementaryTypeName(currentToken) ||
+		(currentToken == Token::Function && m_scanner->peekNextToken() == Token::LParen);
+}
+
 optional<string> Parser::findLicenseString(std::vector<ASTPointer<ASTNode>> const& _nodes)
 {
 	// We circumvent the scanner here, because it skips non-docstring comments.
@@ -2086,7 +2126,7 @@ ASTPointer<TypeName> Parser::typeNameFromIndexAccessStructure(Parser::IndexAcces
 		vector<ASTString> path;
 		for (auto const& el: _iap.path)
 			path.push_back(dynamic_cast<Identifier const&>(*el).name());
-		type = nodeFactory.createNode<UserDefinedTypeName>(path);
+		type = nodeFactory.createNode<UserDefinedTypeName>(nodeFactory.createNode<IdentifierPath>(path));
 	}
 	for (auto const& lengthExpression: _iap.indices)
 	{

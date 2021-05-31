@@ -23,6 +23,10 @@
 
 #include <libsmtutil/SMTPortfolio.h>
 
+#ifdef HAVE_Z3_DLOPEN
+#include <z3_version.h>
+#endif
+
 using namespace std;
 using namespace solidity;
 using namespace solidity::util;
@@ -34,10 +38,11 @@ BMC::BMC(
 	ErrorReporter& _errorReporter,
 	map<h256, string> const& _smtlib2Responses,
 	ReadCallback::Callback const& _smtCallback,
-	smtutil::SMTSolverChoice _enabledSolvers
+	smtutil::SMTSolverChoice _enabledSolvers,
+	optional<unsigned> _timeout
 ):
 	SMTEncoder(_context),
-	m_interface(make_unique<smtutil::SMTPortfolio>(_smtlib2Responses, _smtCallback, _enabledSolvers)),
+	m_interface(make_unique<smtutil::SMTPortfolio>(_smtlib2Responses, _smtCallback, _enabledSolvers, _timeout)),
 	m_outerErrorReporter(_errorReporter)
 {
 #if defined (HAVE_Z3) || defined (HAVE_CVC4)
@@ -57,13 +62,18 @@ void BMC::analyze(SourceUnit const& _source, map<ASTNode const*, set<Verificatio
 {
 	solAssert(_source.annotation().experimentalFeatures.count(ExperimentalFeature::SMTChecker), "");
 
-	m_solvedTargets = move(_solvedTargets);
-	m_context.setSolver(m_interface.get());
-	m_context.clear();
-	m_context.setAssertionAccumulation(true);
-	m_variableUsage.setFunctionInlining(true);
+	/// This is currently used to abort analysis of SourceUnits
+	/// containing file level functions or constants.
+	if (SMTEncoder::analyze(_source))
+	{
+		m_solvedTargets = move(_solvedTargets);
+		m_context.setSolver(m_interface.get());
+		m_context.clear();
+		m_context.setAssertionAccumulation(true);
+		m_variableUsage.setFunctionInlining(shouldInlineFunctionCall);
 
-	_source.accept(*this);
+		_source.accept(*this);
+	}
 
 	solAssert(m_interface->solvers() > 0, "");
 	// If this check is true, Z3 and CVC4 are not available
@@ -77,7 +87,10 @@ void BMC::analyze(SourceUnit const& _source, map<ASTNode const*, set<Verificatio
 			m_outerErrorReporter.warning(
 				8084_error,
 				SourceLocation(),
-				"BMC analysis was not possible since no integrated SMT solver (Z3 or CVC4) was found."
+				"BMC analysis was not possible since no SMT solver (Z3 or CVC4) was found."
+#ifdef HAVE_Z3_DLOPEN
+				" Install libz3.so." + to_string(Z3_MAJOR_VERSION) + "." + to_string(Z3_MINOR_VERSION) + " to enable Z3."
+#endif
 			);
 		}
 	}
@@ -95,20 +108,7 @@ bool BMC::shouldInlineFunctionCall(FunctionCall const& _funCall)
 
 	FunctionType const& funType = dynamic_cast<FunctionType const&>(*_funCall.expression().annotation().type);
 	if (funType.kind() == FunctionType::Kind::External)
-	{
-		auto memberAccess = dynamic_cast<MemberAccess const*>(&_funCall.expression());
-		if (!memberAccess)
-			return false;
-
-		auto identifier = dynamic_cast<Identifier const*>(&memberAccess->expression());
-		if (!(
-			identifier &&
-			identifier->name() == "this" &&
-			identifier->annotation().referencedDeclaration &&
-			dynamic_cast<MagicVariableDeclaration const*>(identifier->annotation().referencedDeclaration)
-		))
-			return false;
-	}
+		return isTrustedExternalCall(&_funCall.expression());
 	else if (funType.kind() != FunctionType::Kind::Internal)
 		return false;
 
@@ -132,7 +132,10 @@ void BMC::endVisit(ContractDefinition const& _contract)
 		constructor->accept(*this);
 	else
 	{
+		/// Visiting implicit constructor - we need a dummy callstack frame
+		pushCallStack({nullptr, nullptr});
 		inlineConstructorHierarchy(_contract);
+		popCallStack();
 		/// Check targets created by state variable initialization.
 		smtutil::Expression constraints = m_context.assertions();
 		checkVerificationTargets(constraints);
@@ -158,6 +161,9 @@ bool BMC::visit(FunctionDefinition const& _function)
 		resetStateVariables();
 	}
 
+	if (_function.isConstructor())
+		inlineConstructorHierarchy(dynamic_cast<ContractDefinition const&>(*_function.scope()));
+
 	/// Already visits the children.
 	SMTEncoder::visit(_function);
 
@@ -171,6 +177,7 @@ void BMC::endVisit(FunctionDefinition const& _function)
 		smtutil::Expression constraints = m_context.assertions();
 		checkVerificationTargets(constraints);
 		m_verificationTargets.clear();
+		m_pathConditions.clear();
 	}
 
 	SMTEncoder::endVisit(_function);
@@ -193,7 +200,44 @@ bool BMC::visit(IfStatement const& _node)
 		);
 	m_context.popSolver();
 
-	SMTEncoder::visit(_node);
+	_node.condition().accept(*this);
+	auto conditionExpr = expr(_node.condition());
+	// visit true branch
+	auto [indicesEndTrue, trueEndPathCondition] = visitBranch(&_node.trueStatement(), conditionExpr);
+	auto touchedVars = touchedVariables(_node.trueStatement());
+
+	// visit false branch
+	decltype(indicesEndTrue) indicesEndFalse;
+	auto falseEndPathCondition = currentPathConditions() && !conditionExpr;
+	if (_node.falseStatement())
+	{
+		std::tie(indicesEndFalse, falseEndPathCondition) = visitBranch(_node.falseStatement(), !conditionExpr);
+		touchedVars += touchedVariables(*_node.falseStatement());
+	}
+	else
+		indicesEndFalse = copyVariableIndices();
+
+	// merge the information from branches
+	setPathCondition(trueEndPathCondition || falseEndPathCondition);
+	mergeVariables(touchedVars, expr(_node.condition()), indicesEndTrue, indicesEndFalse);
+
+	return false;
+}
+
+bool BMC::visit(Conditional const& _op)
+{
+	m_context.pushSolver();
+	_op.condition().accept(*this);
+
+	if (isRootFunction())
+		addVerificationTarget(
+			VerificationTarget::Type::ConstantCondition,
+			expr(_op.condition()),
+			&_op.condition()
+		);
+	m_context.popSolver();
+
+	SMTEncoder::visit(_op);
 
 	return false;
 }
@@ -215,7 +259,7 @@ bool BMC::visit(WhileStatement const& _node)
 	decltype(indicesBeforeLoop) indicesAfterLoop;
 	if (_node.isDoWhile())
 	{
-		indicesAfterLoop = visitBranch(&_node.body());
+		indicesAfterLoop = visitBranch(&_node.body()).first;
 		// TODO the assertions generated in the body should still be active in the condition
 		_node.condition().accept(*this);
 		if (isRootFunction())
@@ -235,7 +279,7 @@ bool BMC::visit(WhileStatement const& _node)
 				&_node.condition()
 			);
 
-		indicesAfterLoop = visitBranch(&_node.body(), expr(_node.condition()));
+		indicesAfterLoop = visitBranch(&_node.body(), expr(_node.condition())).first;
 	}
 
 	// We reset the execution to before the loop
@@ -312,33 +356,19 @@ void BMC::endVisit(UnaryOperation const& _op)
 	)
 		return;
 
-	switch (_op.getOperator())
-	{
-	case Token::Inc: // ++ (pre- or postfix)
-	case Token::Dec: // -- (pre- or postfix)
+	if (_op.getOperator() == Token::Sub && smt::isInteger(*_op.annotation().type))
 		addVerificationTarget(
 			VerificationTarget::Type::UnderOverflow,
 			expr(_op),
 			&_op
 		);
-		break;
-	case Token::Sub: // -
-		if (_op.annotation().type->category() == Type::Category::Integer)
-			addVerificationTarget(
-				VerificationTarget::Type::UnderOverflow,
-				expr(_op),
-				&_op
-			);
-		break;
-	default:
-		break;
-	}
 }
 
 void BMC::endVisit(FunctionCall const& _funCall)
 {
-	solAssert(_funCall.annotation().kind != FunctionCallKind::Unset, "");
-	if (_funCall.annotation().kind != FunctionCallKind::FunctionCall)
+	auto functionCallKind = *_funCall.annotation().kind;
+
+	if (functionCallKind != FunctionCallKind::FunctionCall)
 	{
 		SMTEncoder::endVisit(_funCall);
 		return;
@@ -366,20 +396,9 @@ void BMC::endVisit(FunctionCall const& _funCall)
 		SMTEncoder::endVisit(_funCall);
 		internalOrExternalFunctionCall(_funCall);
 		break;
-	case FunctionType::Kind::KECCAK256:
-	case FunctionType::Kind::ECRecover:
-	case FunctionType::Kind::SHA256:
-	case FunctionType::Kind::RIPEMD160:
-	case FunctionType::Kind::BlockHash:
-	case FunctionType::Kind::AddMod:
-	case FunctionType::Kind::MulMod:
-		SMTEncoder::endVisit(_funCall);
-		abstractFunctionCall(_funCall);
-		break;
 	case FunctionType::Kind::Send:
 	case FunctionType::Kind::Transfer:
 	{
-		SMTEncoder::endVisit(_funCall);
 		auto value = _funCall.arguments().front();
 		solAssert(value, "");
 		smtutil::Expression thisBalance = m_context.state().balance();
@@ -389,12 +408,28 @@ void BMC::endVisit(FunctionCall const& _funCall)
 			thisBalance < expr(*value),
 			&_funCall
 		);
+
+		SMTEncoder::endVisit(_funCall);
 		break;
 	}
+	case FunctionType::Kind::KECCAK256:
+	case FunctionType::Kind::ECRecover:
+	case FunctionType::Kind::SHA256:
+	case FunctionType::Kind::RIPEMD160:
+	case FunctionType::Kind::BlockHash:
+	case FunctionType::Kind::AddMod:
+	case FunctionType::Kind::MulMod:
+		[[fallthrough]];
 	default:
 		SMTEncoder::endVisit(_funCall);
 		break;
 	}
+}
+
+void BMC::endVisit(Return const& _return)
+{
+	SMTEncoder::endVisit(_return);
+	setPathCondition(smtutil::Expression(false));
 }
 
 /// Visitor helpers.
@@ -424,6 +459,18 @@ void BMC::visitRequire(FunctionCall const& _funCall)
 		);
 }
 
+void BMC::visitAddMulMod(FunctionCall const& _funCall)
+{
+	solAssert(_funCall.arguments().at(2), "");
+	addVerificationTarget(
+		VerificationTarget::Type::DivByZero,
+		expr(*_funCall.arguments().at(2)),
+		&_funCall
+	);
+
+	SMTEncoder::visitAddMulMod(_funCall);
+}
+
 void BMC::inlineFunctionCall(FunctionCall const& _funCall)
 {
 	solAssert(shouldInlineFunctionCall(_funCall), "");
@@ -446,20 +493,12 @@ void BMC::inlineFunctionCall(FunctionCall const& _funCall)
 		// The reason why we need to pushCallStack here instead of visit(FunctionDefinition)
 		// is that there we don't have `_funCall`.
 		pushCallStack({funDef, &_funCall});
+		pushPathCondition(currentPathConditions());
 		funDef->accept(*this);
+		popPathCondition();
 	}
 
 	createReturnedExpressions(_funCall);
-}
-
-void BMC::abstractFunctionCall(FunctionCall const& _funCall)
-{
-	vector<smtutil::Expression> smtArguments;
-	for (auto const& arg: _funCall.arguments())
-		smtArguments.push_back(expr(*arg));
-	defineExpr(_funCall, (*m_context.expression(_funCall.expression()))(smtArguments));
-	m_uninterpretedTerms.insert(&_funCall);
-	setSymbolicUnknownValue(expr(_funCall), _funCall.annotation().type, m_context);
 }
 
 void BMC::internalOrExternalFunctionCall(FunctionCall const& _funCall)
@@ -467,11 +506,16 @@ void BMC::internalOrExternalFunctionCall(FunctionCall const& _funCall)
 	auto const& funType = dynamic_cast<FunctionType const&>(*_funCall.expression().annotation().type);
 	if (shouldInlineFunctionCall(_funCall))
 		inlineFunctionCall(_funCall);
+	else if (isPublicGetter(_funCall.expression()))
+	{
+		// Do nothing here.
+		// The processing happens in SMT Encoder, but we need to prevent the resetting of the state variables.
+	}
 	else if (funType.kind() == FunctionType::Kind::Internal)
 		m_errorReporter.warning(
 			5729_error,
 			_funCall.location(),
-			"Assertion checker does not yet implement this type of function call."
+			"BMC does not yet implement this type of function call."
 		);
 	else
 	{
@@ -498,8 +542,37 @@ pair<smtutil::Expression, smtutil::Expression> BMC::arithmeticOperation(
 
 	auto values = SMTEncoder::arithmeticOperation(_op, _left, _right, _commonType, _expression);
 
+	auto const* intType = dynamic_cast<IntegerType const*>(_commonType);
+	if (!intType)
+		intType = TypeProvider::uint256();
+
+	// Mod does not need underflow/overflow checks.
+	if (_op == Token::Mod)
+		return values;
+
+	VerificationTarget::Type type;
+	// The order matters here:
+	// If _op is Div and intType is signed, we only care about overflow.
+	if (_op == Token::Div)
+	{
+		if (intType->isSigned())
+			// Signed division can only overflow.
+			type = VerificationTarget::Type::Overflow;
+		else
+			// Unsigned division cannot underflow/overflow.
+			return values;
+	}
+	else if (intType->isSigned())
+		type = VerificationTarget::Type::UnderOverflow;
+	else if (_op == Token::Sub)
+		type = VerificationTarget::Type::Underflow;
+	else if (_op == Token::Add || _op == Token::Mul)
+		type = VerificationTarget::Type::Overflow;
+	else
+		solAssert(false, "");
+
 	addVerificationTarget(
-		VerificationTarget::Type::UnderOverflow,
+		type,
 		values.second,
 		&_expression
 	);
@@ -532,7 +605,7 @@ pair<vector<smtutil::Expression>, vector<string>> BMC::modelExpressions()
 		auto const& type = var.second->type();
 		if (
 			type->isValueType() &&
-			smt::smtKind(type->category()) != smtutil::Kind::Function
+			smt::smtKind(*type) != smtutil::Kind::Function
 		)
 		{
 			expressionsToEvaluate.emplace_back(var.second->currentValue());
@@ -605,12 +678,19 @@ void BMC::checkUnderflow(BMCVerificationTarget& _target, smtutil::Expression con
 			_target.type == VerificationTarget::Type::UnderOverflow,
 		""
 	);
-	IntegerType const* intType = nullptr;
-	if (auto const* type = dynamic_cast<IntegerType const*>(_target.expression->annotation().type))
-		intType = type;
-	else
+
+	if (
+		m_solvedTargets.count(_target.expression) && (
+			m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::Underflow) ||
+			m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::UnderOverflow)
+		)
+	)
+		return;
+
+	auto const* intType = dynamic_cast<IntegerType const*>(_target.expression->annotation().type);
+	if (!intType)
 		intType = TypeProvider::uint256();
-	solAssert(intType, "");
+
 	checkCondition(
 		_target.constraints && _constraints && _target.value < smt::minValue(*intType),
 		_target.callStack,
@@ -631,13 +711,19 @@ void BMC::checkOverflow(BMCVerificationTarget& _target, smtutil::Expression cons
 			_target.type == VerificationTarget::Type::UnderOverflow,
 		""
 	);
-	IntegerType const* intType = nullptr;
-	if (auto const* type = dynamic_cast<IntegerType const*>(_target.expression->annotation().type))
-		intType = type;
-	else
+
+	if (
+		m_solvedTargets.count(_target.expression) && (
+			m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::Overflow) ||
+			m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::UnderOverflow)
+		)
+	)
+		return;
+
+	auto const* intType = dynamic_cast<IntegerType const*>(_target.expression->annotation().type);
+	if (!intType)
 		intType = TypeProvider::uint256();
 
-	solAssert(intType, "");
 	checkCondition(
 		_target.constraints && _constraints && _target.value > smt::maxValue(*intType),
 		_target.callStack,
@@ -654,6 +740,13 @@ void BMC::checkOverflow(BMCVerificationTarget& _target, smtutil::Expression cons
 void BMC::checkDivByZero(BMCVerificationTarget& _target)
 {
 	solAssert(_target.type == VerificationTarget::Type::DivByZero, "");
+
+	if (
+		m_solvedTargets.count(_target.expression) &&
+		m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::DivByZero)
+	)
+		return;
+
 	checkCondition(
 		_target.constraints && (_target.value == 0),
 		_target.callStack,
@@ -761,7 +854,7 @@ void BMC::checkCondition(
 			"\nNote that some information is erased after the execution of loops.\n"
 			"You can re-introduce information using require().";
 	if (m_externalFunctionCallHappened)
-		extraComment+=
+		extraComment +=
 			"\nNote that external function calls are not inlined,"
 			" even if the source code of the function is available."
 			" This is due to the possibility that the actual called contract"
@@ -774,46 +867,40 @@ void BMC::checkCondition(
 	{
 	case smtutil::CheckResult::SATISFIABLE:
 	{
+		solAssert(!_callStack.empty(), "");
 		std::ostringstream message;
-		message << _description << " happens here";
-		if (_callStack.size())
-		{
-			std::ostringstream modelMessage;
-			modelMessage << "  for:\n";
-			solAssert(values.size() == expressionNames.size(), "");
-			map<string, string> sortedModel;
-			for (size_t i = 0; i < values.size(); ++i)
-				if (expressionsToEvaluate.at(i).name != values.at(i))
-					sortedModel[expressionNames.at(i)] = values.at(i);
+		message << "BMC: " << _description << " happens here.";
+		std::ostringstream modelMessage;
+		modelMessage << "Counterexample:\n";
+		solAssert(values.size() == expressionNames.size(), "");
+		map<string, string> sortedModel;
+		for (size_t i = 0; i < values.size(); ++i)
+			if (expressionsToEvaluate.at(i).name != values.at(i))
+				sortedModel[expressionNames.at(i)] = values.at(i);
 
-			for (auto const& eval: sortedModel)
-				modelMessage << "  " << eval.first << " = " << eval.second << "\n";
-			m_errorReporter.warning(
-				_errorHappens,
-				_location,
-				message.str(),
-				SecondarySourceLocation().append(modelMessage.str(), SourceLocation{})
-				.append(SMTEncoder::callStackMessage(_callStack))
-				.append(move(secondaryLocation))
-			);
-		}
-		else
-		{
-			message << ".";
-			m_errorReporter.warning(6084_error, _location, message.str(), secondaryLocation);
-		}
+		for (auto const& eval: sortedModel)
+			modelMessage << "  " << eval.first << " = " << eval.second << "\n";
+
+		m_errorReporter.warning(
+			_errorHappens,
+			_location,
+			message.str(),
+			SecondarySourceLocation().append(modelMessage.str(), SourceLocation{})
+			.append(SMTEncoder::callStackMessage(_callStack))
+			.append(move(secondaryLocation))
+		);
 		break;
 	}
 	case smtutil::CheckResult::UNSATISFIABLE:
 		break;
 	case smtutil::CheckResult::UNKNOWN:
-		m_errorReporter.warning(_errorMightHappen, _location, _description + " might happen here.", secondaryLocation);
+		m_errorReporter.warning(_errorMightHappen, _location, "BMC: " + _description + " might happen here.", secondaryLocation);
 		break;
 	case smtutil::CheckResult::CONFLICTING:
-		m_errorReporter.warning(1584_error, _location, "At least two SMT solvers provided conflicting answers. Results might not be sound.");
+		m_errorReporter.warning(1584_error, _location, "BMC: At least two SMT solvers provided conflicting answers. Results might not be sound.");
 		break;
 	case smtutil::CheckResult::ERROR:
-		m_errorReporter.warning(1823_error, _location, "Error trying to invoke SMT solver.");
+		m_errorReporter.warning(1823_error, _location, "BMC: Error trying to invoke SMT solver.");
 		break;
 	}
 
@@ -842,9 +929,9 @@ void BMC::checkBooleanNotConstant(
 	m_interface->pop();
 
 	if (positiveResult == smtutil::CheckResult::ERROR || negatedResult == smtutil::CheckResult::ERROR)
-		m_errorReporter.warning(8592_error, _condition.location(), "Error trying to invoke SMT solver.");
+		m_errorReporter.warning(8592_error, _condition.location(), "BMC: Error trying to invoke SMT solver.");
 	else if (positiveResult == smtutil::CheckResult::CONFLICTING || negatedResult == smtutil::CheckResult::CONFLICTING)
-		m_errorReporter.warning(3356_error, _condition.location(), "At least two SMT solvers provided conflicting answers. Results might not be sound.");
+		m_errorReporter.warning(3356_error, _condition.location(), "BMC: At least two SMT solvers provided conflicting answers. Results might not be sound.");
 	else if (positiveResult == smtutil::CheckResult::SATISFIABLE && negatedResult == smtutil::CheckResult::SATISFIABLE)
 	{
 		// everything fine.
@@ -854,20 +941,20 @@ void BMC::checkBooleanNotConstant(
 		// can't do anything.
 	}
 	else if (positiveResult == smtutil::CheckResult::UNSATISFIABLE && negatedResult == smtutil::CheckResult::UNSATISFIABLE)
-		m_errorReporter.warning(2512_error, _condition.location(), "Condition unreachable.", SMTEncoder::callStackMessage(_callStack));
+		m_errorReporter.warning(2512_error, _condition.location(), "BMC: Condition unreachable.", SMTEncoder::callStackMessage(_callStack));
 	else
 	{
 		string description;
 		if (positiveResult == smtutil::CheckResult::SATISFIABLE)
 		{
 			solAssert(negatedResult == smtutil::CheckResult::UNSATISFIABLE, "");
-			description = "Condition is always true.";
+			description = "BMC: Condition is always true.";
 		}
 		else
 		{
 			solAssert(positiveResult == smtutil::CheckResult::UNSATISFIABLE, "");
 			solAssert(negatedResult == smtutil::CheckResult::SATISFIABLE, "");
-			description = "Condition is always false.";
+			description = "BMC: Condition is always false.";
 		}
 		m_errorReporter.warning(
 			6838_error,
@@ -889,7 +976,7 @@ BMC::checkSatisfiableAndGenerateModel(vector<smtutil::Expression> const& _expres
 	}
 	catch (smtutil::SolverError const& _e)
 	{
-		string description("Error querying SMT solver");
+		string description("BMC: Error querying SMT solver");
 		if (_e.comment())
 			description += ": " + *_e.comment();
 		m_errorReporter.warning(8140_error, description);
@@ -912,5 +999,16 @@ BMC::checkSatisfiableAndGenerateModel(vector<smtutil::Expression> const& _expres
 smtutil::CheckResult BMC::checkSatisfiable()
 {
 	return checkSatisfiableAndGenerateModel({}).first;
+}
+
+void BMC::assignment(smt::SymbolicVariable& _symVar, smtutil::Expression const& _value)
+{
+	auto oldVar = _symVar.currentValue();
+	auto newVar = _symVar.increaseIndex();
+	m_context.addAssertion(smtutil::Expression::ite(
+		currentPathConditions(),
+		newVar == _value,
+		newVar == oldVar
+	));
 }
 

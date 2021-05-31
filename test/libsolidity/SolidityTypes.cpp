@@ -51,7 +51,6 @@ BOOST_AUTO_TEST_CASE(uint_types)
 
 BOOST_AUTO_TEST_CASE(byte_types)
 {
-	BOOST_CHECK(*TypeProvider::fromElementaryTypeName(ElementaryTypeNameToken(Token::Byte, 0, 0)) == *TypeProvider::fixedBytes(1));
 	for (unsigned i = 1; i <= 32; i++)
 		BOOST_CHECK(*TypeProvider::fromElementaryTypeName(ElementaryTypeNameToken(Token::BytesM, i, 0)) == *TypeProvider::fixedBytes(i));
 }
@@ -162,7 +161,7 @@ BOOST_AUTO_TEST_CASE(type_identifiers)
 		StringLiteralType(Literal(++id, SourceLocation{}, Token::StringLiteral, make_shared<string>("abc - def"))).identifier(),
 		 "t_stringliteral_196a9142ee0d40e274a6482393c762b16dd8315713207365e1e13d8d85b74fc4"
 	);
-	BOOST_CHECK_EQUAL(TypeProvider::fromElementaryTypeName("byte")->identifier(), "t_bytes1");
+	BOOST_CHECK_EQUAL(TypeProvider::fromElementaryTypeName("bytes1")->identifier(), "t_bytes1");
 	BOOST_CHECK_EQUAL(TypeProvider::fromElementaryTypeName("bytes8")->identifier(), "t_bytes8");
 	BOOST_CHECK_EQUAL(TypeProvider::fromElementaryTypeName("bytes32")->identifier(), "t_bytes32");
 	BOOST_CHECK_EQUAL(TypeProvider::fromElementaryTypeName("bool")->identifier(), "t_bool");
@@ -262,13 +261,6 @@ BOOST_AUTO_TEST_CASE(helper_bool_result)
 	r5.merge(r6, logical_and<bool>());
 	BOOST_REQUIRE_EQUAL(r5.get(), true);
 	BOOST_REQUIRE_EQUAL(r5.message(), "");
-
-	BoolResult r7{true};
-	// Attention: this will implicitly convert to bool.
-	BoolResult r8{"true"};
-	r7.merge(r8, logical_and<bool>());
-	BOOST_REQUIRE_EQUAL(r7.get(), true);
-	BOOST_REQUIRE_EQUAL(r7.message(), "");
 }
 
 BOOST_AUTO_TEST_CASE(helper_string_result)

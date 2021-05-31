@@ -83,7 +83,8 @@ namespace solidity::langutil
 	T(Semicolon, ";", 0)                                                \
 	T(Period, ".", 0)                                                   \
 	T(Conditional, "?", 3)                                              \
-	T(Arrow, "=>", 0)                                                   \
+	T(DoubleArrow, "=>", 0)                                             \
+	T(RightArrow, "->", 0)                                              \
 	\
 	/* Assignment operators. */										\
 	/* IsAssignmentOp() relies on this block of enum values being */	\
@@ -190,6 +191,7 @@ namespace solidity::langutil
 	K(Throw, "throw", 0)                                               \
 	K(Try, "try", 0)                                                   \
 	K(Type, "type", 0)                                                 \
+	K(Unchecked, "unchecked", 0)                                       \
 	K(Unicode, "unicode", 0)                                           \
 	K(Using, "using", 0)                                               \
 	K(View, "view", 0)                                                 \
@@ -212,7 +214,6 @@ namespace solidity::langutil
 	K(Int, "int", 0)                                                   \
 	K(UInt, "uint", 0)                                                 \
 	K(Bytes, "bytes", 0)                                               \
-	K(Byte, "byte", 0)                                                 \
 	K(String, "string", 0)                                             \
 	K(Address, "address", 0)                                           \
 	K(TrcToken, "trcToken", 0)                                           \
@@ -243,6 +244,7 @@ namespace solidity::langutil
 	K(Alias, "alias", 0)                                               \
 	K(Apply, "apply", 0)                                               \
 	K(Auto, "auto", 0)                                                 \
+	K(Byte, "byte", 0)                                                 \
 	K(Case, "case", 0)                                                 \
 	K(CopyOf, "copyof", 0)                                             \
 	K(Default, "default", 0)                                           \
@@ -268,8 +270,10 @@ namespace solidity::langutil
 	K(Switch, "switch", 0)                                             \
 	K(Typedef, "typedef", 0)                                           \
 	K(TypeOf, "typeof", 0)                                             \
-	K(Unchecked, "unchecked", 0)                                       \
 	K(Var, "var", 0)                                                   \
+	\
+	/* Yul-specific tokens, but not keywords. */                       \
+	T(Leave, "leave", 0)                                               \
 	\
 	/* Illegal token - not able to scan. */                            \
 	T(Illegal, "ILLEGAL", 0)                                           \
@@ -318,7 +322,16 @@ namespace TokenTraits
 	constexpr bool isEtherSubdenomination(Token op) { return op >= Token::SubWei && op <= Token::SubEther; }
 	constexpr bool isTronSubdenomination(Token op) { return op == Token::SubTrx || op == Token::SubSun; }
 	constexpr bool isTimeSubdenomination(Token op) { return op == Token::SubSecond || op == Token::SubMinute || op == Token::SubHour || op == Token::SubDay || op == Token::SubWeek || op == Token::SubYear; }
-	constexpr bool isReservedKeyword(Token op) { return (Token::After <= op && op <= Token::Unchecked); }
+	constexpr bool isReservedKeyword(Token op) { return (Token::After <= op && op <= Token::Var); }
+
+	constexpr bool isYulKeyword(Token tok)
+	{
+		return tok == Token::Function || tok == Token::Let || tok == Token::If || tok == Token::Switch || tok == Token::Case ||
+			tok == Token::Default || tok == Token::For || tok == Token::Break || tok == Token::Continue || tok == Token::Leave ||
+			tok == Token::TrueLiteral || tok == Token::FalseLiteral || tok == Token::HexStringLiteral || tok == Token::Hex;
+	}
+
+	bool isYulKeyword(std::string const& _literal);
 
 	inline Token AssignmentToBinaryOp(Token op)
 	{
@@ -328,7 +341,28 @@ namespace TokenTraits
 
 	// @returns the precedence > 0 for binary and compare
 	// operators; returns 0 otherwise.
-	int precedence(Token tok);
+	constexpr int precedence(Token tok)
+	{
+		int8_t constexpr precs[TokenTraits::count()] =
+		{
+			#define T(name, string, precedence) precedence,
+			TOKEN_LIST(T, T)
+			#undef T
+		};
+		return precs[static_cast<size_t>(tok)];
+	}
+
+	constexpr bool hasExpHighestPrecedence()
+	{
+		constexpr int expPrecedence = TokenTraits::precedence(Token::Exp);
+		static_assert(expPrecedence == 14, "Exp precedence changed.");
+
+		#define T(name, string, precedence) ((Token::name == Token::Exp) || precedence < expPrecedence) &&
+		return
+			TOKEN_LIST(T, T)
+			true;
+		#undef T
+	}
 
 	std::tuple<Token, unsigned int, unsigned int> fromIdentifierOrKeyword(std::string const& _literal);
 

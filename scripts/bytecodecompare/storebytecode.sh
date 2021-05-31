@@ -27,26 +27,15 @@
 
 set -e
 
-if [[ "${TRAVIS_PULL_REQUEST_BRANCH}" != "" ]]; then
-    # Variable is set to the branch's name iff current job is a pull request,
-    # or is set to empty string if it is a push build.
-    echo "Skipping bytecode comparison."
-    exit 0
-fi
-
 REPO_ROOT="$(dirname "$0")"/../..
+cd "$REPO_ROOT"
+REPO_ROOT=$(pwd) # make it absolute
 
-if test -z "$1"; then
-	BUILD_DIR="build"
-else
-	BUILD_DIR="$1"
-fi
+BUILD_DIR="${1:-${REPO_ROOT}/build}"
 
 echo "Compiling all test contracts into bytecode..."
 TMPDIR=$(mktemp -d)
 (
-    cd "$REPO_ROOT"
-    REPO_ROOT=$(pwd) # make it absolute
     cd "$TMPDIR"
 
     "$REPO_ROOT"/scripts/isolate_tests.py "$REPO_ROOT"/test/
@@ -64,11 +53,6 @@ var fs = require('fs')
 
 var compiler = require('./solc-js/wrapper.js')(require('./solc-js/soljson.js'))
 
-function removeSMT(source)
-{
-    return source.replace('pragma experimental SMTChecker;', '');
-}
-
 for (var optimize of [false, true])
 {
     for (var filename of process.argv.slice(2))
@@ -76,13 +60,14 @@ for (var optimize of [false, true])
         if (filename !== undefined)
         {
             var inputs = {}
-            inputs[filename] = { content: removeSMT(fs.readFileSync(filename).toString()) }
+            inputs[filename] = { content: fs.readFileSync(filename).toString() }
             var input = {
                 language: 'Solidity',
                 sources: inputs,
                 settings: {
                     optimizer: { enabled: optimize },
-                    outputSelection: { '*': { '*': ['evm.bytecode.object', 'metadata'] } }
+                    outputSelection: { '*': { '*': ['evm.bytecode.object', 'metadata'] } },
+                    "modelChecker": { "engine": "none" }
                 }
             }
             var result = JSON.parse(compiler.compile(JSON.stringify(input)))
@@ -117,37 +102,10 @@ EOF
         ./solc *.sol > report.txt
         echo "Finished running the compiler."
     else
-        $REPO_ROOT/scripts/bytecodecompare/prepare_report.py $REPO_ROOT/$BUILD_DIR/solc/solc
+        "$REPO_ROOT/scripts/bytecodecompare/prepare_report.py" "$BUILD_DIR/solc/solc"
     fi
 
-    if [ "$TRAVIS_SECURE_ENV_VARS" = "true" ]
-    then
-        openssl aes-256-cbc -K $encrypted_60701c962b9c_key -iv $encrypted_60701c962b9c_iv -in "$REPO_ROOT"/scripts/bytecodecompare/deploy_key.enc -out deploy_key -d
-        chmod 600 deploy_key
-        eval `ssh-agent -s`
-        ssh-add deploy_key
-
-        git clone --depth 2 git@github.com:ethereum/solidity-test-bytecode.git
-        cd solidity-test-bytecode
-        git config user.name "travis"
-        git config user.email "chris@ethereum.org"
-        git clean -f -d -x
-
-        DIRNAME=$(cd "$REPO_ROOT" && git show -s --format="%cd-%H" --date="format:%Y-%m-%d-%H-%M")
-        mkdir -p "$DIRNAME"
-        REPORT="$DIRNAME/$ZIP_SUFFIX.txt"
-        cp ../report.txt "$REPORT"
-        # Only push if adding actually worked, i.e. there were changes.
-        if git add "$REPORT" && git commit -a -m "Added report $REPORT"
-        then
-            git pull --rebase
-            git push origin
-        else
-            echo "Adding report failed, it might already exist in the repository."
-        fi
-    else
-        echo "Not storing bytecode because the keys are not available."
-    fi
+    cp report.txt "$REPO_ROOT"
 )
 rm -rf "$TMPDIR"
 echo "Storebytecode finished."

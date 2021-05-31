@@ -20,12 +20,13 @@
  */
 
 #include <libsolutil/CommonIO.h>
+#include <libsolutil/Exceptions.h>
 #include <liblangutil/ErrorReporter.h>
 #include <liblangutil/Scanner.h>
 #include <libyul/AsmAnalysis.h>
 #include <libyul/AsmAnalysisInfo.h>
 #include <libsolidity/parsing/Parser.h>
-#include <libyul/AsmData.h>
+#include <libyul/AST.h>
 #include <libyul/AsmParser.h>
 #include <libyul/AsmPrinter.h>
 #include <libyul/Object.h>
@@ -36,6 +37,7 @@
 #include <libyul/optimiser/StackCompressor.h>
 #include <libyul/optimiser/VarNameCleaner.h>
 #include <libyul/optimiser/Suite.h>
+#include <libyul/optimiser/ReasoningBasedSimplifier.h>
 
 #include <libyul/backends/evm/EVMDialect.h>
 
@@ -62,7 +64,7 @@ class YulOpti
 public:
 	void printErrors()
 	{
-		SourceReferenceFormatter formatter(cerr);
+		SourceReferenceFormatter formatter(cerr, true, false);
 
 		for (auto const& error: m_errors)
 			formatter.printErrorInformation(*error);
@@ -110,7 +112,7 @@ public:
 		auto printPair = [&](auto const& optionAndDescription)
 		{
 			cout << optionAndDescription.first << ": ";
-			cout << setw(longestDescriptionLength) << setiosflags(ios::left);
+			cout << setw(static_cast<int>(longestDescriptionLength)) << setiosflags(ios::left);
 			cout << optionAndDescription.second << " ";
 
 			++index;
@@ -157,14 +159,15 @@ public:
 			map<char, string> const& extraOptions = {
 				{'#', "quit"},
 				{',', "VarNameCleaner"},
-				{';', "StackCompressor"},
+				{';', "StackCompressor"}
 			};
 
 			printUsageBanner(abbreviationMap, extraOptions, 4);
 			cout << "? ";
 			cout.flush();
-			int option = readStandardInputChar();
-			cout << ' ' << char(option) << endl;
+			// TODO: handle EOF properly.
+			char option = static_cast<char>(readStandardInputChar());
+			cout << ' ' << option << endl;
 
 			OptimiserStepContext context{m_dialect, *m_nameDispenser, reservedIdentifiers};
 
@@ -242,8 +245,18 @@ Allowed options)",
 	}
 
 	string input;
+	try
+	{
+		input = readFileAsString(arguments["input-file"].as<string>());
+	}
+	catch (FileNotFound const& _exception)
+	{
+		cerr << "File not found:" << _exception.comment() << endl;
+		return 1;
+	}
+
 	if (arguments.count("input-file"))
-		YulOpti{}.runInteractive(readFileAsString(arguments["input-file"].as<string>()));
+		YulOpti{}.runInteractive(input);
 	else
 		cout << options;
 

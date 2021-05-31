@@ -7,6 +7,4 @@ contract c {
 	bool b = (f() > 0) || (f() > 0);
 }
 // ----
-// Warning 2661: (100-105): Overflow (resulting value larger than 2**256 - 1) happens here
-// Warning 4144: (100-105): Underflow (resulting value less than 0) happens here
-// Warning 2661: (100-105): Overflow (resulting value larger than 2**256 - 1) happens here
+// Warning 6321: (86-90): Unnamed return variable can remain unassigned. Add an explicit return with value to all non-reverting code paths or name the variable.

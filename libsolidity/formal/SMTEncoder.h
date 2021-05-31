@@ -36,6 +36,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <utility>
 
 namespace solidity::langutil
 {
@@ -51,15 +52,40 @@ class SMTEncoder: public ASTConstVisitor
 public:
 	SMTEncoder(smt::EncodingContext& _context);
 
+	/// @returns true if engine should proceed with analysis.
+	bool analyze(SourceUnit const& _sources);
+
 	/// @returns the leftmost identifier in a multi-d IndexAccess.
 	static Expression const* leftmostBase(IndexAccess const& _indexAccess);
 
-	/// @returns the innermost element in a chain of 1-tuples.
-	static Expression const* innermostTuple(TupleExpression const& _tuple);
+	/// @returns the key type in _type.
+	/// _type must allow IndexAccess, that is,
+	/// it must be either ArrayType or MappingType
+	static TypePointer keyType(TypePointer _type);
+
+	/// @returns the innermost element in a chain of 1-tuples if applicable,
+	/// otherwise _expr.
+	static Expression const* innermostTuple(Expression const& _expr);
 
 	/// @returns the FunctionDefinition of a FunctionCall
 	/// if possible or nullptr.
 	static FunctionDefinition const* functionCallToDefinition(FunctionCall const& _funCall);
+
+	static std::vector<VariableDeclaration const*> stateVariablesIncludingInheritedAndPrivate(ContractDefinition const& _contract);
+	static std::vector<VariableDeclaration const*> stateVariablesIncludingInheritedAndPrivate(FunctionDefinition const& _function);
+
+	static std::vector<VariableDeclaration const*> localVariablesIncludingModifiers(FunctionDefinition const& _function);
+	static std::vector<VariableDeclaration const*> modifiersVariables(FunctionDefinition const& _function);
+
+	/// @returns the SourceUnit that contains _scopable.
+	static SourceUnit const* sourceUnitContaining(Scopable const& _scopable);
+
+	/// @returns the arguments for each base constructor call in the hierarchy of @a _contract.
+	std::map<ContractDefinition const*, std::vector<ASTPointer<frontend::Expression>>> baseArguments(ContractDefinition const& _contract);
+
+	/// @returns a valid RationalNumberType pointer if _expr has type
+	/// RationalNumberType or can be const evaluated, and nullptr otherwise.
+	static RationalNumberType const* isConstant(Expression const& _expr);
 
 protected:
 	// TODO: Check that we do not have concurrent reads and writes to a variable,
@@ -73,16 +99,18 @@ protected:
 	bool visit(FunctionDefinition const& _node) override;
 	void endVisit(FunctionDefinition const& _node) override;
 	bool visit(PlaceholderStatement const& _node) override;
-	bool visit(IfStatement const& _node) override;
+	bool visit(IfStatement const&) override { return false; }
 	bool visit(WhileStatement const&) override { return false; }
 	bool visit(ForStatement const&) override { return false; }
 	void endVisit(VariableDeclarationStatement const& _node) override;
+	bool visit(Assignment const& _node) override;
 	void endVisit(Assignment const& _node) override;
 	void endVisit(TupleExpression const& _node) override;
 	bool visit(UnaryOperation const& _node) override;
 	void endVisit(UnaryOperation const& _node) override;
 	bool visit(BinaryOperation const& _node) override;
 	void endVisit(BinaryOperation const& _node) override;
+	bool visit(Conditional const& _node) override;
 	void endVisit(FunctionCall const& _node) override;
 	bool visit(ModifierInvocation const& _node) override;
 	void endVisit(Identifier const& _node) override;
@@ -96,6 +124,9 @@ protected:
 	void endVisit(Break const&) override {}
 	void endVisit(Continue const&) override {}
 	bool visit(TryCatchClause const& _node) override;
+
+	virtual void pushInlineFrame(CallableDeclaration const&);
+	virtual void popInlineFrame(CallableDeclaration const&);
 
 	/// Do not visit subtree if node is a RationalNumber.
 	/// Symbolic _expr is the rational literal.
@@ -111,17 +142,33 @@ protected:
 		TypePointer const& _commonType,
 		Expression const& _expression
 	);
+
+	smtutil::Expression bitwiseOperation(
+		Token _op,
+		smtutil::Expression const& _left,
+		smtutil::Expression const& _right,
+		TypePointer const& _commonType
+	);
+
 	void compareOperation(BinaryOperation const& _op);
 	void booleanOperation(BinaryOperation const& _op);
 	void bitwiseOperation(BinaryOperation const& _op);
+	void bitwiseNotOperation(UnaryOperation const& _op);
 
 	void initContract(ContractDefinition const& _contract);
 	void initFunction(FunctionDefinition const& _function);
 	void visitAssert(FunctionCall const& _funCall);
 	void visitRequire(FunctionCall const& _funCall);
+	void visitCryptoFunction(FunctionCall const& _funCall);
 	void visitGasLeft(FunctionCall const& _funCall);
+	virtual void visitAddMulMod(FunctionCall const& _funCall);
+	void visitObjectCreation(FunctionCall const& _funCall);
 	void visitTypeConversion(FunctionCall const& _funCall);
+	void visitStructConstructorCall(FunctionCall const& _funCall);
 	void visitFunctionIdentifier(Identifier const& _identifier);
+	void visitPublicGetter(FunctionCall const& _funCall);
+
+	bool isPublicGetter(Expression const& _expr);
 
 	/// Encodes a modifier or function body according to the modifier
 	/// visit depth.
@@ -140,8 +187,8 @@ protected:
 	/// to variable of some SMT array type
 	/// while aliasing is not supported.
 	void arrayAssignment();
-	/// Handles assignment to SMT array index.
-	void arrayIndexAssignment(Expression const& _expr, smtutil::Expression const& _rightHandSide);
+	/// Handles assignments to index or member access.
+	void indexOrMemberAssignment(Expression const& _expr, smtutil::Expression const& _rightHandSide);
 
 	void arrayPush(FunctionCall const& _funCall);
 	void arrayPop(FunctionCall const& _funCall);
@@ -150,9 +197,23 @@ protected:
 	/// an empty array.
 	virtual void makeArrayPopVerificationTarget(FunctionCall const&) {}
 
-	/// Division expression in the given type. Requires special treatment because
-	/// of rounding for signed division.
-	smtutil::Expression division(smtutil::Expression _left, smtutil::Expression _right, IntegerType const& _type);
+	void addArrayLiteralAssertions(
+		smt::SymbolicArrayVariable& _symArray,
+		std::vector<smtutil::Expression> const& _elementValues
+	);
+
+	/// @returns a pair of expressions representing _left / _right and _left mod _right, respectively.
+	/// Uses slack variables and additional constraints to express the results using only operations
+	/// more friendly to the SMT solver (multiplication, addition, subtraction and comparison).
+	std::pair<smtutil::Expression, smtutil::Expression>	divModWithSlacks(
+		smtutil::Expression _left,
+		smtutil::Expression _right,
+		IntegerType const& _type
+	);
+
+	/// Handles the actual assertion of the new value to the encoding context.
+	/// Other assignment methods should use this one in the end.
+	virtual void assignment(smt::SymbolicVariable& _symVar, smtutil::Expression const& _value);
 
 	void assignment(VariableDeclaration const& _variable, Expression const& _value);
 	/// Handles assignments to variables of different types.
@@ -162,8 +223,7 @@ protected:
 	void assignment(
 		Expression const& _left,
 		smtutil::Expression const& _right,
-		TypePointer const& _type,
-		langutil::SourceLocation const& _location
+		TypePointer const& _type
 	);
 	/// Handle assignments between tuples.
 	void tupleAssignment(Expression const& _left, Expression const& _right);
@@ -175,9 +235,10 @@ protected:
 
 	/// Visits the branch given by the statement, pushes and pops the current path conditions.
 	/// @param _condition if present, asserts that this condition is true within the branch.
-	/// @returns the variable indices after visiting the branch.
-	VariableIndices visitBranch(ASTNode const* _statement, smtutil::Expression const* _condition = nullptr);
-	VariableIndices visitBranch(ASTNode const* _statement, smtutil::Expression _condition);
+	/// @returns the variable indices after visiting the branch and the expression representing
+	/// the path condition at the end of the branch.
+	std::pair<VariableIndices, smtutil::Expression> visitBranch(ASTNode const* _statement, smtutil::Expression const* _condition = nullptr);
+	std::pair<VariableIndices, smtutil::Expression> visitBranch(ASTNode const* _statement, smtutil::Expression _condition);
 
 	using CallStackEntry = std::pair<CallableDeclaration const*, ASTNode const*>;
 
@@ -190,8 +251,12 @@ protected:
 	/// Resets all references/pointers that have the same type or have
 	/// a subexpression of the same type as _varDecl.
 	void resetReferences(VariableDeclaration const& _varDecl);
+	/// Resets all references/pointers that have type _type.
+	void resetReferences(TypePointer _type);
 	/// @returns the type without storage pointer information if it has it.
 	TypePointer typeWithoutPointer(TypePointer const& _type);
+	/// @returns whether _a or a subtype of _a is the same as _b.
+	bool sameTypeOrSubtype(TypePointer _a, TypePointer _b);
 
 	/// Given two different branches and the touched variables,
 	/// merge the touched variables into after-branch ite variables
@@ -215,6 +280,8 @@ protected:
 	/// Creates the expression and sets its value.
 	void defineExpr(Expression const& _e, smtutil::Expression _value);
 
+	/// Overwrites the current path condition
+	void setPathCondition(smtutil::Expression const& _e);
 	/// Adds a new path condition
 	void pushPathCondition(smtutil::Expression const& _e);
 	/// Remove the last path condition
@@ -241,8 +308,20 @@ protected:
 	/// @returns variables that are touched in _node's subtree.
 	std::set<VariableDeclaration const*> touchedVariables(ASTNode const& _node);
 
-	/// @returns the VariableDeclaration referenced by an Identifier or nullptr.
-	VariableDeclaration const* identifierToVariable(Expression const& _expr);
+	/// @returns the declaration referenced by _expr, if any,
+	/// and nullptr otherwise.
+	Declaration const* expressionToDeclaration(Expression const& _expr) const;
+
+	/// @returns the VariableDeclaration referenced by an Expression or nullptr.
+	VariableDeclaration const* identifierToVariable(Expression const& _expr) const;
+
+	/// @returns the MemberAccess <expression>.push if _expr is an empty array push call,
+	/// otherwise nullptr.
+	MemberAccess const* isEmptyPush(Expression const& _expr) const;
+
+	/// @returns true if the given identifier is a contract which is known and trusted.
+	/// This means we don't have to abstract away effects of external function calls to this contract.
+	static bool isTrustedExternalCall(Expression const* _expr);
 
 	/// Creates symbolic expressions for the returned values
 	/// and set them as the components of the symbolic tuple.

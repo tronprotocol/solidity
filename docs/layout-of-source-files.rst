@@ -5,7 +5,8 @@ Layout of a Solidity Source File
 Source files can contain an arbitrary number of
 :ref:`contract definitions<contract_structure>`, import_ directives,
 :ref:`pragma directives<pragma>` and
-:ref:`struct<structs>` and :ref:`enum<enums>` definitions.
+:ref:`struct<structs>`, :ref:`enum<enums>`, :ref:`function<functions>`
+and :ref:`constant variable<constants>` definitions.
 
 .. index:: ! license, spdx
 
@@ -14,7 +15,7 @@ SPDX License Identifier
 
 Trust in smart contract can be better established if their source code
 is available. Since making source code available always touches on legal problems
-with regards to copyright, the Solidity compiler encouranges the use
+with regards to copyright, the Solidity compiler encourages the use
 of machine-readable `SPDX license identifiers <https://spdx.org>`_.
 Every source file should start with a comment indicating its license:
 
@@ -22,7 +23,7 @@ Every source file should start with a comment indicating its license:
 
 The compiler does not validate that the license is part of the
 `list allowed by SPDX <https://spdx.org/licenses/>`_, but
-it does include the supplied string in the `bytecode metadata <metadata>`_.
+it does include the supplied string in the :ref:`bytecode metadata <metadata>`.
 
 If you do not want to specify a license or if the source code is
 not open-source, please use the special value ``UNLICENSED``.
@@ -87,6 +88,41 @@ these follow the same syntax used by `npm <https://docs.npmjs.com/misc/semver>`_
   required by the pragma. If it does not match, the compiler issues
   an error.
 
+ABI Coder Pragma
+----------------
+
+By using ``pragma abicoder v1`` or ``pragma abicoder v2`` you can
+select between the two implementations of the ABI encoder and decoder.
+
+The new ABI coder (v2) is able to encode and decode arbitrarily nested
+arrays and structs. It might produce less optimal code and has not
+received as much testing as the old encoder, but is considered
+non-experimental as of Solidity 0.6.0. You still have to explicitly
+activate it using ``pragma abicoder v2;``. Since it will be
+activated by default starting from Solidity 0.8.0, there is the option to select
+the old coder using ``pragma abicoder v1;``.
+
+The set of types supported by the new encoder is a strict superset of
+the ones supported by the old one. Contracts that use it can interact with ones
+that do not without limitations. The reverse is possible only as long as the
+non-``abicoder v2`` contract does not try to make calls that would require
+decoding types only supported by the new encoder. The compiler can detect this
+and will issue an error. Simply enabling ``abicoder v2`` for your contract is
+enough to make the error go away.
+
+.. note::
+  This pragma applies to all the code defined in the file where it is activated,
+  regardless of where that code ends up eventually. This means that a contract
+  whose source file is selected to compile with ABI coder v1
+  can still contain code that uses the new encoder
+  by inheriting it from another contract. This is allowed if the new types are only
+  used internally and not in external function signatures.
+
+.. note::
+  Up to Solidity 0.7.4, it was possible to select the ABI coder v2
+  by using ``pragma experimental ABIEncoderV2``, but it was not possible
+  to explicitly select coder v1 because it was the default.
+
 .. index:: ! pragma, experimental
 
 .. _experimental_pragma:
@@ -102,13 +138,9 @@ The following experimental pragmas are currently supported:
 ABIEncoderV2
 ~~~~~~~~~~~~
 
-The new ABI encoder is able to encode and decode arbitrarily nested
-arrays and structs. It might produce less optimal code and has not
-received as much testing as the old encoder, but is considered
-non-experimental as of Solidity 0.6.0. You still have to explicitly
-activate it using ``pragma experimental ABIEncoderV2;`` - we kept
-the same pragma, even though it is not considered experimental
-anymore.
+Because the ABI coder v2 is not considered experimental anymore,
+it can be selected via ``pragma abicoder v2`` (please see above)
+since Solidity 0.7.4.
 
 .. _smt_checker:
 
@@ -317,7 +349,7 @@ for the two function parameters and two return variables.
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.21 <0.8.0;
+    pragma solidity >=0.4.21 <0.9.0;
 
     /** @title Shape calculator. */
     contract ShapeCalculator {

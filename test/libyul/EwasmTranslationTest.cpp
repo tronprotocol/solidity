@@ -28,6 +28,8 @@
 #include <libyul/AsmParser.h>
 #include <libyul/AssemblyStack.h>
 #include <libyul/AsmAnalysisInfo.h>
+#include <libyul/AST.h>
+#include <libyul/Object.h>
 
 #include <liblangutil/ErrorReporter.h>
 #include <liblangutil/SourceReferenceFormatter.h>
@@ -100,6 +102,7 @@ string EwasmTranslationTest::interpret()
 	InterpreterState state;
 	state.maxTraceSize = 10000;
 	state.maxSteps = 1000000;
+	state.maxExprNesting = 64;
 	try
 	{
 		Interpreter::run(state, WasmDialect{}, *m_object->code);
@@ -115,7 +118,7 @@ string EwasmTranslationTest::interpret()
 
 void EwasmTranslationTest::printErrors(ostream& _stream, ErrorList const& _errors)
 {
-	SourceReferenceFormatter formatter(_stream);
+	SourceReferenceFormatter formatter(_stream, true, false);
 
 	for (auto const& error: _errors)
 		formatter.printErrorInformation(*error);

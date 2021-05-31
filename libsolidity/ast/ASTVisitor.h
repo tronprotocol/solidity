@@ -58,6 +58,7 @@ public:
 	virtual bool visit(PragmaDirective& _node) { return visitNode(_node); }
 	virtual bool visit(ImportDirective& _node) { return visitNode(_node); }
 	virtual bool visit(ContractDefinition& _node) { return visitNode(_node); }
+	virtual bool visit(IdentifierPath& _node) { return visitNode(_node); }
 	virtual bool visit(InheritanceSpecifier& _node) { return visitNode(_node); }
 	virtual bool visit(UsingForDirective& _node) { return visitNode(_node); }
 	virtual bool visit(StructDefinition& _node) { return visitNode(_node); }
@@ -110,6 +111,7 @@ public:
 	virtual void endVisit(PragmaDirective& _node) { endVisitNode(_node); }
 	virtual void endVisit(ImportDirective& _node) { endVisitNode(_node); }
 	virtual void endVisit(ContractDefinition& _node) { endVisitNode(_node); }
+	virtual void endVisit(IdentifierPath& _node) { endVisitNode(_node); }
 	virtual void endVisit(InheritanceSpecifier& _node) { endVisitNode(_node); }
 	virtual void endVisit(UsingForDirective& _node) { endVisitNode(_node); }
 	virtual void endVisit(StructDefinition& _node) { endVisitNode(_node); }
@@ -184,6 +186,7 @@ public:
 	virtual bool visit(PragmaDirective const& _node) { return visitNode(_node); }
 	virtual bool visit(ImportDirective const& _node) { return visitNode(_node); }
 	virtual bool visit(ContractDefinition const& _node) { return visitNode(_node); }
+	virtual bool visit(IdentifierPath const& _node) { return visitNode(_node); }
 	virtual bool visit(InheritanceSpecifier const& _node) { return visitNode(_node); }
 	virtual bool visit(StructDefinition const& _node) { return visitNode(_node); }
 	virtual bool visit(UsingForDirective const& _node) { return visitNode(_node); }
@@ -236,6 +239,7 @@ public:
 	virtual void endVisit(PragmaDirective const& _node) { endVisitNode(_node); }
 	virtual void endVisit(ImportDirective const& _node) { endVisitNode(_node); }
 	virtual void endVisit(ContractDefinition const& _node) { endVisitNode(_node); }
+	virtual void endVisit(IdentifierPath const& _node) { endVisitNode(_node); }
 	virtual void endVisit(InheritanceSpecifier const& _node) { endVisitNode(_node); }
 	virtual void endVisit(UsingForDirective const& _node) { endVisitNode(_node); }
 	virtual void endVisit(StructDefinition const& _node) { endVisitNode(_node); }
@@ -311,48 +315,6 @@ protected:
 private:
 	std::function<bool(ASTNode const&)> m_onVisit;
 	std::function<void(ASTNode const&)> m_onEndVisit;
-};
-
-/**
- * Utility class that visits the AST in depth-first order and calls a function on each node and each edge.
- * Child nodes are only visited if the node callback of the parent returns true.
- * The node callback of a parent is called before any edge or node callback involving the children.
- * The edge callbacks of all children are called before the edge callback of the parent.
- * This way, the node callback can be used as an initializing callback and the edge callbacks can be
- * used to compute a "reduce" function.
- */
-class ASTReduce: public ASTConstVisitor
-{
-public:
-	/**
-	 * Constructs a new ASTReduce object with the given callback functions.
-	 * @param _onNode called for each node, before its child edges and nodes, should return true to descend deeper
-	 * @param _onEdge called for each edge with (parent, child)
-	 */
-	ASTReduce(
-		std::function<bool(ASTNode const&)> _onNode,
-		std::function<void(ASTNode const&, ASTNode const&)> _onEdge
-	): m_onNode(std::move(_onNode)), m_onEdge(std::move(_onEdge))
-	{
-	}
-
-protected:
-	bool visitNode(ASTNode const& _node) override
-	{
-		m_parents.push_back(&_node);
-		return m_onNode(_node);
-	}
-	void endVisitNode(ASTNode const& _node) override
-	{
-		m_parents.pop_back();
-		if (!m_parents.empty())
-			m_onEdge(*m_parents.back(), _node);
-	}
-
-private:
-	std::vector<ASTNode const*> m_parents;
-	std::function<bool(ASTNode const&)> m_onNode;
-	std::function<void(ASTNode const&, ASTNode const&)> m_onEdge;
 };
 
 }

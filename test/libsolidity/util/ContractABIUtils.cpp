@@ -20,6 +20,9 @@
 
 #include <test/libsolidity/util/SoltestErrors.h>
 
+#include <libsolutil/FunctionSelector.h>
+#include <libsolutil/CommonData.h>
+
 #include <liblangutil/Common.h>
 
 #include <boost/algorithm/string.hpp>
@@ -38,7 +41,6 @@ using namespace solidity::util;
 using namespace solidity::langutil;
 using namespace solidity::frontend::test;
 using namespace std;
-using namespace soltest;
 
 namespace
 {
@@ -314,20 +316,34 @@ solidity::frontend::test::ParameterList ContractABIUtils::defaultParameters(size
 	return parameters;
 }
 
-solidity::frontend::test::ParameterList ContractABIUtils::failureParameters(bytes const _bytes)
+solidity::frontend::test::ParameterList ContractABIUtils::failureParameters(bytes const& _bytes)
 {
-	ParameterList parameters;
+	if (_bytes.empty())
+		return {};
+	else if (_bytes.size() < 4)
+		return {Parameter{bytes(), "", ABIType{ABIType::HexString, ABIType::AlignNone, _bytes.size()}, FormatInfo{}}};
+	else
+	{
+		ParameterList parameters;
+		parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::HexString, ABIType::AlignNone, 4}, FormatInfo{}});
 
-	parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::HexString, ABIType::AlignNone, 4}, FormatInfo{}});
-	parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::Hex}, FormatInfo{}});
-	parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::UnsignedDec}, FormatInfo{}});
-
-	/// If _bytes contains at least a 1 byte message (function selector + tail pointer + message length + message)
-	/// append an additional string parameter to represent that message.
-	if (_bytes.size() > 68)
-		parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::String}, FormatInfo{}});
-
-	return parameters;
+		uint64_t selector = fromBigEndian<uint64_t>(bytes{_bytes.begin(), _bytes.begin() + 4});
+		if (selector == selectorFromSignature32("Panic(uint256)"))
+			parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::Hex}, FormatInfo{}});
+		else if (selector == selectorFromSignature32("Error(string)"))
+		{
+			parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::Hex}, FormatInfo{}});
+			parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::UnsignedDec}, FormatInfo{}});
+			/// If _bytes contains at least a 1 byte message (function selector + tail pointer + message length + message)
+			/// append an additional string parameter to represent that message.
+			if (_bytes.size() > 68)
+				parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::String}, FormatInfo{}});
+		}
+		else
+			for (size_t i = 4; i < _bytes.size(); i += 32)
+				parameters.push_back(Parameter{bytes(), "", ABIType{ABIType::HexString, ABIType::AlignNone, 32}, FormatInfo{}});
+		return parameters;
+	}
 }
 
 size_t ContractABIUtils::encodingSize(

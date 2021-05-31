@@ -61,7 +61,7 @@ The following elementary types exist:
 - ``bool``: equivalent to ``uint8`` restricted to the values 0 and 1. For computing the function selector, ``bool`` is used.
 
 - ``fixed<M>x<N>``: signed fixed-point decimal number of ``M`` bits, ``8 <= M <= 256``,
-  ``M % 8 ==0``, and ``0 < N <= 80``, which denotes the value ``v`` as ``v / (10 ** N)``.
+  ``M % 8 == 0``, and ``0 < N <= 80``, which denotes the value ``v`` as ``v / (10 ** N)``.
 
 - ``ufixed<M>x<N>``: unsigned variant of ``fixed<M>x<N>``.
 
@@ -75,6 +75,9 @@ The following elementary types exist:
 The following (fixed-size) array type exists:
 
 - ``<type>[M]``: a fixed-length array of ``M`` elements, ``M >= 0``, of the given type.
+
+    .. note::
+        While this ABI specification can express fixed-length arrays with zero elements, they're not supported by the compiler.
 
 The following non-fixed-size types exist:
 
@@ -106,13 +109,14 @@ them.
 +-------------------------------+-----------------------------------------------------------------------------+
 |:ref:`contract<contracts>`     |``address``                                                                  |
 +-------------------------------+-----------------------------------------------------------------------------+
-|:ref:`enum<enums>`             |smallest ``uint`` type that is large enough to hold all values               |
-|                               |                                                                             |
-|                               |For example, an ``enum`` of 255 values or less is mapped to ``uint8`` and    |
-|                               |an ``enum`` of 256 values is mapped to ``uint16``.                           |
+|:ref:`enum<enums>`             |``uint8``                                                                    |
 +-------------------------------+-----------------------------------------------------------------------------+
 |:ref:`struct<structs>`         |``tuple``                                                                    |
 +-------------------------------+-----------------------------------------------------------------------------+
+
+.. warning::
+    Before version ``0.8.0`` enums could have more than 256 members and were represented by the
+    smallest integer type just big enough to hold the value of any member.
 
 Design Criteria for the Encoding
 ================================
@@ -233,7 +237,7 @@ Given the contract:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.16 <0.8.0;
+    pragma solidity >=0.4.16 <0.9.0;
 
     contract Foo {
         function bar(bytes3[2] memory) public pure {}
@@ -537,7 +541,7 @@ For example,
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >0.6.99 <0.8.0;
+    pragma solidity >=0.6.99 <0.9.0;
 
 
     contract Test {
@@ -586,8 +590,8 @@ As an example, the code
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.19 <0.8.0;
-    pragma experimental ABIEncoderV2;
+    pragma solidity >0.7.4 <0.9.0;
+    pragma abicoder v2;
 
     contract Test {
         struct S { uint a; uint[] b; T[] c; }

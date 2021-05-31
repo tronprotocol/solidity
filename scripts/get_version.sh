@@ -5,7 +5,7 @@
 #
 # The documentation for solidity is hosted at:
 #
-#     https://solidity.readthedocs.org
+#     https://docs.soliditylang.org
 #
 # ------------------------------------------------------------------------------
 # This file is part of solidity.
@@ -28,4 +28,4 @@
 
 set -e
 
-grep -oP "PROJECT_VERSION \"?\K[0-9.]+(?=\")"? $(dirname "$0")/../CMakeLists.txt
+grep -oP "PROJECT_VERSION \"?\K[0-9.]+(?=\")?" $(dirname "$0")/../CMakeLists.txt

@@ -18,10 +18,10 @@ if they are marked ``virtual``. For details, please see
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >0.6.99 <0.8.0;
+    pragma solidity >0.7.0 <0.9.0;
 
     contract owned {
-        constructor() { owner = msg.sender; }
+        constructor() { owner = payable(msg.sender); }
         address payable owner;
 
         // This contract only defines a modifier but does not use
@@ -99,6 +99,11 @@ if they are marked ``virtual``. For details, please see
             return 7;
         }
     }
+
+If you want to access a modifier ``m`` defined in a contract ``C``, you can use ``C.m`` to
+reference it without virtual lookup. It is only possible to use modifiers defined in the current
+contract or its base contracts. Modifiers can also be defined in libraries but their use is
+limited to functions of the same library.
 
 Multiple modifiers are applied to a function by specifying them in a
 whitespace-separated list and are evaluated in the order presented.

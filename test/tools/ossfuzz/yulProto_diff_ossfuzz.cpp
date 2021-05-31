@@ -44,7 +44,7 @@ namespace
 {
 void printErrors(ostream& _stream, ErrorList const& _errors)
 {
-	SourceReferenceFormatter formatter(_stream);
+	SourceReferenceFormatter formatter(_stream, false, false);
 
 	for (auto const& error: _errors)
 		formatter.printExceptionInformation(
@@ -99,16 +99,23 @@ DEFINE_PROTO_FUZZER(Program const& _input)
 
 	if (
 		termReason == yulFuzzerUtil::TerminationReason::StepLimitReached ||
-		termReason == yulFuzzerUtil::TerminationReason::TraceLimitReached
+		termReason == yulFuzzerUtil::TerminationReason::TraceLimitReached ||
+		termReason == yulFuzzerUtil::TerminationReason::ExpresionNestingLimitReached
 	)
 		return;
 
 	stack.optimize();
-	yulFuzzerUtil::interpret(
+	termReason = yulFuzzerUtil::interpret(
 		os2,
 		stack.parserResult()->code,
 		EVMDialect::strictAssemblyForEVMObjects(version)
 	);
+	if (
+		termReason == yulFuzzerUtil::TerminationReason::StepLimitReached ||
+		termReason == yulFuzzerUtil::TerminationReason::TraceLimitReached ||
+		termReason == yulFuzzerUtil::TerminationReason::ExpresionNestingLimitReached
+	)
+		return;
 
 	bool isTraceEq = (os1.str() == os2.str());
 	yulAssert(isTraceEq, "Interpreted traces for optimized and unoptimized code differ.");

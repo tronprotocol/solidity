@@ -32,10 +32,11 @@ contract C {
 }
 // ====
 // compileViaYul: also
+// compileToEwasm: also
 // ----
 // test(uint256,uint256): 10, 0 -> 11
 // test(uint256,uint256): 10, 1 -> 12
 // test(uint256,uint256): 10, 2 -> 13
 // test(uint256,uint256): 10, 3 -> 15
 // test(uint256,uint256): 10, 4 -> 18
-// test(uint256,uint256): 10, 5 -> FAILURE
+// test(uint256,uint256): 10, 5 -> FAILURE, hex"4e487b71", 0x51

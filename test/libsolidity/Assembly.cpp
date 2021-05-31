@@ -30,9 +30,11 @@
 #include <libsolidity/parsing/Parser.h>
 #include <libsolidity/analysis/DeclarationTypeChecker.h>
 #include <libsolidity/analysis/NameAndTypeResolver.h>
+#include <libsolidity/analysis/Scoper.h>
 #include <libsolidity/codegen/Compiler.h>
 #include <libsolidity/ast/AST.h>
 #include <libsolidity/analysis/TypeChecker.h>
+#include <libsolidity/analysis/SyntaxChecker.h>
 #include <liblangutil/ErrorReporter.h>
 
 #include <boost/test/unit_test.hpp>
@@ -59,6 +61,8 @@ evmasm::AssemblyItems compileContract(std::shared_ptr<CharStream> _sourceCode)
 	BOOST_REQUIRE_NO_THROW(sourceUnit = parser.parse(make_shared<Scanner>(_sourceCode)));
 	BOOST_CHECK(!!sourceUnit);
 
+	Scoper::assignScopes(*sourceUnit);
+	BOOST_REQUIRE(SyntaxChecker(errorReporter, false).checkSyntax(*sourceUnit));
 	GlobalContext globalContext;
 	NameAndTypeResolver resolver(globalContext, solidity::test::CommonOptions::get().evmVersion(), errorReporter);
 	DeclarationTypeChecker declarationTypeChecker(errorReporter, solidity::test::CommonOptions::get().evmVersion());
@@ -87,7 +91,7 @@ evmasm::AssemblyItems compileContract(std::shared_ptr<CharStream> _sourceCode)
 			);
 			compiler.compileContract(*contract, map<ContractDefinition const*, shared_ptr<Compiler const>>{}, bytes());
 
-			return compiler.runtimeAssemblyItems();
+			return compiler.runtimeAssembly().items();
 		}
 	BOOST_FAIL("No contract found in source.");
 	return AssemblyItems();
@@ -154,6 +158,7 @@ BOOST_AUTO_TEST_SUITE(Assembly)
 BOOST_AUTO_TEST_CASE(location_test)
 {
 	auto sourceCode = make_shared<CharStream>(R"(
+	pragma abicoder v1;
 	contract test {
 		function f() public returns (uint256 a) {
 			return 16;
@@ -168,18 +173,18 @@ BOOST_AUTO_TEST_CASE(location_test)
 	vector<SourceLocation> locations;
 	if (solidity::test::CommonOptions::get().optimize)
 		locations =
-			vector<SourceLocation>(31, SourceLocation{2, 82, sourceCode}) +
-			vector<SourceLocation>(21, SourceLocation{20, 79, sourceCode}) +
-			vector<SourceLocation>(1, SourceLocation{72, 74, sourceCode}) +
-			vector<SourceLocation>(2, SourceLocation{20, 79, sourceCode});
+			vector<SourceLocation>(31, SourceLocation{23, 103, sourceCode}) +
+			vector<SourceLocation>(21, SourceLocation{41, 100, sourceCode}) +
+			vector<SourceLocation>(1, SourceLocation{93, 95, sourceCode}) +
+			vector<SourceLocation>(2, SourceLocation{41, 100, sourceCode});
 	else
 		locations =
-			vector<SourceLocation>(hasShifts ? 31 : 32, SourceLocation{2, 82, sourceCode}) +
-			vector<SourceLocation>(24, SourceLocation{20, 79, sourceCode}) +
-			vector<SourceLocation>(1, SourceLocation{49, 58, sourceCode}) +
-			vector<SourceLocation>(1, SourceLocation{72, 74, sourceCode}) +
-			vector<SourceLocation>(2, SourceLocation{65, 74, sourceCode}) +
-			vector<SourceLocation>(2, SourceLocation{20, 79, sourceCode});
+			vector<SourceLocation>(hasShifts ? 31 : 32, SourceLocation{23, 103, sourceCode}) +
+			vector<SourceLocation>(24, SourceLocation{41, 100, sourceCode}) +
+			vector<SourceLocation>(1, SourceLocation{70, 79, sourceCode}) +
+			vector<SourceLocation>(1, SourceLocation{93, 95, sourceCode}) +
+			vector<SourceLocation>(2, SourceLocation{86, 95, sourceCode}) +
+			vector<SourceLocation>(2, SourceLocation{41, 100, sourceCode});
 	checkAssemblyLocations(items, locations);
 }
 
@@ -187,6 +192,7 @@ BOOST_AUTO_TEST_CASE(location_test)
 BOOST_AUTO_TEST_CASE(jump_type)
 {
 	auto sourceCode = make_shared<CharStream>(R"(
+	pragma abicoder v1;
 	contract C {
 		function f(uint a) public pure returns (uint t) {
 			assembly {

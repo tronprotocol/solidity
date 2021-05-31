@@ -21,7 +21,7 @@
 
 #pragma once
 
-#include <libyul/AsmDataForward.h>
+#include <libyul/ASTForward.h>
 #include <libyul/optimiser/ASTWalker.h>
 
 #include <libsolutil/FixedHash.h>
@@ -52,6 +52,10 @@ class StepLimitReached: public InterpreterTerminatedGeneric
 };
 
 class TraceLimitReached: public InterpreterTerminatedGeneric
+{
+};
+
+class ExpressionNestingLimitReached: public InterpreterTerminatedGeneric
 {
 };
 
@@ -92,6 +96,7 @@ struct InterpreterState
 	size_t maxTraceSize = 0;
 	size_t maxSteps = 0;
 	size_t numSteps = 0;
+	size_t maxExprNesting = 0;
 	ControlFlowState controlFlowState = ControlFlowState::Default;
 
 	void dumpTraceAndState(std::ostream& _out) const;
@@ -197,7 +202,15 @@ private:
 
 	/// Evaluates the given expression from right to left and
 	/// stores it in m_value.
-	void evaluateArgs(std::vector<Expression> const& _expr);
+	void evaluateArgs(
+		std::vector<Expression> const& _expr,
+		std::vector<std::optional<LiteralKind>> const* _literalArguments
+	);
+
+	/// Increment evaluation count, throwing exception if the
+	/// nesting level is beyond the upper bound configured in
+	/// the interpreter state.
+	void incrementStep();
 
 	InterpreterState& m_state;
 	Dialect const& m_dialect;
@@ -206,6 +219,8 @@ private:
 	Scope& m_scope;
 	/// Current value of the expression
 	std::vector<u256> m_values;
+	/// Current expression nesting level
+	unsigned m_nestingLevel = 0;
 };
 
 }

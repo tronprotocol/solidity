@@ -2,6 +2,7 @@ set(sources
 	Algorithms.h
 	AnsiColorized.h
 	Assertions.h
+	Common.cpp
 	Common.h
 	CommonData.cpp
 	CommonData.h
@@ -9,7 +10,9 @@ set(sources
 	CommonIO.h
 	Exceptions.cpp
 	Exceptions.h
+	ErrorCodes.h
 	FixedHash.h
+	FunctionSelector.h
 	IndentedWriter.cpp
 	IndentedWriter.h
 	InvertibleMap.h
@@ -20,8 +23,10 @@ set(sources
 	Keccak256.cpp
 	Keccak256.h
 	LazyInit.h
+	LEB128.h
 	picosha2.h
 	Result.h
+	SetOnce.h
 	StringUtils.cpp
 	StringUtils.h
 	SwarmHash.cpp

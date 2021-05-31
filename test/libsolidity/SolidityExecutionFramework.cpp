@@ -25,6 +25,8 @@
 #include <iostream>
 #include <boost/test/framework.hpp>
 #include <test/libsolidity/SolidityExecutionFramework.h>
+#include <liblangutil/Exceptions.h>
+#include <liblangutil/SourceReferenceFormatter.h>
 
 using namespace solidity;
 using namespace solidity::test;
@@ -43,16 +45,24 @@ bytes SolidityExecutionFramework::multiSourceCompileContract(
 		entry.second = addPreamble(entry.second);
 
 	m_compiler.reset();
+	m_compiler.enableEwasmGeneration(m_compileToEwasm);
 	m_compiler.setSources(sourcesWithPreamble);
 	m_compiler.setLibraries(_libraryAddresses);
 	m_compiler.setRevertStringBehaviour(m_revertStrings);
 	m_compiler.setEVMVersion(m_evmVersion);
 	m_compiler.setOptimiserSettings(m_optimiserSettings);
+	m_compiler.enableEvmBytecodeGeneration(!m_compileViaYul);
 	m_compiler.enableIRGeneration(m_compileViaYul);
 	m_compiler.setRevertStringBehaviour(m_revertStrings);
 	if (!m_compiler.compile())
 	{
-		langutil::SourceReferenceFormatter formatter(std::cerr);
+		// The testing framework expects an exception for
+		// "unimplemented" yul IR generation.
+		if (m_compileViaYul)
+			for (auto const& error: m_compiler.errors())
+				if (error->type() == langutil::Error::Type::CodeGenerationError)
+					BOOST_THROW_EXCEPTION(*error);
+		langutil::SourceReferenceFormatter formatter(std::cerr, true, false);
 
 		for (auto const& error: m_compiler.errors())
 			formatter.printErrorInformation(*error);
@@ -62,38 +72,41 @@ bytes SolidityExecutionFramework::multiSourceCompileContract(
 	evmasm::LinkerObject obj;
 	if (m_compileViaYul)
 	{
-		// Try compiling twice: If the first run fails due to stack errors, forcefully enable
-		// the optimizer.
-		for (bool forceEnableOptimizer: {false, true})
+		if (m_compileToEwasm)
+			obj = m_compiler.ewasmObject(contractName);
+		else
 		{
-			OptimiserSettings optimiserSettings = m_optimiserSettings;
-			if (!forceEnableOptimizer && !optimiserSettings.runYulOptimiser)
+			// Try compiling twice: If the first run fails due to stack errors, forcefully enable
+			// the optimizer.
+			for (bool forceEnableOptimizer: {false, true})
 			{
-				// Enable some optimizations on the first run
-				optimiserSettings.runYulOptimiser = true;
-				optimiserSettings.yulOptimiserSteps = "uljmul jmul";
-			}
-			else if (forceEnableOptimizer)
-				optimiserSettings = OptimiserSettings::full();
+				OptimiserSettings optimiserSettings = m_optimiserSettings;
+				if (!forceEnableOptimizer && !optimiserSettings.runYulOptimiser)
+				{
+					// Enable some optimizations on the first run
+					optimiserSettings.runYulOptimiser = true;
+					optimiserSettings.yulOptimiserSteps = "uljmul jmul";
+				}
+				else if (forceEnableOptimizer)
+					optimiserSettings = OptimiserSettings::full();
 
-			yul::AssemblyStack asmStack(
-				m_evmVersion,
-				yul::AssemblyStack::Language::StrictAssembly,
-				optimiserSettings
-			);
-			bool analysisSuccessful = asmStack.parseAndAnalyze("", m_compiler.yulIROptimized(contractName));
-			solAssert(analysisSuccessful, "Code that passed analysis in CompilerStack can't have errors");
+				yul::AssemblyStack
+					asmStack(m_evmVersion, yul::AssemblyStack::Language::StrictAssembly, optimiserSettings);
+				bool analysisSuccessful = asmStack.parseAndAnalyze("", m_compiler.yulIROptimized(contractName));
+				solAssert(analysisSuccessful, "Code that passed analysis in CompilerStack can't have errors");
 
-			try
-			{
-				asmStack.optimize();
-				obj = std::move(*asmStack.assemble(yul::AssemblyStack::Machine::EVM).bytecode);
-				break;
-			}
-			catch (...)
-			{
-				if (forceEnableOptimizer || optimiserSettings == OptimiserSettings::full())
-					throw;
+				try
+				{
+					asmStack.optimize();
+					obj = std::move(*asmStack.assemble(yul::AssemblyStack::Machine::EVM).bytecode);
+					obj.link(_libraryAddresses);
+					break;
+				}
+				catch (...)
+				{
+					if (forceEnableOptimizer || optimiserSettings == OptimiserSettings::full())
+						throw;
+				}
 			}
 		}
 	}
@@ -122,10 +135,13 @@ string SolidityExecutionFramework::addPreamble(string const& _sourceCode)
 {
 	// Silence compiler version warning
 	string preamble = "pragma solidity >=0.0;\n";
+	if (_sourceCode.find("// SPDX-License-Identifier:") == string::npos)
+		preamble += "// SPDX-License-Identifier: unlicensed\n";
 	if (
-		solidity::test::CommonOptions::get().useABIEncoderV2 &&
-		_sourceCode.find("pragma experimental ABIEncoderV2;") == string::npos
+		solidity::test::CommonOptions::get().useABIEncoderV1 &&
+		_sourceCode.find("pragma experimental ABIEncoderV2;") == string::npos &&
+		_sourceCode.find("pragma abicoder") == string::npos
 	)
-		preamble += "pragma experimental ABIEncoderV2;\n";
+		preamble += "pragma abicoder v1;\n";
 	return preamble + _sourceCode;
 }

@@ -31,11 +31,14 @@
 
 #pragma once
 
+#include <libsolidity/formal/Predicate.h>
 #include <libsolidity/formal/SMTEncoder.h>
 
 #include <libsolidity/interface/ReadFile.h>
 
 #include <libsmtutil/CHCSolverInterface.h>
+
+#include <boost/algorithm/string/join.hpp>
 
 #include <map>
 #include <optional>
@@ -52,7 +55,8 @@ public:
 		langutil::ErrorReporter& _errorReporter,
 		std::map<util::h256, std::string> const& _smtlib2Responses,
 		ReadCallback::Callback const& _smtCallback,
-		smtutil::SMTSolverChoice _enabledSolvers
+		smtutil::SMTSolverChoice _enabledSolvers,
+		std::optional<unsigned> timeout
 	);
 
 	void analyze(SourceUnit const& _sources);
@@ -78,21 +82,28 @@ private:
 	void endVisit(FunctionCall const& _node) override;
 	void endVisit(Break const& _node) override;
 	void endVisit(Continue const& _node) override;
+	void endVisit(IndexRangeAccess const& _node) override;
+	void endVisit(Return const& _node) override;
+
+	void pushInlineFrame(CallableDeclaration const& _callable) override;
+	void popInlineFrame(CallableDeclaration const& _callable) override;
 
 	void visitAssert(FunctionCall const& _funCall);
+	void visitAddMulMod(FunctionCall const& _funCall) override;
 	void internalFunctionCall(FunctionCall const& _funCall);
 	void externalFunctionCall(FunctionCall const& _funCall);
+	void externalFunctionCallToTrustedCode(FunctionCall const& _funCall);
 	void unknownFunctionCall(FunctionCall const& _funCall);
 	void makeArrayPopVerificationTarget(FunctionCall const& _arrayPop) override;
+	/// Creates underflow/overflow verification targets.
+	std::pair<smtutil::Expression, smtutil::Expression> arithmeticOperation(
+		Token _op,
+		smtutil::Expression const& _left,
+		smtutil::Expression const& _right,
+		TypePointer const& _commonType,
+		Expression const& _expression
+	) override;
 	//@}
-
-	struct IdCompare
-	{
-		bool operator()(ASTNode const* lhs, ASTNode const* rhs) const
-		{
-			return lhs->id() < rhs->id();
-		}
-	};
 
 	/// Helpers.
 	//@{
@@ -100,40 +111,30 @@ private:
 	void resetContractAnalysis();
 	void eraseKnowledge();
 	void clearIndices(ContractDefinition const* _contract, FunctionDefinition const* _function = nullptr) override;
-	void setCurrentBlock(smt::SymbolicFunctionVariable const& _block, std::vector<smtutil::Expression> const* _arguments = nullptr);
-	std::set<Expression const*, IdCompare> transactionAssertions(ASTNode const* _txRoot);
-	static std::vector<VariableDeclaration const*> stateVariablesIncludingInheritedAndPrivate(ContractDefinition const& _contract);
-	static std::vector<VariableDeclaration const*> stateVariablesIncludingInheritedAndPrivate(FunctionDefinition const& _function);
+	void setCurrentBlock(Predicate const& _block);
+	std::set<unsigned> transactionVerificationTargetsIds(ASTNode const* _txRoot);
 	//@}
 
 	/// Sort helpers.
 	//@{
-	static std::vector<smtutil::SortPointer> stateSorts(ContractDefinition const& _contract);
-	smtutil::SortPointer constructorSort();
-	smtutil::SortPointer interfaceSort();
-	smtutil::SortPointer nondetInterfaceSort();
-	static smtutil::SortPointer interfaceSort(ContractDefinition const& _const);
-	static smtutil::SortPointer nondetInterfaceSort(ContractDefinition const& _const);
-	smtutil::SortPointer arity0FunctionSort();
 	smtutil::SortPointer sort(FunctionDefinition const& _function);
 	smtutil::SortPointer sort(ASTNode const* _block);
-	/// @returns the sort of a predicate that represents the summary of _function in the scope of _contract.
-	/// The _contract is also needed because the same function might be in many contracts due to inheritance,
-	/// where the sort changes because the set of state variables might change.
-	static smtutil::SortPointer summarySort(FunctionDefinition const& _function, ContractDefinition const& _contract);
 	//@}
 
 	/// Predicate helpers.
 	//@{
 	/// @returns a new block of given _sort and _name.
-	std::unique_ptr<smt::SymbolicFunctionVariable> createSymbolicBlock(smtutil::SortPointer _sort, std::string const& _name);
+	Predicate const* createSymbolicBlock(smtutil::SortPointer _sort, std::string const& _name, PredicateType _predType, ASTNode const* _node = nullptr);
 
 	/// Creates summary predicates for all functions of all contracts
 	/// in a given _source.
 	void defineInterfacesAndSummaries(SourceUnit const& _source);
 
-	/// Genesis predicate.
-	smtutil::Expression genesis() { return (*m_genesisPredicate)({}); }
+	/// Creates a CHC system that, for a given contract,
+	/// - initializes its state variables (as 0 or given value, if any).
+	/// - "calls" the explicit constructor function of the contract, if any.
+	void defineContractInitializer(ContractDefinition const& _contract);
+
 	/// Interface predicate over current variables.
 	smtutil::Expression interface();
 	smtutil::Expression interface(ContractDefinition const& _contract);
@@ -142,10 +143,13 @@ private:
 	smtutil::Expression error(unsigned _idx);
 
 	/// Creates a block for the given _node.
-	std::unique_ptr<smt::SymbolicFunctionVariable> createBlock(ASTNode const* _node, std::string const& _prefix = "");
+	Predicate const* createBlock(ASTNode const* _node, PredicateType _predType, std::string const& _prefix = "");
 	/// Creates a call block for the given function _function from contract _contract.
 	/// The contract is needed here because of inheritance.
-	std::unique_ptr<smt::SymbolicFunctionVariable> createSummaryBlock(FunctionDefinition const& _function, ContractDefinition const& _contract);
+	Predicate const* createSummaryBlock(FunctionDefinition const& _function, ContractDefinition const& _contract);
+
+	/// @returns a block related to @a _contract's constructor.
+	Predicate const* createConstructorBlock(ContractDefinition const& _contract, std::string const& _prefix);
 
 	/// Creates a new error block to be used by an assertion.
 	/// Also registers the predicate.
@@ -153,34 +157,26 @@ private:
 
 	void connectBlocks(smtutil::Expression const& _from, smtutil::Expression const& _to, smtutil::Expression const& _constraints = smtutil::Expression(true));
 
+	/// @returns The initial constraints that set up the beginning of a function.
+	smtutil::Expression initialConstraints(ContractDefinition const& _contract, FunctionDefinition const* _function = nullptr);
+
 	/// @returns the symbolic values of the state variables at the beginning
 	/// of the current transaction.
 	std::vector<smtutil::Expression> initialStateVariables();
-	std::vector<smtutil::Expression> initialStateVariables(ContractDefinition const& _contract);
 	std::vector<smtutil::Expression> stateVariablesAtIndex(unsigned _index);
 	std::vector<smtutil::Expression> stateVariablesAtIndex(unsigned _index, ContractDefinition const& _contract);
 	/// @returns the current symbolic values of the current state variables.
 	std::vector<smtutil::Expression> currentStateVariables();
 	std::vector<smtutil::Expression> currentStateVariables(ContractDefinition const& _contract);
 
-	/// @returns the current symbolic values of the current function's
-	/// input and output parameters.
-	std::vector<smtutil::Expression> currentFunctionVariables();
-	std::vector<smtutil::Expression> currentFunctionVariables(FunctionDefinition const& _function);
-	std::vector<smtutil::Expression> currentFunctionVariables(ContractDefinition const& _contract);
-
-	/// @returns the same as currentFunctionVariables plus
-	/// local variables.
-	std::vector<smtutil::Expression> currentBlockVariables();
-
 	/// @returns the predicate name for a given node.
 	std::string predicateName(ASTNode const* _node, ContractDefinition const* _contract = nullptr);
-	/// @returns a predicate application over the current scoped variables.
-	smtutil::Expression predicate(smt::SymbolicFunctionVariable const& _block);
-	/// @returns a predicate application over @param _arguments.
-	smtutil::Expression predicate(smt::SymbolicFunctionVariable const& _block, std::vector<smtutil::Expression> const& _arguments);
+	/// @returns a predicate application after checking the predicate's type.
+	smtutil::Expression predicate(Predicate const& _block);
 	/// @returns the summary predicate for the called function.
 	smtutil::Expression predicate(FunctionCall const& _funCall);
+	/// @returns a predicate that defines a contract initializer.
+	smtutil::Expression initializer(ContractDefinition const& _contract);
 	/// @returns a predicate that defines a constructor summary.
 	smtutil::Expression summary(ContractDefinition const& _contract);
 	/// @returns a predicate that defines a function summary.
@@ -196,33 +192,37 @@ private:
 	/// @returns <false, model> otherwise.
 	std::pair<smtutil::CheckResult, smtutil::CHCSolverInterface::CexGraph> query(smtutil::Expression const& _query, langutil::SourceLocation const& _location);
 
-	void addVerificationTarget(ASTNode const* _scope, VerificationTarget::Type _type, smtutil::Expression _from, smtutil::Expression _constraints, smtutil::Expression _errorId);
-	void addAssertVerificationTarget(ASTNode const* _scope, smtutil::Expression _from, smtutil::Expression _constraints, smtutil::Expression _errorId);
-	void addArrayPopVerificationTarget(ASTNode const* _scope, smtutil::Expression _errorId);
+	void verificationTargetEncountered(ASTNode const* const _errorNode, VerificationTarget::Type _type, smtutil::Expression const& _errorCondition);
 
 	void checkVerificationTargets();
 	// Forward declaration. Definition is below.
 	struct CHCVerificationTarget;
 	void checkAssertTarget(ASTNode const* _scope, CHCVerificationTarget const& _target);
 	void checkAndReportTarget(
-		ASTNode const* _scope,
 		CHCVerificationTarget const& _target,
-		unsigned _errorId,
 		langutil::ErrorId _errorReporterId,
 		std::string _satMsg,
 		std::string _unknownMsg = ""
 	);
 
 	std::optional<std::string> generateCounterexample(smtutil::CHCSolverInterface::CexGraph const& _graph, std::string const& _root);
-	/// @returns values for the _stateVariables after a transaction calling
-	/// _function was executed.
-	/// _function = nullptr means the transaction was the deployment of a
-	/// contract without an explicit constructor.
-	std::string formatStateCounterexample(std::vector<VariableDeclaration const*> const& _stateVariables, FunctionDefinition const* _function, std::vector<std::string> const& _summaryValues);
-	/// @returns a formatted text representing a call to _function
-	/// with the concrete values for value type parameters and
-	/// the parameter name for reference types.
-	std::string formatFunctionCallCounterexample(std::vector<VariableDeclaration const*> const& _stateVariables, FunctionDefinition const& _function, std::vector<std::string> const& _summaryValues);
+
+	/// @returns a set of pairs _var = _value separated by _separator.
+	template <typename T>
+	std::string formatVariableModel(std::vector<T> const& _variables, std::vector<std::optional<std::string>> const& _values, std::string const& _separator) const
+	{
+		solAssert(_variables.size() == _values.size(), "");
+
+		std::vector<std::string> assignments;
+		for (unsigned i = 0; i < _values.size(); ++i)
+		{
+			auto var = _variables.at(i);
+			if (var && _values.at(i))
+				assignments.emplace_back(var->name() + " = " + *_values.at(i));
+		}
+
+		return boost::algorithm::join(assignments, _separator);
+	}
 
 	/// @returns a DAG in the dot format.
 	/// Used for debugging purposes.
@@ -231,61 +231,46 @@ private:
 
 	/// Misc.
 	//@{
-	/// Returns a prefix to be used in a new unique block name
+	/// @returns a prefix to be used in a new unique block name
 	/// and increases the block counter.
 	std::string uniquePrefix();
 
+	/// @returns a suffix to be used by contract related predicates.
+	std::string contractSuffix(ContractDefinition const& _contract);
+
 	/// @returns a new unique error id associated with _expr and stores
 	/// it into m_errorIds.
-	unsigned newErrorId(Expression const& _expr);
+	unsigned newErrorId();
+
+	smt::SymbolicState& state();
+	smt::SymbolicIntVariable& errorFlag();
 	//@}
 
 	/// Predicates.
 	//@{
-	/// Genesis predicate.
-	std::unique_ptr<smt::SymbolicFunctionVariable> m_genesisPredicate;
-
-	/// Implicit constructor predicate.
-	/// Explicit constructors are handled as functions.
-	std::unique_ptr<smt::SymbolicFunctionVariable> m_implicitConstructorPredicate;
-
-	/// Constructor summary predicate, exists after the constructor
-	/// (implicit or explicit) and before the interface.
-	std::unique_ptr<smt::SymbolicFunctionVariable> m_constructorSummaryPredicate;
-
 	/// Artificial Interface predicate.
 	/// Single entry block for all functions.
-	std::map<ContractDefinition const*, std::unique_ptr<smt::SymbolicFunctionVariable>> m_interfaces;
+	std::map<ContractDefinition const*, Predicate const*> m_interfaces;
 
 	/// Nondeterministic interfaces.
 	/// These are used when the analyzed contract makes external calls to unknown code,
 	/// which means that the analyzed contract can potentially be called
 	/// nondeterministically.
-	std::map<ContractDefinition const*, std::unique_ptr<smt::SymbolicFunctionVariable>> m_nondetInterfaces;
+	std::map<ContractDefinition const*, Predicate const*> m_nondetInterfaces;
+
+	std::map<ContractDefinition const*, Predicate const*> m_constructorSummaries;
+	std::map<ContractDefinition const*, Predicate const*> m_contractInitializers;
 
 	/// Artificial Error predicate.
 	/// Single error block for all assertions.
-	std::unique_ptr<smt::SymbolicFunctionVariable> m_errorPredicate;
+	Predicate const* m_errorPredicate = nullptr;
 
 	/// Function predicates.
-	std::map<ContractDefinition const*, std::map<FunctionDefinition const*, std::unique_ptr<smt::SymbolicFunctionVariable>>> m_summaries;
-
-	smt::SymbolicIntVariable m_error{
-		TypeProvider::uint256(),
-		TypeProvider::uint256(),
-		"error",
-		m_context
-	};
-
-	/// Maps predicate names to the ASTNodes they came from.
-	std::map<std::string, ASTNode const*> m_symbolFunction;
+	std::map<ContractDefinition const*, std::map<FunctionDefinition const*, Predicate const*>> m_summaries;
 	//@}
 
 	/// Variables.
 	//@{
-	/// State variables sorts.
-	/// Used by all predicates.
-	std::vector<smtutil::SortPointer> m_stateSorts;
 	/// State variables.
 	/// Used to create all predicates.
 	std::vector<VariableDeclaration const*> m_stateVariables;
@@ -295,10 +280,30 @@ private:
 	//@{
 	struct CHCVerificationTarget: VerificationTarget
 	{
-		smtutil::Expression errorId;
+		unsigned const errorId;
+		ASTNode const* const errorNode;
 	};
 
-	std::map<ASTNode const*, CHCVerificationTarget, IdCompare> m_verificationTargets;
+	/// Query placeholder stores information necessary to create the final query edge in the CHC system.
+	/// It is combined with the unique error id (and error type) to create a complete Verification Target.
+	struct CHCQueryPlaceholder
+	{
+		smtutil::Expression const constraints;
+		smtutil::Expression const errorExpression;
+		smtutil::Expression const fromPredicate;
+	};
+
+	/// Query placeholders for constructors, if the key has type ContractDefinition*,
+	/// or external functions, if the key has type FunctionDefinition*.
+	/// A placeholder is created for each possible context of a function (e.g. multiple contracts in contract inheritance hierarchy).
+	std::map<ASTNode const*, std::vector<CHCQueryPlaceholder>, smt::EncodingContext::IdCompare> m_queryPlaceholders;
+
+	/// Records verification conditions IDs per function encountered during an analysis of that function.
+	/// The key is the ASTNode of the function where the verification condition has been encountered,
+	/// or the ASTNode of the contract if the verification condition happens inside an implicit constructor.
+	std::map<ASTNode const*, std::vector<unsigned>, smt::EncodingContext::IdCompare> m_functionTargetIds;
+	/// Helper mapping unique IDs to actual verification targets.
+	std::map<unsigned, CHCVerificationTarget> m_verificationTargets;
 
 	/// Targets proven safe.
 	std::map<ASTNode const*, std::set<VerificationTarget::Type>> m_safeTargets;
@@ -310,14 +315,7 @@ private:
 	//@{
 	FunctionDefinition const* m_currentFunction = nullptr;
 
-	std::map<ASTNode const*, std::set<ASTNode const*, IdCompare>, IdCompare> m_callGraph;
-
-	std::map<ASTNode const*, std::set<Expression const*>, IdCompare> m_functionAssertions;
-
-	/// Maps ASTNode ids to error ids.
-	/// A multimap is used instead of map anticipating the UnderOverflow
-	/// target which has 2 error ids.
-	std::multimap<unsigned, unsigned> m_errorIds;
+	std::map<ASTNode const*, std::set<ASTNode const*, smt::EncodingContext::IdCompare>, smt::EncodingContext::IdCompare> m_callGraph;
 
 	/// The current block.
 	smtutil::Expression m_currentBlock = smtutil::Expression(true);
@@ -329,9 +327,22 @@ private:
 	bool m_unknownFunctionCallSeen = false;
 
 	/// Block where a loop break should go to.
-	smt::SymbolicFunctionVariable const* m_breakDest = nullptr;
+	Predicate const* m_breakDest = nullptr;
 	/// Block where a loop continue should go to.
-	smt::SymbolicFunctionVariable const* m_continueDest = nullptr;
+	Predicate const* m_continueDest = nullptr;
+
+	/// Block where an error condition should go to.
+	/// This can be:
+	/// 1) Constructor initializer summary, if error happens while evaluating initial values of state variables.
+	/// 2) Constructor summary, if error happens while evaluating base constructor arguments.
+	/// 3) Function summary, if error happens inside a function.
+	Predicate const* m_errorDest = nullptr;
+
+	/// Represents the stack of destinations where a `return` should go.
+	/// This is different from `m_errorDest` above:
+	/// - Constructor initializers and constructor summaries will never be `return` targets because they are artificial.
+	/// - Modifiers also have their own `return` target blocks, whereas they do not have their own error destination.
+	std::vector<Predicate const*> m_returnDests;
 	//@}
 
 	/// CHC solver.
@@ -342,6 +353,9 @@ private:
 
 	/// SMT solvers that are chosen at runtime.
 	smtutil::SMTSolverChoice m_enabledSolvers;
+
+	/// SMT query timeout in seconds.
+	std::optional<unsigned> m_queryTimeout;
 };
 
 }

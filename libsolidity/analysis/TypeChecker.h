@@ -141,8 +141,11 @@ private:
 	bool visit(IndexAccess const& _indexAccess) override;
 	bool visit(IndexRangeAccess const& _indexRangeAccess) override;
 	bool visit(Identifier const& _identifier) override;
+	void endVisit(IdentifierPath const& _identifierPath) override;
+	void endVisit(UserDefinedTypeName const& _userDefinedTypeName) override;
 	void endVisit(ElementaryTypeNameExpression const& _expr) override;
 	void endVisit(Literal const& _literal) override;
+	void endVisit(UsingForDirective const& _usingForDirective) override;
 
 	bool contractDependenciesAreCyclic(
 		ContractDefinition const& _contract,
@@ -152,7 +155,7 @@ private:
 	/// @returns the referenced declaration and throws on error.
 	Declaration const& dereference(Identifier const& _identifier) const;
 	/// @returns the referenced declaration and throws on error.
-	Declaration const& dereference(UserDefinedTypeName const& _typeName) const;
+	Declaration const& dereference(IdentifierPath const& _path) const;
 
 	std::vector<Declaration const*> cleanOverloadedDeclarations(
 		Identifier const& _reference,
@@ -165,7 +168,17 @@ private:
 	/// Runs type checks on @a _expression to infer its type and then checks that it is an LValue.
 	void requireLValue(Expression const& _expression, bool _ordinaryAssignment);
 
-	bool experimentalFeatureActive(ExperimentalFeature _feature) const;
+	bool useABICoderV2() const;
+
+	/// @returns the current scope that can have function or type definitions.
+	/// This is either a contract or a source unit.
+	ASTNode const* currentDefinitionScope() const
+	{
+		if (m_currentContract)
+			return m_currentContract;
+		else
+			return m_currentSourceUnit;
+	}
 
 	SourceUnit const* m_currentSourceUnit = nullptr;
 	ContractDefinition const* m_currentContract = nullptr;

@@ -39,17 +39,18 @@ using namespace evmc::literals;
 
 evmc::VM& EVMHost::getVM(string const& _path)
 {
-	static evmc::VM theVM;
-	if (!theVM && !_path.empty())
+	static evmc::VM NullVM{nullptr};
+	static map<string, unique_ptr<evmc::VM>> vms;
+	if (vms.count(_path) == 0)
 	{
 		evmc_loader_error_code errorCode = {};
 		auto vm = evmc::VM{evmc_load_and_configure(_path.c_str(), &errorCode)};
 		if (vm && errorCode == EVMC_LOADER_SUCCESS)
 		{
-			if (vm.get_capabilities() & EVMC_CAPABILITY_EVM1)
-				theVM = std::move(vm);
+			if (vm.get_capabilities() & (EVMC_CAPABILITY_EVM1 | EVMC_CAPABILITY_EWASM))
+				vms[_path] = make_unique<evmc::VM>(evmc::VM(move(vm)));
 			else
-				cerr << "VM loaded does not support EVM1" << endl;
+				cerr << "VM loaded neither supports EVM1 nor EWASM" << endl;
 		}
 		else
 		{
@@ -59,7 +60,38 @@ evmc::VM& EVMHost::getVM(string const& _path)
 			cerr << endl;
 		}
 	}
-	return theVM;
+
+	if (vms.count(_path) > 0)
+		return *vms[_path];
+
+	return NullVM;
+}
+
+bool EVMHost::checkVmPaths(vector<boost::filesystem::path> const& _vmPaths)
+{
+	bool evmVmFound = false;
+	bool ewasmVmFound = false;
+	for (auto const& path: _vmPaths)
+	{
+		evmc::VM& vm = EVMHost::getVM(path.string());
+		if (!vm)
+			return false;
+
+		if (vm.has_capability(EVMC_CAPABILITY_EVM1))
+		{
+			if (evmVmFound)
+				throw runtime_error("Multiple evm1 evmc vms defined. Please only define one evm1 evmc vm.");
+			evmVmFound = true;
+		}
+
+		if (vm.has_capability(EVMC_CAPABILITY_EWASM))
+		{
+			if (ewasmVmFound)
+				throw runtime_error("Multiple ewasm evmc vms where defined. Please only define one ewasm evmc vm.");
+			ewasmVmFound = true;
+		}
+	}
+	return evmVmFound;
 }
 
 EVMHost::EVMHost(langutil::EVMVersion _evmVersion, evmc::VM& _vm):
@@ -91,6 +123,22 @@ EVMHost::EVMHost(langutil::EVMVersion _evmVersion, evmc::VM& _vm):
 	else
 		assertThrow(false, Exception, "Unsupported EVM version");
 
+	tx_context.block_difficulty = evmc::uint256be{200000000};
+	tx_context.block_gas_limit = 20000000;
+	tx_context.block_coinbase = 0x7878787878787878787878787878787878787878_address;
+	tx_context.tx_gas_price = evmc::uint256be{3000000000};
+	tx_context.tx_origin = 0x9292929292929292929292929292929292929292_address;
+	// Mainnet according to EIP-155
+	tx_context.chain_id = evmc::uint256be{1};
+
+	reset();
+}
+
+void EVMHost::reset()
+{
+	accounts.clear();
+	m_currentAddress = {};
+
 	// Mark all precompiled contracts as existing. Existing here means to have a balance (as per EIP-161).
 	// NOTE: keep this in sync with `EVMHost::call` below.
 	//
@@ -99,19 +147,13 @@ EVMHost::EVMHost(langutil::EVMVersion _evmVersion, evmc::VM& _vm):
 	// roughly 22 days before the update went live.
 	for (unsigned precompiledAddress = 1; precompiledAddress <= 8; precompiledAddress++)
 	{
-		evmc::address address{};
-		address.bytes[19] = precompiledAddress;
+		evmc::address address{precompiledAddress};
 		// 1wei
 		accounts[address].balance = evmc::uint256be{1};
+		// Set according to EIP-1052.
+		if (precompiledAddress < 5 || m_evmVersion >= langutil::EVMVersion::byzantium())
+			accounts[address].codehash = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470_bytes32;
 	}
-
-	tx_context.block_difficulty = evmc::uint256be{200000000};
-	tx_context.block_gas_limit = 20000000;
-	tx_context.block_coinbase = 0x7878787878787878787878787878787878787878_address;
-	tx_context.tx_gas_price = evmc::uint256be{3000000000};
-	tx_context.tx_origin = 0x9292929292929292929292929292929292929292_address;
-	// Mainnet according to EIP-155
-	tx_context.chain_id = evmc::uint256be{1};
 }
 
 void EVMHost::selfdestruct(const evmc::address& _addr, const evmc::address& _beneficiary) noexcept
@@ -167,7 +209,7 @@ evmc::result EVMHost::call(evmc_message const& _message) noexcept
 	{
 		// TODO this is not the right formula
 		// TODO is the nonce incremented on failure, too?
-		Address createAddress(keccak256(
+		h160 createAddress(keccak256(
 			bytes(begin(message.sender.bytes), end(message.sender.bytes)) +
 			asBytes(to_string(sender.nonce++))
 		));
@@ -176,7 +218,7 @@ evmc::result EVMHost::call(evmc_message const& _message) noexcept
 	}
 	else if (message.kind == EVMC_CREATE2)
 	{
-		Address createAddress(keccak256(
+		h160 createAddress(keccak256(
 			bytes(1, 0xff) +
 			bytes(begin(message.sender.bytes), end(message.sender.bytes)) +
 			bytes(begin(message.create2_salt.bytes), end(message.create2_salt.bytes)) +
@@ -250,15 +292,15 @@ evmc::bytes32 EVMHost::get_block_hash(int64_t _number) const noexcept
 	return convertToEVMC(u256("0x3737373737373737373737373737373737373737373737373737373737373737") + _number);
 }
 
-Address EVMHost::convertFromEVMC(evmc::address const& _addr)
+h160 EVMHost::convertFromEVMC(evmc::address const& _addr)
 {
-	return Address(bytes(begin(_addr.bytes), end(_addr.bytes)));
+	return h160(bytes(begin(_addr.bytes), end(_addr.bytes)));
 }
 
-evmc::address EVMHost::convertToEVMC(Address const& _addr)
+evmc::address EVMHost::convertToEVMC(h160 const& _addr)
 {
 	evmc::address a;
-	for (size_t i = 0; i < 20; ++i)
+	for (unsigned i = 0; i < 20; ++i)
 		a.bytes[i] = _addr[i];
 	return a;
 }
@@ -271,7 +313,7 @@ h256 EVMHost::convertFromEVMC(evmc::bytes32 const& _data)
 evmc::bytes32 EVMHost::convertToEVMC(h256 const& _data)
 {
 	evmc::bytes32 d;
-	for (size_t i = 0; i < 32; ++i)
+	for (unsigned i = 0; i < 32; ++i)
 		d.bytes[i] = _data[i];
 	return d;
 }

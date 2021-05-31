@@ -20,8 +20,11 @@ contract C {
     }
 }
 
+// ====
+// compileViaYul: also
+// compileToEwasm: also
 // ----
 // set() -> 7
 // ca() -> 7
 // d() -> 1
-// ca() -> FAILURE
+// ca() -> FAILURE, hex"4e487b71", 0x51

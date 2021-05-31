@@ -44,7 +44,20 @@ namespace solidity::frontend
 class YulUtilFunctions;
 class ABIFunctions;
 
-using InternalDispatchMap = std::map<YulArity, std::set<FunctionDefinition const*>>;
+struct AscendingFunctionIDCompare
+{
+	bool operator()(FunctionDefinition const* _f1, FunctionDefinition const* _f2) const
+	{
+		// NULLs always first.
+		if (_f1 != nullptr && _f2 != nullptr)
+			return _f1->id() < _f2->id();
+		else
+			return _f1 == nullptr;
+	}
+};
+
+using DispatchSet = std::set<FunctionDefinition const*, AscendingFunctionIDCompare>;
+using InternalDispatchMap = std::map<YulArity, DispatchSet>;
 
 /**
  * Class that contains contextual information during IR generation.
@@ -98,8 +111,9 @@ public:
 
 	void addStateVariable(VariableDeclaration const& _varDecl, u256 _storageOffset, unsigned _byteOffset);
 	bool isStateVariable(VariableDeclaration const& _varDecl) const { return m_stateVariables.count(&_varDecl); }
-	std::pair<u256, unsigned> storageLocationOfVariable(VariableDeclaration const& _varDecl) const
+	std::pair<u256, unsigned> storageLocationOfStateVariable(VariableDeclaration const& _varDecl) const
 	{
+		solAssert(isStateVariable(_varDecl), "");
 		return m_stateVariables.at(&_varDecl);
 	}
 
@@ -107,7 +121,7 @@ public:
 
 	void initializeInternalDispatch(InternalDispatchMap _internalDispatchMap);
 	InternalDispatchMap consumeInternalDispatchMap();
-	bool internalDispatchClean() const { return m_internalDispatchMap.empty() && m_directInternalFunctionCalls.empty(); }
+	bool internalDispatchClean() const { return m_internalDispatchMap.empty(); }
 
 	/// Notifies the context that a function call that needs to go through internal dispatch was
 	/// encountered while visiting the AST. This ensures that the corresponding dispatch function
@@ -115,21 +129,16 @@ public:
 	/// the code contains a call to an uninitialized function variable).
 	void internalFunctionCalledThroughDispatch(YulArity const& _arity);
 
-	/// Notifies the context that a direct function call (i.e. not through internal dispatch) was
-	/// encountered while visiting the AST. This lets the context know that the function should
-	/// not be added to the dispatch (unless there are also indirect calls to it elsewhere else).
-	void internalFunctionCalledDirectly(Expression const& _expression);
-
-	/// Notifies the context that a name representing an internal function has been found while
-	/// visiting the AST. If the name has not been reported as a direct call using
-	/// @a internalFunctionCalledDirectly(), it's assumed to represent function variable access
-	/// and the function gets added to internal dispatch.
-	void internalFunctionAccessed(Expression const& _expression, FunctionDefinition const& _function);
+	/// Adds a function to the internal dispatch.
+	void addToInternalDispatch(FunctionDefinition const& _function);
 
 	/// @returns a new copy of the utility function generator (but using the same function set).
 	YulUtilFunctions utils();
 
-	langutil::EVMVersion evmVersion() const { return m_evmVersion; };
+	langutil::EVMVersion evmVersion() const { return m_evmVersion; }
+
+	void setArithmetic(Arithmetic _value) { m_arithmetic = _value; }
+	Arithmetic arithmetic() const { return m_arithmetic; }
 
 	ABIFunctions abiFunctions();
 
@@ -140,6 +149,9 @@ public:
 	RevertStrings revertStrings() const { return m_revertStrings; }
 
 	std::set<ContractDefinition const*, ASTNode::CompareByID>& subObjectsCreated() { return m_subObjects; }
+
+	bool inlineAssemblySeen() const { return m_inlineAssemblySeen; }
+	void setInlineAssemblySeen() { m_inlineAssemblySeen = true; }
 
 private:
 	langutil::EVMVersion m_evmVersion;
@@ -157,6 +169,11 @@ private:
 	std::map<VariableDeclaration const*, std::pair<u256, unsigned>> m_stateVariables;
 	MultiUseYulFunctionCollector m_functions;
 	size_t m_varCounter = 0;
+	/// Whether to use checked or wrapping arithmetic.
+	Arithmetic m_arithmetic = Arithmetic::Checked;
+
+	/// Flag indicating whether any inline assembly block was seen.
+	bool m_inlineAssemblySeen = false;
 
 	/// Function definitions queued for code generation. They're the Solidity functions whose calls
 	/// were discovered by the IR generator during AST traversal.
@@ -165,14 +182,13 @@ private:
 	/// The order and duplicates are irrelevant here (hence std::set rather than std::queue) as
 	/// long as the order of Yul functions in the generated code is deterministic and the same on
 	/// all platforms - which is a property guaranteed by MultiUseYulFunctionCollector.
-	std::set<FunctionDefinition const*> m_functionGenerationQueue;
+	DispatchSet m_functionGenerationQueue;
 
 	/// Collection of functions that need to be callable via internal dispatch.
 	/// Note that having a key with an empty set of functions is a valid situation. It means that
 	/// the code contains a call via a pointer even though a specific function is never assigned to it.
 	/// It will fail at runtime but the code must still compile.
 	InternalDispatchMap m_internalDispatchMap;
-	std::set<Expression const*> m_directInternalFunctionCalls;
 
 	std::set<ContractDefinition const*, ASTNode::CompareByID> m_subObjects;
 };

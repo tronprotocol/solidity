@@ -30,6 +30,7 @@
 #include <libyul/AsmAnalysis.h>
 #include <libyul/AsmPrinter.h>
 #include <libyul/AssemblyStack.h>
+#include <libyul/AST.h>
 #include <libyul/backends/evm/EVMDialect.h>
 #include <libyul/backends/wasm/WasmDialect.h>
 
@@ -55,7 +56,7 @@ Dialect const& defaultDialect(bool _yul)
 
 void yul::test::printErrors(ErrorList const& _errors)
 {
-	SourceReferenceFormatter formatter(cout);
+	SourceReferenceFormatter formatter(cout, true, false);
 
 	for (auto const& error: _errors)
 		formatter.printErrorInformation(*error);
@@ -76,7 +77,7 @@ pair<shared_ptr<Block>, shared_ptr<yul::AsmAnalysisInfo>> yul::test::parse(strin
 	return make_pair(stack.parserResult()->code, stack.parserResult()->analysisInfo);
 }
 
-pair<shared_ptr<Block>, shared_ptr<yul::AsmAnalysisInfo>> yul::test::parse(
+pair<shared_ptr<Object>, shared_ptr<yul::AsmAnalysisInfo>> yul::test::parse(
 	string const& _source,
 	Dialect const& _dialect,
 	ErrorList& _errors
@@ -94,7 +95,7 @@ pair<shared_ptr<Block>, shared_ptr<yul::AsmAnalysisInfo>> yul::test::parse(
 	// TODO this should be done recursively.
 	if (!analyzer.analyze(*parserResult->code) || errorReporter.hasErrors())
 		return {};
-	return {std::move(parserResult->code), std::move(analysisInfo)};
+	return {std::move(parserResult), std::move(analysisInfo)};
 }
 
 yul::Block yul::test::disambiguate(string const& _source, bool _yul)

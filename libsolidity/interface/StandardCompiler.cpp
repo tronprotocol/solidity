@@ -117,6 +117,7 @@ Json::Value formatErrorWithException(
 )
 {
 	string message;
+	// TODO: consider enabling color
 	string formattedMessage = SourceReferenceFormatter::formatExceptionInformation(_exception, _type);
 
 	if (string const* description = boost::get_error_info<util::errinfo_comment>(_exception))
@@ -171,16 +172,21 @@ bool hashMatchesContent(string const& _hash, string const& _content)
 bool isArtifactRequested(Json::Value const& _outputSelection, string const& _artifact, bool _wildcardMatchesExperimental)
 {
 	static set<string> experimental{"ir", "irOptimized", "wast", "ewasm", "ewasm.wast"};
-	for (auto const& artifact: _outputSelection)
-		/// @TODO support sub-matching, e.g "evm" matches "evm.assembly"
-		if (artifact == _artifact)
+	for (auto const& selectedArtifactJson: _outputSelection)
+	{
+		string const& selectedArtifact = selectedArtifactJson.asString();
+		if (
+			_artifact == selectedArtifact ||
+			boost::algorithm::starts_with(_artifact, selectedArtifact + ".")
+		)
 			return true;
-		else if (artifact == "*")
+		else if (selectedArtifact == "*")
 		{
 			// "ir", "irOptimized", "wast" and "ewasm.wast" can only be matched by "*" if activated.
 			if (experimental.count(_artifact) == 0 || _wildcardMatchesExperimental)
 				return true;
 		}
+	}
 	return false;
 }
 
@@ -230,6 +236,16 @@ bool isArtifactRequested(Json::Value const& _outputSelection, string const& _fil
 	return false;
 }
 
+/// @returns all artifact names of the EVM object, either for creation or deploy time.
+vector<string> evmObjectComponents(string const& _objectKind)
+{
+	solAssert(_objectKind == "bytecode" || _objectKind == "deployedBytecode", "");
+	vector<string> components{"", ".object", ".opcodes", ".sourceMap", ".generatedSources", ".linkReferences"};
+	if (_objectKind == "deployedBytecode")
+		components.push_back(".immutableReferences");
+	return util::applyMap(components, [&](auto const& _s) { return "evm." + _objectKind + _s; });
+}
+
 /// @returns true if any binary was requested, i.e. we actually have to perform compilation.
 bool isBinaryRequested(Json::Value const& _outputSelection)
 {
@@ -237,21 +253,35 @@ bool isBinaryRequested(Json::Value const& _outputSelection)
 		return false;
 
 	// This does not include "evm.methodIdentifiers" on purpose!
-	static vector<string> const outputsThatRequireBinaries{
+	static vector<string> const outputsThatRequireBinaries = vector<string>{
 		"*",
 		"ir", "irOptimized",
 		"wast", "wasm", "ewasm.wast", "ewasm.wasm",
-		"evm.deployedBytecode", "evm.deployedBytecode.object", "evm.deployedBytecode.opcodes",
-		"evm.deployedBytecode.sourceMap", "evm.deployedBytecode.linkReferences",
-		"evm.deployedBytecode.immutableReferences",
-		"evm.bytecode", "evm.bytecode.object", "evm.bytecode.opcodes", "evm.bytecode.sourceMap",
-		"evm.bytecode.linkReferences",
 		"evm.gasEstimates", "evm.legacyAssembly", "evm.assembly"
-	};
+	} + evmObjectComponents("bytecode") + evmObjectComponents("deployedBytecode");
 
 	for (auto const& fileRequests: _outputSelection)
 		for (auto const& requests: fileRequests)
 			for (auto const& output: outputsThatRequireBinaries)
+				if (isArtifactRequested(requests, output, false))
+					return true;
+	return false;
+}
+
+/// @returns true if EVM bytecode was requested, i.e. we have to run the old code generator.
+bool isEvmBytecodeRequested(Json::Value const& _outputSelection)
+{
+	if (!_outputSelection.isObject())
+		return false;
+
+	static vector<string> const outputsThatRequireEvmBinaries = vector<string>{
+		"*",
+		"evm.gasEstimates", "evm.legacyAssembly", "evm.assembly"
+	} + evmObjectComponents("bytecode") + evmObjectComponents("deployedBytecode");
+
+	for (auto const& fileRequests: _outputSelection)
+		for (auto const& requests: fileRequests)
+			for (auto const& output: outputsThatRequireEvmBinaries)
 				if (isArtifactRequested(requests, output, false))
 					return true;
 	return false;
@@ -299,10 +329,12 @@ Json::Value formatLinkReferences(std::map<size_t, std::string> const& linkRefere
 	for (auto const& ref: linkReferences)
 	{
 		string const& fullname = ref.second;
+
+		// If the link reference does not contain a colon, assume that the file name is missing and
+		// the whole string represents the library name.
 		size_t colon = fullname.rfind(':');
-		solAssert(colon != string::npos, "");
-		string file = fullname.substr(0, colon);
-		string name = fullname.substr(colon + 1);
+		string file = (colon != string::npos ? fullname.substr(0, colon) : "");
+		string name = (colon != string::npos ? fullname.substr(colon + 1) : fullname);
 
 		Json::Value fileObject = ret.get(file, Json::objectValue);
 		Json::Value libraryArray = fileObject.get(name, Json::arrayValue);
@@ -340,15 +372,27 @@ Json::Value formatImmutableReferences(map<u256, pair<string, vector<size_t>>> co
 	return ret;
 }
 
-Json::Value collectEVMObject(evmasm::LinkerObject const& _object, string const* _sourceMap, bool _runtimeObject)
+Json::Value collectEVMObject(
+	evmasm::LinkerObject const& _object,
+	string const* _sourceMap,
+	Json::Value _generatedSources,
+	bool _runtimeObject,
+	function<bool(string)> const& _artifactRequested
+)
 {
 	Json::Value output = Json::objectValue;
-	output["object"] = _object.toHex();
-	output["opcodes"] = evmasm::disassemble(_object.bytecode);
-	output["sourceMap"] = _sourceMap ? *_sourceMap : "";
-	output["linkReferences"] = formatLinkReferences(_object.linkReferences);
-	if (_runtimeObject)
+	if (_artifactRequested("object"))
+		output["object"] = _object.toHex();
+	if (_artifactRequested("opcodes"))
+		output["opcodes"] = evmasm::disassemble(_object.bytecode);
+	if (_artifactRequested("sourceMap"))
+		output["sourceMap"] = _sourceMap ? *_sourceMap : "";
+	if (_artifactRequested("linkReferences"))
+		output["linkReferences"] = formatLinkReferences(_object.linkReferences);
+	if (_runtimeObject && _artifactRequested("immutableReferences"))
 		output["immutableReferences"] = formatImmutableReferences(_object.immutableReferences);
+	if (_artifactRequested("generatedSources"))
+		output["generatedSources"] = move(_generatedSources);
 	return output;
 }
 
@@ -384,8 +428,14 @@ std::optional<Json::Value> checkAuxiliaryInputKeys(Json::Value const& _input)
 
 std::optional<Json::Value> checkSettingsKeys(Json::Value const& _input)
 {
-	static set<string> keys{"parserErrorRecovery", "debug", "evmVersion", "libraries", "metadata", "optimizer", "outputSelection", "remappings"};
+	static set<string> keys{"parserErrorRecovery", "debug", "evmVersion", "libraries", "metadata", "modelChecker", "optimizer", "outputSelection", "remappings", "stopAfter", "viaIR"};
 	return checkKeys(_input, keys, "settings");
+}
+
+std::optional<Json::Value> checkModelCheckerSettingsKeys(Json::Value const& _input)
+{
+	static set<string> keys{"engine", "timeout"};
+	return checkKeys(_input, keys, "modelChecker");
 }
 
 std::optional<Json::Value> checkOptimizerKeys(Json::Value const& _input)
@@ -497,6 +547,7 @@ std::optional<Json::Value> checkOutputSelection(Json::Value const& _outputSelect
 
 	return std::nullopt;
 }
+
 /// Validates the optimizer settings and returns them in a parsed object.
 /// On error returns the json-formatted error message.
 std::variant<OptimiserSettings, Json::Value> parseOptimizerSettings(Json::Value const& _jsonInput)
@@ -694,11 +745,29 @@ std::variant<StandardCompiler::InputsAndSettings, Json::Value> StandardCompiler:
 	if (auto result = checkSettingsKeys(settings))
 		return *result;
 
+	if (settings.isMember("stopAfter"))
+	{
+		if (!settings["stopAfter"].isString())
+			return formatFatalError("JSONError", "\"settings.stopAfter\" must be a string.");
+
+		if (settings["stopAfter"].asString() != "parsing")
+			return formatFatalError("JSONError", "Invalid value for \"settings.stopAfter\". Only valid value is \"parsing\".");
+
+		ret.stopAfter = CompilerStack::State::Parsed;
+	}
+
 	if (settings.isMember("parserErrorRecovery"))
 	{
 		if (!settings["parserErrorRecovery"].isBool())
 			return formatFatalError("JSONError", "\"settings.parserErrorRecovery\" must be a Boolean.");
 		ret.parserErrorRecovery = settings["parserErrorRecovery"].asBool();
+	}
+
+	if (settings.isMember("viaIR"))
+	{
+		if (!settings["viaIR"].isBool())
+			return formatFatalError("JSONError", "\"settings.viaIR\" must be a Boolean.");
+		ret.viaIR = settings["viaIR"].asBool();
 	}
 
 	if (settings.isMember("evmVersion"))
@@ -782,8 +851,7 @@ std::variant<StandardCompiler::InputsAndSettings, Json::Value> StandardCompiler:
 
 			try
 			{
-				// @TODO use libraries only for the given source
-				ret.libraries[library] = util::h160(address);
+				ret.libraries[sourceName + ":" + library] = util::h160(address);
 			}
 			catch (util::BadHexCharacter const&)
 			{
@@ -819,6 +887,34 @@ std::variant<StandardCompiler::InputsAndSettings, Json::Value> StandardCompiler:
 
 	ret.outputSelection = std::move(outputSelection);
 
+	if (ret.stopAfter != CompilerStack::State::CompilationSuccessful && isBinaryRequested(ret.outputSelection))
+		return formatFatalError(
+			"JSONError",
+			"Requested output selection conflicts with \"settings.stopAfter\"."
+		);
+
+	Json::Value const& modelCheckerSettings = settings.get("modelChecker", Json::Value());
+
+	if (auto result = checkModelCheckerSettingsKeys(modelCheckerSettings))
+		return *result;
+
+	if (modelCheckerSettings.isMember("engine"))
+	{
+		if (!modelCheckerSettings["engine"].isString())
+			return formatFatalError("JSONError", "settings.modelChecker.engine must be a string.");
+		std::optional<ModelCheckerEngine> engine = ModelCheckerEngine::fromString(modelCheckerSettings["engine"].asString());
+		if (!engine)
+			return formatFatalError("JSONError", "Invalid model checker engine requested.");
+		ret.modelCheckerSettings.engine = *engine;
+	}
+
+	if (modelCheckerSettings.isMember("timeout"))
+	{
+		if (!modelCheckerSettings["timeout"].isUInt())
+			return formatFatalError("JSONError", "settings.modelChecker.timeout must be an unsigned integer.");
+		ret.modelCheckerSettings.timeout = modelCheckerSettings["timeout"].asUInt();
+	}
+
 	return { std::move(ret) };
 }
 
@@ -830,6 +926,7 @@ Json::Value StandardCompiler::compileSolidity(StandardCompiler::InputsAndSetting
 	compilerStack.setSources(sourceList);
 	for (auto const& smtLib2Response: _inputsAndSettings.smtLib2Responses)
 		compilerStack.addSMTLib2Response(smtLib2Response.first, smtLib2Response.second);
+	compilerStack.setViaIR(_inputsAndSettings.viaIR);
 	compilerStack.setEVMVersion(_inputsAndSettings.evmVersion);
 	compilerStack.setParserErrorRecovery(_inputsAndSettings.parserErrorRecovery);
 	compilerStack.setRemappings(_inputsAndSettings.remappings);
@@ -839,9 +936,10 @@ Json::Value StandardCompiler::compileSolidity(StandardCompiler::InputsAndSetting
 	compilerStack.useMetadataLiteralSources(_inputsAndSettings.metadataLiteralSources);
 	compilerStack.setMetadataHash(_inputsAndSettings.metadataHash);
 	compilerStack.setRequestedContractNames(requestedContractNames(_inputsAndSettings.outputSelection));
+	compilerStack.setModelCheckerSettings(_inputsAndSettings.modelCheckerSettings);
 
+	compilerStack.enableEvmBytecodeGeneration(isEvmBytecodeRequested(_inputsAndSettings.outputSelection));
 	compilerStack.enableIRGeneration(isIRRequested(_inputsAndSettings.outputSelection));
-
 	compilerStack.enableEwasmGeneration(isEwasmRequested(_inputsAndSettings.outputSelection));
 
 	Json::Value errors = std::move(_inputsAndSettings.errors);
@@ -853,7 +951,7 @@ Json::Value StandardCompiler::compileSolidity(StandardCompiler::InputsAndSetting
 		if (binariesRequested)
 			compilerStack.compile();
 		else
-			compilerStack.parseAndAnalyze();
+			compilerStack.parseAndAnalyze(_inputsAndSettings.stopAfter);
 
 		for (auto const& error: compilerStack.errors())
 		{
@@ -975,7 +1073,10 @@ Json::Value StandardCompiler::compileSolidity(StandardCompiler::InputsAndSetting
 		analysisPerformed = false;
 
 	/// Inconsistent state - stop here to receive error reports from users
-	if (((binariesRequested && !compilationSuccess) || !analysisPerformed) && errors.empty())
+	if (
+		((binariesRequested && !compilationSuccess) || !analysisPerformed) &&
+		(errors.empty() && _inputsAndSettings.stopAfter >= CompilerStack::State::AnalysisPerformed)
+	)
 		return formatFatalError("InternalCompilerError", "No error reported, but compilation failed.");
 
 	Json::Value output = Json::objectValue;
@@ -991,16 +1092,15 @@ Json::Value StandardCompiler::compileSolidity(StandardCompiler::InputsAndSetting
 
 	output["sources"] = Json::objectValue;
 	unsigned sourceIndex = 0;
-	for (string const& sourceName: analysisPerformed ? compilerStack.sourceNames() : vector<string>())
-	{
-		Json::Value sourceResult = Json::objectValue;
-		sourceResult["id"] = sourceIndex++;
-		if (isArtifactRequested(_inputsAndSettings.outputSelection, sourceName, "", "ast", wildcardMatchesExperimental))
-			sourceResult["ast"] = ASTJsonConverter(false, compilerStack.sourceIndices()).toJson(compilerStack.ast(sourceName));
-		if (isArtifactRequested(_inputsAndSettings.outputSelection, sourceName, "", "legacyAST", wildcardMatchesExperimental))
-			sourceResult["legacyAST"] = ASTJsonConverter(true, compilerStack.sourceIndices()).toJson(compilerStack.ast(sourceName));
-		output["sources"][sourceName] = sourceResult;
-	}
+	if (compilerStack.state() >= CompilerStack::State::Parsed && (!compilerStack.hasError() || _inputsAndSettings.parserErrorRecovery))
+		for (string const& sourceName: compilerStack.sourceNames())
+		{
+			Json::Value sourceResult = Json::objectValue;
+			sourceResult["id"] = sourceIndex++;
+			if (isArtifactRequested(_inputsAndSettings.outputSelection, sourceName, "", "ast", wildcardMatchesExperimental))
+				sourceResult["ast"] = ASTJsonConverter(compilerStack.state(), compilerStack.sourceIndices()).toJson(compilerStack.ast(sourceName));
+			output["sources"][sourceName] = sourceResult;
+		}
 
 	Json::Value contractsOutput = Json::objectValue;
 	for (string const& contractName: analysisPerformed ? compilerStack.contractNames() : vector<string>())
@@ -1050,26 +1150,42 @@ Json::Value StandardCompiler::compileSolidity(StandardCompiler::InputsAndSetting
 			_inputsAndSettings.outputSelection,
 			file,
 			name,
-			{ "evm.bytecode", "evm.bytecode.object", "evm.bytecode.opcodes", "evm.bytecode.sourceMap", "evm.bytecode.linkReferences" },
+			evmObjectComponents("bytecode"),
 			wildcardMatchesExperimental
 		))
 			evmData["bytecode"] = collectEVMObject(
 				compilerStack.object(contractName),
 				compilerStack.sourceMapping(contractName),
-				false
+				compilerStack.generatedSources(contractName),
+				false,
+				[&](string const& _element) { return isArtifactRequested(
+					_inputsAndSettings.outputSelection,
+					file,
+					name,
+					"evm.bytecode." + _element,
+					wildcardMatchesExperimental
+				); }
 			);
 
 		if (compilationSuccess && isArtifactRequested(
 			_inputsAndSettings.outputSelection,
 			file,
 			name,
-			{ "evm.deployedBytecode", "evm.deployedBytecode.object", "evm.deployedBytecode.opcodes", "evm.deployedBytecode.sourceMap", "evm.deployedBytecode.linkReferences", "evm.deployedBytecode.immutableReferences" },
+			evmObjectComponents("deployedBytecode"),
 			wildcardMatchesExperimental
 		))
 			evmData["deployedBytecode"] = collectEVMObject(
 				compilerStack.runtimeObject(contractName),
 				compilerStack.runtimeSourceMapping(contractName),
-				true
+				compilerStack.generatedSources(contractName, true),
+				true,
+				[&](string const& _element) { return isArtifactRequested(
+					_inputsAndSettings.outputSelection,
+					file,
+					name,
+					"evm.deployedBytecode." + _element,
+					wildcardMatchesExperimental
+				); }
 			);
 
 		if (!evmData.empty())
@@ -1097,8 +1213,6 @@ Json::Value StandardCompiler::compileYul(InputsAndSettings _inputsAndSettings)
 		return formatFatalError("JSONError", "Yul mode does not support smtlib2responses.");
 	if (!_inputsAndSettings.remappings.empty())
 		return formatFatalError("JSONError", "Field \"settings.remappings\" cannot be used for Yul.");
-	if (!_inputsAndSettings.libraries.empty())
-		return formatFatalError("JSONError", "Field \"settings.libraries\" cannot be used for Yul.");
 	if (_inputsAndSettings.revertStrings != RevertStrings::Default)
 		return formatFatalError("JSONError", "Field \"settings.debug.revertStrings\" cannot be used for Yul.");
 
@@ -1151,25 +1265,37 @@ Json::Value StandardCompiler::compileYul(InputsAndSettings _inputsAndSettings)
 	MachineAssemblyObject runtimeObject;
 	tie(object, runtimeObject) = stack.assembleAndGuessRuntime();
 
+	if (object.bytecode)
+		object.bytecode->link(_inputsAndSettings.libraries);
+	if (runtimeObject.bytecode)
+		runtimeObject.bytecode->link(_inputsAndSettings.libraries);
+
 	for (string const& objectKind: vector<string>{"bytecode", "deployedBytecode"})
-	{
-		auto artifacts = util::applyMap(
-			vector<string>{"", ".object", ".opcodes", ".sourceMap", ".linkReferences"},
-			[&](auto const& _s) { return "evm." + objectKind + _s; }
-		);
 		if (isArtifactRequested(
 			_inputsAndSettings.outputSelection,
 			sourceName,
 			contractName,
-			artifacts,
+			evmObjectComponents(objectKind),
 			wildcardMatchesExperimental
 		))
 		{
 			MachineAssemblyObject const& o = objectKind == "bytecode" ? object : runtimeObject;
 			if (o.bytecode)
-				output["contracts"][sourceName][contractName]["evm"][objectKind] = collectEVMObject(*o.bytecode, o.sourceMappings.get(), false);
+				output["contracts"][sourceName][contractName]["evm"][objectKind] =
+					collectEVMObject(
+						*o.bytecode,
+						o.sourceMappings.get(),
+						Json::arrayValue,
+						false,
+						[&](string const& _element) { return isArtifactRequested(
+							_inputsAndSettings.outputSelection,
+							sourceName,
+							contractName,
+							"evm." + objectKind + "." + _element,
+							wildcardMatchesExperimental
+						); }
+					);
 		}
-	}
 
 	if (isArtifactRequested(_inputsAndSettings.outputSelection, sourceName, contractName, "irOptimized", wildcardMatchesExperimental))
 		output["contracts"][sourceName][contractName]["irOptimized"] = stack.print();

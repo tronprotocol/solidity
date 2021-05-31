@@ -39,8 +39,9 @@ class SMTLib2Interface: public SolverInterface, public boost::noncopyable
 {
 public:
 	explicit SMTLib2Interface(
-		std::map<util::h256, std::string> const& _queryResponses,
-		frontend::ReadCallback::Callback _smtCallback
+		std::map<util::h256, std::string> _queryResponses = {},
+		frontend::ReadCallback::Callback _smtCallback = {},
+		std::optional<unsigned> _queryTimeout = {}
 	);
 
 	void reset() override;
@@ -77,7 +78,7 @@ private:
 	std::map<std::string, SortPointer> m_variables;
 	std::set<std::string> m_userSorts;
 
-	std::map<util::h256, std::string> const& m_queryResponses;
+	std::map<util::h256, std::string> m_queryResponses;
 	std::vector<std::string> m_unhandledQueries;
 
 	frontend::ReadCallback::Callback m_smtCallback;

@@ -26,6 +26,11 @@
 #include <vector>
 #include <utility>
 
+namespace solidity::frontend
+{
+class CompilerStack;
+}
+
 namespace solidity::frontend::test
 {
 
@@ -33,7 +38,9 @@ class ASTJSONTest: public TestCase
 {
 public:
 	static std::unique_ptr<TestCase> create(Config const& _config)
-	{ return std::make_unique<ASTJSONTest>(_config.filename); }
+	{
+		return std::make_unique<ASTJSONTest>(_config.filename);
+	}
 	ASTJSONTest(std::string const& _filename);
 
 	TestResult run(std::ostream& _stream, std::string const& _linePrefix = "", bool const _formatted = false) override;
@@ -41,12 +48,28 @@ public:
 	void printSource(std::ostream& _stream, std::string const& _linePrefix = "", bool const _formatted = false) const override;
 	void printUpdatedExpectations(std::ostream& _stream, std::string const& _linePrefix) const override;
 private:
+	bool runTest(
+		std::string& _expectation,
+		std::string& _result,
+		std::map<std::string, unsigned> const& _sourceIndices,
+		CompilerStack& _compiler,
+		std::string const& _variation,
+		std::ostream& _stream,
+		std::string const& _linePrefix = "",
+		bool const _formatted = false
+	);
+	void updateExpectation(
+		std::string const& _filename,
+		std::string const& _expectation,
+		std::string const& _variation
+	) const;
+
 	std::vector<std::pair<std::string, std::string>> m_sources;
-	std::string m_expectationLegacy;
+	std::string m_expectationParseOnly;
 	std::string m_astFilename;
-	std::string m_legacyAstFilename;
+	std::string m_astParseOnlyFilename;
 	std::string m_result;
-	std::string m_resultLegacy;
+	std::string m_resultParseOnly;
 };
 
 }

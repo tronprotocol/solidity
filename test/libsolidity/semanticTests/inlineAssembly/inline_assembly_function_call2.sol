@@ -3,7 +3,7 @@ contract C {
         assembly {
             let d := 0x10
 
-            function asmfun(a, b, c) - > x, y, z {
+            function asmfun(a, b, c) -> x, y, z {
                 x := a
                 y := b
                 z := 7
@@ -20,5 +20,6 @@ contract C {
 
 // ====
 // compileViaYul: also
+// compileToEwasm: also
 // ----
 // f() -> 0x1, 0x2, 0x7, 0x10

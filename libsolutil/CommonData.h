@@ -78,6 +78,7 @@ template <class U, class... T> std::set<T...>& operator+=(std::set<T...>& _a, U&
 		_a.insert(std::move(x));
 	return _a;
 }
+
 /// Concatenate two vectors of elements.
 template <class T>
 inline std::vector<T> operator+(std::vector<T> const& _a, std::vector<T> const& _b)
@@ -86,6 +87,7 @@ inline std::vector<T> operator+(std::vector<T> const& _a, std::vector<T> const& 
 	ret += _b;
 	return ret;
 }
+
 /// Concatenate two vectors of elements, moving them.
 template <class T>
 inline std::vector<T> operator+(std::vector<T>&& _a, std::vector<T>&& _b)
@@ -97,6 +99,7 @@ inline std::vector<T> operator+(std::vector<T>&& _a, std::vector<T>&& _b)
 		ret += std::move(_b);
 	return ret;
 }
+
 /// Concatenate something to a sets of elements.
 template <class T, class U>
 inline std::set<T> operator+(std::set<T> const& _a, U&& _b)
@@ -105,6 +108,7 @@ inline std::set<T> operator+(std::set<T> const& _a, U&& _b)
 	ret += std::forward<U>(_b);
 	return ret;
 }
+
 /// Concatenate something to a sets of elements, move variant.
 template <class T, class U>
 inline std::set<T> operator+(std::set<T>&& _a, U&& _b)
@@ -159,6 +163,22 @@ auto applyMap(Container const& _c, Callable&& _op, OutputContainer _oc = OutputC
 	return _oc;
 }
 
+/// Filter a vector.
+/// Returns a copy of the vector after only taking indices `i` such that `_mask[i]` is true.
+template<typename T>
+std::vector<T> filter(std::vector<T> const& _vec, std::vector<bool> const& _mask)
+{
+	assert(_vec.size() == _mask.size());
+
+	std::vector<T> ret;
+
+	for (size_t i = 0; i < _mask.size(); ++i)
+		if (_mask[i])
+			ret.push_back(_vec[i]);
+
+	return ret;
+}
+
 /// Functional fold.
 /// Given a container @param _c, an initial value @param _acc,
 /// and a binary operator @param _binaryOp(T, U), accumulate
@@ -203,6 +223,13 @@ std::map<V, K> invertMap(std::map<K, V> const& originalMap)
 	}
 
 	return inverseMap;
+}
+
+/// Returns a set of keys of a map.
+template <typename K, typename V>
+std::set<K> keys(std::map<K, V> const& _map)
+{
+	return applyMap(_map, [](auto const& _elem) { return _elem.first; }, std::set<K>{});
 }
 
 // String conversion functions, mainly to/from hex/nibble/byte representations.

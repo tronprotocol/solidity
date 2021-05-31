@@ -50,7 +50,7 @@ using namespace solidity::frontend;
 
 pair<string, string> IRGenerator::run(
 	ContractDefinition const& _contract,
-	map<ContractDefinition const*, string const> const& _otherYulSources
+	map<ContractDefinition const*, string_view const> const& _otherYulSources
 )
 {
 	string const ir = yul::reindent(generate(_contract, _otherYulSources));
@@ -78,7 +78,7 @@ pair<string, string> IRGenerator::run(
 
 string IRGenerator::generate(
 	ContractDefinition const& _contract,
-	map<ContractDefinition const*, string const> const& _otherYulSources
+	map<ContractDefinition const*, string_view const> const& _otherYulSources
 )
 {
 	auto subObjectSources = [&_otherYulSources](std::set<ContractDefinition const*, ASTNode::CompareByID> const& subObjects) -> string
@@ -92,7 +92,7 @@ string IRGenerator::generate(
 	Whiskers t(R"(
 		object "<CreationObject>" {
 			code {
-				<memoryInit>
+				<memoryInitCreation>
 				<callValueCheck>
 				<?notLibrary>
 				<?constructorHasParams> let <constructorParams> := <copyConstructorArguments>() </constructorHasParams>
@@ -103,7 +103,7 @@ string IRGenerator::generate(
 			}
 			object "<RuntimeObject>" {
 				code {
-					<memoryInit>
+					<memoryInitRuntime>
 					<dispatch>
 					<runtimeFunctions>
 				}
@@ -118,7 +118,6 @@ string IRGenerator::generate(
 		m_context.registerImmutableVariable(*var);
 
 	t("CreationObject", IRNames::creationObject(_contract));
-	t("memoryInit", memoryInit());
 	t("notLibrary", !_contract.isLibrary());
 
 	FunctionDefinition const* constructor = _contract.constructor();
@@ -144,6 +143,10 @@ string IRGenerator::generate(
 	t("functions", m_context.functionCollector().requestedFunctions());
 	t("subObjects", subObjectSources(m_context.subObjectsCreated()));
 
+	// This has to be called only after all other code generation for the creation object is complete.
+	bool creationInvolvesAssembly = m_context.inlineAssemblySeen();
+	t("memoryInitCreation", memoryInit(!creationInvolvesAssembly));
+
 	resetContext(_contract);
 
 	// NOTE: Function pointers can be passed from creation code via storage variables. We need to
@@ -158,13 +161,17 @@ string IRGenerator::generate(
 	generateInternalDispatchFunctions();
 	t("runtimeFunctions", m_context.functionCollector().requestedFunctions());
 	t("runtimeSubObjects", subObjectSources(m_context.subObjectsCreated()));
+
+	// This has to be called only after all other code generation for the runtime object is complete.
+	bool runtimeInvolvesAssembly = m_context.inlineAssemblySeen();
+	t("memoryInitRuntime", memoryInit(!runtimeInvolvesAssembly));
 	return t.render();
 }
 
 string IRGenerator::generate(Block const& _block)
 {
 	IRGeneratorForStatements generator(m_context, m_utils);
-	_block.accept(generator);
+	generator.generate(_block);
 	return generator.code();
 }
 
@@ -197,10 +204,11 @@ InternalDispatchMap IRGenerator::generateInternalDispatchFunctions()
 						<?+out> <out> :=</+out> <name>(<in>)
 					}
 					</cases>
-					default { invalid() }
+					default { <panic>() }
 				}
 			)");
 			templ("functionName", funName);
+			templ("panic", m_utils.panicFunction(PanicCode::InvalidInternalFunction));
 			templ("in", suffixedVariableNameList("in_", 0, arity.in));
 			templ("out", suffixedVariableNameList("out_", 0, arity.out));
 
@@ -241,6 +249,7 @@ string IRGenerator::generateFunction(FunctionDefinition const& _function)
 {
 	string functionName = IRNames::function(_function);
 	return m_context.functionCollector().createFunction(functionName, [&]() {
+		solUnimplementedAssert(_function.modifiers().empty(), "Modifiers not implemented yet.");
 		Whiskers t(R"(
 			function <functionName>(<params>)<?+retParams> -> <retParams></+retParams> {
 				<initReturnVariables>
@@ -305,7 +314,7 @@ string IRGenerator::generateGetter(VariableDeclaration const& _varDecl)
 
 		string code;
 
-		auto const& location = m_context.storageLocationOfVariable(_varDecl);
+		auto const& location = m_context.storageLocationOfStateVariable(_varDecl);
 		code += Whiskers(R"(
 			let slot := <slot>
 			let offset := <offset>
@@ -340,18 +349,25 @@ string IRGenerator::generateGetter(VariableDeclaration const& _varDecl)
 				mappingType ? *mappingType->keyType() : *TypeProvider::uint256()
 			).stackSlots();
 			parameters += keys;
-			code += Whiskers(R"(
+
+			Whiskers templ(R"(
+				<?array>
+					if iszero(lt(<keys>, <length>(slot))) { revert(0, 0) }
+				</array>
 				slot<?array>, offset</array> := <indexAccess>(slot<?+keys>, <keys></+keys>)
-			)")
-			(
+			)");
+			templ(
 				"indexAccess",
 				mappingType ?
 				m_utils.mappingIndexAccessFunction(*mappingType, *mappingType->keyType()) :
 				m_utils.storageArrayIndexAccessFunction(*arrayType)
 			)
 			("array", arrayType != nullptr)
-			("keys", joinHumanReadable(keys))
-			.render();
+			("keys", joinHumanReadable(keys));
+			if (arrayType)
+				templ("length", m_utils.arrayLengthFunction(*arrayType));
+
+			code += templ.render();
 
 			currentType = mappingType ? mappingType->valueType() : arrayType->baseType();
 		}
@@ -421,31 +437,46 @@ pair<string, map<ContractDefinition const*, vector<string>>> IRGenerator::evalua
 	ContractDefinition const& _contract
 )
 {
+	struct InheritanceOrder
+	{
+		bool operator()(ContractDefinition const* _c1, ContractDefinition const* _c2) const
+		{
+			solAssert(contains(linearizedBaseContracts, _c1) && contains(linearizedBaseContracts, _c2), "");
+			auto it1 = find(linearizedBaseContracts.begin(), linearizedBaseContracts.end(), _c1);
+			auto it2 = find(linearizedBaseContracts.begin(), linearizedBaseContracts.end(), _c2);
+			return it1 < it2;
+		}
+		vector<ContractDefinition const*> const& linearizedBaseContracts;
+	} inheritanceOrder{_contract.annotation().linearizedBaseContracts};
+
 	map<ContractDefinition const*, vector<string>> constructorParams;
-	vector<pair<ContractDefinition const*, std::vector<ASTPointer<Expression>>const *>> baseConstructorArguments;
+
+	map<ContractDefinition const*, std::vector<ASTPointer<Expression>>const *, InheritanceOrder>
+		baseConstructorArguments(inheritanceOrder);
+																											;
 
 	for (ASTPointer<InheritanceSpecifier> const& base: _contract.baseContracts())
 		if (FunctionDefinition const* baseConstructor = dynamic_cast<ContractDefinition const*>(
 				base->name().annotation().referencedDeclaration
 		)->constructor(); baseConstructor && base->arguments())
-			baseConstructorArguments.emplace_back(
+			solAssert(baseConstructorArguments.emplace(
 				dynamic_cast<ContractDefinition const*>(baseConstructor->scope()),
 				base->arguments()
-			);
+			).second, "");
 
 	if (FunctionDefinition const* constructor = _contract.constructor())
 		for (ASTPointer<ModifierInvocation> const& modifier: constructor->modifiers())
 			if (auto const* baseContract = dynamic_cast<ContractDefinition const*>(
-				modifier->name()->annotation().referencedDeclaration
+				modifier->name().annotation().referencedDeclaration
 			))
 				if (
 					FunctionDefinition const* baseConstructor = baseContract->constructor();
 					baseConstructor && modifier->arguments()
 				)
-					baseConstructorArguments.emplace_back(
+					solAssert(baseConstructorArguments.emplace(
 						dynamic_cast<ContractDefinition const*>(baseConstructor->scope()),
 						modifier->arguments()
-					);
+					).second, "");
 
 	IRGeneratorForStatements generator{m_context, m_utils};
 	for (auto&& [baseContract, arguments]: baseConstructorArguments)
@@ -506,8 +537,16 @@ void IRGenerator::generateImplicitConstructors(ContractDefinition const& _contra
 			)");
 			vector<string> params;
 			if (contract->constructor())
+			{
+				for (auto const& modifierInvocation: contract->constructor()->modifiers())
+					// This can be ContractDefinition too for super arguments. That is supported.
+					solUnimplementedAssert(
+						!dynamic_cast<ModifierDefinition const*>(modifierInvocation->name().annotation().referencedDeclaration),
+						"Modifiers not implemented yet."
+					);
 				for (ASTPointer<VariableDeclaration> const& varDecl: contract->constructor()->parameters())
 					params += m_context.addLocalVariable(*varDecl).stackSlots();
+			}
 			t("params", joinHumanReadable(params));
 			vector<string> baseParams = listAllParams(baseConstructorParams);
 			t("baseParams", joinHumanReadable(baseParams));
@@ -543,7 +582,7 @@ string IRGenerator::deployCode(ContractDefinition const& _contract)
 		codecopy(0, dataoffset("<object>"), datasize("<object>"))
 
 		<#storeImmutables>
-			setimmutable("<immutableName>", <var>)
+			setimmutable(0, "<immutableName>", <var>)
 		</storeImmutables>
 
 		return(0, datasize("<object>"))
@@ -637,8 +676,16 @@ string IRGenerator::dispatchRoutine(ContractDefinition const& _contract)
 	{
 		string fallbackCode;
 		if (!fallback->isPayable())
-			fallbackCode += callValueCheck();
-		fallbackCode += m_context.enqueueFunctionForCodeGeneration(*fallback) + "() stop()";
+			fallbackCode += callValueCheck() + "\n";
+		if (fallback->parameters().empty())
+			fallbackCode += m_context.enqueueFunctionForCodeGeneration(*fallback) + "() stop()";
+		else
+		{
+			solAssert(fallback->parameters().size() == 1 && fallback->returnParameters().size() == 1, "");
+			fallbackCode += "let retval := " + m_context.enqueueFunctionForCodeGeneration(*fallback) + "(0, calldatasize())\n";
+			fallbackCode += "return(add(retval, 0x20), mload(retval))\n";
+
+		}
 
 		t("fallback", fallbackCode);
 	}
@@ -651,16 +698,25 @@ string IRGenerator::dispatchRoutine(ContractDefinition const& _contract)
 	return t.render();
 }
 
-string IRGenerator::memoryInit()
+string IRGenerator::memoryInit(bool _useMemoryGuard)
 {
+	// TODO: Remove once we have made sure it is safe, i.e. after "Yul memory objects lite".
+	//       Also restore the tests removed in the commit that adds this comment.
+	_useMemoryGuard = false;
 	// This function should be called at the beginning of the EVM call frame
 	// and thus can assume all memory to be zero, including the contents of
 	// the "zero memory area" (the position CompilerUtils::zeroPointer points to).
 	return
-		Whiskers{"mstore(<memPtr>, <freeMemoryStart>)"}
+		Whiskers{
+			_useMemoryGuard ?
+			"mstore(<memPtr>, memoryguard(<freeMemoryStart>))" :
+			"mstore(<memPtr>, <freeMemoryStart>)"
+		}
 		("memPtr", to_string(CompilerUtils::freeMemoryPointer))
-		("freeMemoryStart", to_string(CompilerUtils::generalPurposeMemoryStart + m_context.reservedMemory()))
-		.render();
+		(
+			"freeMemoryStart",
+			to_string(CompilerUtils::generalPurposeMemoryStart + m_context.reservedMemory())
+		).render();
 }
 
 void IRGenerator::resetContext(ContractDefinition const& _contract)

@@ -21,6 +21,8 @@
 #include <libsolutil/Exceptions.h>
 #include <liblangutil/EVMVersion.h>
 
+#include <test/evmc/evmc.h>
+
 #include <boost/filesystem/path.hpp>
 #include <boost/noncopyable.hpp>
 #include <boost/program_options.hpp>
@@ -31,25 +33,31 @@ namespace solidity::test
 #ifdef _WIN32
 static constexpr auto evmoneFilename = "evmone.dll";
 static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.4.1/evmone-0.4.1-windows-amd64.zip";
+static constexpr auto heraFilename = "hera.dll";
+static constexpr auto heraDownloadLink = "https://github.com/ewasm/hera/archive/v0.3.2.tar.gz";
 #elif defined(__APPLE__)
 static constexpr auto evmoneFilename = "libevmone.dylib";
 static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.4.1/evmone-0.4.1-darwin-x86_64.tar.gz";
+static constexpr auto heraFilename = "libhera.dylib";
+static constexpr auto heraDownloadLink = "https://github.com/ewasm/hera/releases/download/v0.3.2/hera-0.3.2-darwin-x86_64.tar.gz";
 #else
 static constexpr auto evmoneFilename = "libevmone.so";
 static constexpr auto evmoneDownloadLink = "https://github.com/ethereum/evmone/releases/download/v0.4.1/evmone-0.4.1-linux-x86_64.tar.gz";
+static constexpr auto heraFilename = "libhera.so";
+static constexpr auto heraDownloadLink = "https://github.com/ewasm/hera/releases/download/v0.3.2/hera-0.3.2-linux-x86_64.tar.gz";
 #endif
-
 
 struct ConfigException : public util::Exception {};
 
 struct CommonOptions: boost::noncopyable
 {
-	boost::filesystem::path evmonePath;
+	std::vector<boost::filesystem::path> vmPaths;
 	boost::filesystem::path testPath;
+	bool ewasm = false;
 	bool optimize = false;
 	bool enforceViaYul = false;
 	bool disableSMT = false;
-	bool useABIEncoderV2 = false;
+	bool useABIEncoderV1 = false;
 	bool showMessages = false;
 	bool showMetadata = false;
 
@@ -63,9 +71,9 @@ struct CommonOptions: boost::noncopyable
 	static void setSingleton(std::unique_ptr<CommonOptions const>&& _instance);
 
 	CommonOptions(std::string caption = "");
-	virtual ~CommonOptions() {};
-protected:
+	virtual ~CommonOptions() {}
 
+protected:
 	boost::program_options::options_description options;
 
 private:

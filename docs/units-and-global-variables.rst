@@ -71,6 +71,7 @@ Block and Transaction Properties
 --------------------------------
 
 - ``blockhash(uint blockNumber) returns (bytes32)``: hash of the given block - only works for 256 most recent, excluding current, blocks
+- ``block.chainid`` (``uint``): current chain id
 - ``block.coinbase`` (``address payable``): current block miner's address
 - ``block.difficulty`` (``uint``): current block difficulty
 - ``block.gaslimit`` (``uint``): current block gaslimit
@@ -146,7 +147,7 @@ See the dedicated section on :ref:`assert and require<assert-and-require>` for
 more details on error handling and when to use which function.
 
 ``assert(bool condition)``
-    causes an invalid opcode and thus state change reversion if the condition is not met - to be used for internal errors.
+    causes a Panic error and thus state change reversion if the condition is not met - to be used for internal errors.
 
 ``require(bool condition)``
     reverts if the condition is not met - to be used for errors in inputs or external components.
@@ -161,6 +162,8 @@ more details on error handling and when to use which function.
     abort execution and revert state changes, providing an explanatory string
 
 .. index:: keccak256, ripemd160, sha256, ecrecover, addmod, mulmod, cryptography,
+
+.. _mathematical-and-cryptographic-functions:
 
 Mathematical and Cryptographic Functions
 ----------------------------------------
@@ -195,23 +198,23 @@ Mathematical and Cryptographic Functions
     ``ecrecover`` returns an ``address``, and not an ``address payable``. See :ref:`address payable<address>` for
     conversion, in case you need to transfer funds to the recovered address.
 
-    For further details, read `example usage <https://ethereum.stackexchange.com/q/1777/222>`_.
+    For further details, read `example usage <https://ethereum.stackexchange.com/questions/1777/workflow-on-signing-a-string-with-private-key-followed-by-signature-verificatio>`_.
 
 .. warning::
 
     If you use ``ecrecover``, be aware that a valid signature can be turned into a different valid signature without
     requiring knowledge of the corresponding private key. In the Homestead hard fork, this issue was fixed
-    for _transaction_ signatures (see `EIP-2 <http://eips.ethereum.org/EIPS/eip-2#specification>`_), but
+    for _transaction_ signatures (see `EIP-2 <https://eips.ethereum.org/EIPS/eip-2#specification>`_), but
     the ecrecover function remained unchanged.
 
     This is usually not a problem unless you require signatures to be unique or
-    use them to identify items. OpenZeppelin have a `ECDSA helper library <https://docs.openzeppelin.org/v2.3.0/api/cryptography#ecdsa>`_ that you can use as a wrapper for ``ecrecover`` without this issue.
+    use them to identify items. OpenZeppelin have a `ECDSA helper library <https://docs.openzeppelin.com/contracts/2.x/api/cryptography#ECDSA>`_ that you can use as a wrapper for ``ecrecover`` without this issue.
 
 .. note::
 
     When running ``sha256``, ``ripemd160`` or ``ecrecover`` on a *private blockchain*, you might encounter Out-of-Gas. This is because these functions are implemented as "precompiled contracts" and only really exist after they receive the first message (although their contract code is hardcoded). Messages to non-existing contracts are more expensive and thus the execution might run into an Out-of-Gas error. A workaround for this problem is to first send Wei (1 for example) to each of the contracts before you use them in your actual contracts. This is not an issue on the main or test net.
 
-.. index:: balance, send, transfer, call, callcode, delegatecall, staticcall
+.. index:: balance, codehash, send, transfer, call, callcode, delegatecall, staticcall
 
 .. _address_related:
 
@@ -220,6 +223,12 @@ Members of Address Types
 
 ``<address>.balance`` (``uint256``)
     balance of the :ref:`address` in sun
+
+``<address>.code`` (``bytes memory``)
+    code at the :ref:`address` (can be empty)
+
+``<address>.codehash`` (``bytes32``)
+    the codehash of the :ref:`address`
 
 ``<address payable>.transfer(uint256 amount)``
     send given amount of sun to :ref:`address`, reverts on failure, forwards 2300 gas stipend, not adjustable

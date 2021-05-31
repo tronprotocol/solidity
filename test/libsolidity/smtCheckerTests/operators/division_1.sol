@@ -5,4 +5,4 @@ contract C {
 	}
 }
 // ----
-// Warning 3046: (111-116): Division by zero happens here
+// Warning 4281: (111-116): CHC: Division by zero happens here.\nCounterexample:\n\nx = 0\ny = 0\n = 0\n\nTransaction trace:\nconstructor()\nf(0, 0)

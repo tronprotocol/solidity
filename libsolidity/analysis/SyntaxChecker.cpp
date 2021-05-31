@@ -23,7 +23,7 @@
 #include <libsolidity/interface/Version.h>
 
 #include <libyul/optimiser/Semantics.h>
-#include <libyul/AsmData.h>
+#include <libyul/AST.h>
 
 #include <liblangutil/ErrorReporter.h>
 #include <liblangutil/SemVerHandler.h>
@@ -73,6 +73,8 @@ void SyntaxChecker::endVisit(SourceUnit const& _sourceUnit)
 		// when reporting the warning, print the source name only
 		m_errorReporter.warning(3420_error, {-1, -1, _sourceUnit.location().source}, errorString);
 	}
+	if (!m_sourceUnit->annotation().useABICoderV2.set())
+		m_sourceUnit->annotation().useABICoderV2 = true;
 	m_sourceUnit = nullptr;
 }
 
@@ -113,8 +115,44 @@ bool SyntaxChecker::visit(PragmaDirective const& _pragma)
 				m_sourceUnit->annotation().experimentalFeatures.insert(feature);
 				if (!ExperimentalFeatureWithoutWarning.count(feature))
 					m_errorReporter.warning(2264_error, _pragma.location(), "Experimental features are turned on. Do not use experimental features on live deployments.");
+
+				if (feature == ExperimentalFeature::ABIEncoderV2)
+				{
+					if (m_sourceUnit->annotation().useABICoderV2.set())
+					{
+						if (!*m_sourceUnit->annotation().useABICoderV2)
+							m_errorReporter.syntaxError(
+								8273_error,
+								_pragma.location(),
+								"ABI coder v1 has already been selected through \"pragma abicoder v1\"."
+							);
+					}
+					else
+						m_sourceUnit->annotation().useABICoderV2 = true;
+				}
 			}
 		}
+	}
+	else if (_pragma.literals()[0] == "abicoder")
+	{
+		solAssert(m_sourceUnit, "");
+		if (
+			_pragma.literals().size() != 2 ||
+			!set<string>{"v1", "v2"}.count(_pragma.literals()[1])
+		)
+			m_errorReporter.syntaxError(
+				2745_error,
+				_pragma.location(),
+				"Expected either \"pragma abicoder v1\" or \"pragma abicoder v2\"."
+			);
+		else if (m_sourceUnit->annotation().useABICoderV2.set())
+			m_errorReporter.syntaxError(
+				3845_error,
+				_pragma.location(),
+				"ABI coder has already been selected for this source unit."
+			);
+		else
+			m_sourceUnit->annotation().useABICoderV2 = (_pragma.literals()[1] == "v2");
 	}
 	else if (_pragma.literals()[0] == "solidity")
 	{
@@ -135,6 +173,7 @@ bool SyntaxChecker::visit(PragmaDirective const& _pragma)
 	}
 	else
 		m_errorReporter.syntaxError(4936_error, _pragma.location(), "Unknown pragma \"" + _pragma.literals()[0] + "\"");
+
 	return true;
 }
 
@@ -190,6 +229,28 @@ void SyntaxChecker::endVisit(ForStatement const&)
 	m_inLoopDepth--;
 }
 
+bool SyntaxChecker::visit(Block const& _block)
+{
+	if (_block.unchecked())
+	{
+		if (m_uncheckedArithmetic)
+			m_errorReporter.syntaxError(
+				1941_error,
+				_block.location(),
+				"\"unchecked\" blocks cannot be nested."
+			);
+
+		m_uncheckedArithmetic = true;
+	}
+	return true;
+}
+
+void SyntaxChecker::endVisit(Block const& _block)
+{
+	if (_block.unchecked())
+		m_uncheckedArithmetic = false;
+}
+
 bool SyntaxChecker::visit(Continue const& _continueStatement)
 {
 	if (m_inLoopDepth <= 0)
@@ -219,11 +280,12 @@ bool SyntaxChecker::visit(Throw const& _throwStatement)
 
 bool SyntaxChecker::visit(Literal const& _literal)
 {
-	if ((_literal.token() == Token::UnicodeStringLiteral) && !validateUTF8(_literal.value()))
+	size_t invalidSequence;
+	if ((_literal.token() == Token::UnicodeStringLiteral) && !validateUTF8(_literal.value(), invalidSequence))
 		m_errorReporter.syntaxError(
 			8452_error,
 			_literal.location(),
-			"Invalid UTF-8 sequence found"
+			"Contains invalid UTF-8 sequence at position " + toString(invalidSequence) + "."
 		);
 
 	if (_literal.token() != Token::Number)
@@ -287,15 +349,22 @@ bool SyntaxChecker::visit(InlineAssembly const& _inlineAssembly)
 	return false;
 }
 
-bool SyntaxChecker::visit(PlaceholderStatement const&)
+bool SyntaxChecker::visit(PlaceholderStatement const& _placeholder)
 {
+	if (m_uncheckedArithmetic)
+		m_errorReporter.syntaxError(
+			2573_error,
+			_placeholder.location(),
+			"The placeholder statement \"_\" cannot be used inside an \"unchecked\" block."
+		);
+
 	m_placeholderFound = true;
 	return true;
 }
 
 bool SyntaxChecker::visit(ContractDefinition const& _contract)
 {
-	m_isInterface = _contract.isInterface();
+	m_currentContractKind = _contract.contractKind();
 
 	ASTString const& contractName = _contract.name();
 	for (FunctionDefinition const* function: _contract.definedFunctions())
@@ -309,19 +378,41 @@ bool SyntaxChecker::visit(ContractDefinition const& _contract)
 	return true;
 }
 
+void SyntaxChecker::endVisit(ContractDefinition const&)
+{
+	m_currentContractKind = std::nullopt;
+}
+
 bool SyntaxChecker::visit(FunctionDefinition const& _function)
 {
-	if (!_function.isConstructor() && _function.noVisibilitySpecified())
+	solAssert(_function.isFree() == (m_currentContractKind == std::nullopt), "");
+
+	if (!_function.isFree() && !_function.isConstructor() && _function.noVisibilitySpecified())
 	{
-		string suggestedVisibility = _function.isFallback() || _function.isReceive() || m_isInterface ? "external" : "public";
+		string suggestedVisibility =
+			_function.isFallback() ||
+			_function.isReceive() ||
+			m_currentContractKind == ContractKind::Interface
+		? "external" : "public";
 		m_errorReporter.syntaxError(
 			4937_error,
 			_function.location(),
 			"No visibility specified. Did you intend to add \"" + suggestedVisibility + "\"?"
 		);
 	}
+	else if (_function.isFree())
+	{
+		if (!_function.noVisibilitySpecified())
+			m_errorReporter.syntaxError(
+				4126_error,
+				_function.location(),
+				"Free functions cannot have visibility."
+			);
+		if (!_function.isImplemented())
+			m_errorReporter.typeError(4668_error, _function.location(), "Free functions must be implemented.");
+	}
 
-	if (m_isInterface && !_function.modifiers().empty())
+	if (m_currentContractKind == ContractKind::Interface && !_function.modifiers().empty())
 		m_errorReporter.syntaxError(5842_error, _function.location(), "Functions in interfaces cannot have modifiers.");
 	else if (!_function.isImplemented() && !_function.modifiers().empty())
 		m_errorReporter.syntaxError(2668_error, _function.location(), "Functions without implementation cannot have modifiers.");
@@ -338,23 +429,6 @@ bool SyntaxChecker::visit(FunctionTypeName const& _node)
 	for (auto const& decl: _node.returnParameterTypeList()->parameters())
 		if (!decl->name().empty())
 			m_errorReporter.syntaxError(7304_error, decl->location(), "Return parameters in function types may not be named.");
-
-	return true;
-}
-
-bool SyntaxChecker::visit(VariableDeclarationStatement const& _statement)
-{
-	// Report if none of the variable components in the tuple have a name (only possible via deprecated "var")
-	if (std::all_of(
-		_statement.declarations().begin(),
-		_statement.declarations().end(),
-		[](ASTPointer<VariableDeclaration> const& declaration) { return declaration == nullptr; }
-	))
-		m_errorReporter.syntaxError(
-			3299_error,
-			_statement.location(),
-			"The use of the \"var\" keyword is disallowed. The declaration part of the statement can be removed, since it is empty."
-		);
 
 	return true;
 }

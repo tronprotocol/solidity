@@ -21,7 +21,7 @@
 
 #include <libyul/AsmAnalysis.h>
 
-#include <libyul/AsmData.h>
+#include <libyul/AST.h>
 #include <libyul/AsmScopeFiller.h>
 #include <libyul/AsmScope.h>
 #include <libyul/AsmAnalysisInfo.h>
@@ -43,6 +43,20 @@ using namespace solidity;
 using namespace solidity::yul;
 using namespace solidity::util;
 using namespace solidity::langutil;
+
+namespace
+{
+inline string to_string(LiteralKind _kind)
+{
+	switch (_kind)
+	{
+	case LiteralKind::Number: return "number";
+	case LiteralKind::Boolean: return "boolean";
+	case LiteralKind::String: return "string";
+	default: yulAssert(false, "");
+	}
+}
+}
 
 bool AsmAnalyzer::analyze(Block const& _block)
 {
@@ -272,14 +286,14 @@ vector<YulString> AsmAnalyzer::operator()(FunctionCall const& _funCall)
 	auto watcher = m_errorReporter.errorWatcher();
 	vector<YulString> const* parameterTypes = nullptr;
 	vector<YulString> const* returnTypes = nullptr;
-	vector<bool> const* needsLiteralArguments = nullptr;
+	vector<optional<LiteralKind>> const* literalArguments = nullptr;
 
 	if (BuiltinFunction const* f = m_dialect.builtin(_funCall.functionName.name))
 	{
 		parameterTypes = &f->parameters;
 		returnTypes = &f->returns;
-		if (f->literalArguments)
-			needsLiteralArguments = &f->literalArguments.value();
+		if (!f->literalArguments.empty())
+			literalArguments = &f->literalArguments;
 
 		validateInstructions(_funCall);
 	}
@@ -318,15 +332,11 @@ vector<YulString> AsmAnalyzer::operator()(FunctionCall const& _funCall)
 	for (size_t i = _funCall.arguments.size(); i > 0; i--)
 	{
 		Expression const& arg = _funCall.arguments[i - 1];
-		bool isLiteralArgument = needsLiteralArguments && (*needsLiteralArguments)[i - 1];
-		bool isStringLiteral = holds_alternative<Literal>(arg) && get<Literal>(arg).kind == LiteralKind::String;
-
-		if (isLiteralArgument && isStringLiteral)
-			argTypes.emplace_back(expectUnlimitedStringLiteral(get<Literal>(arg)));
-		else
-			argTypes.emplace_back(expectExpression(arg));
-
-		if (isLiteralArgument)
+		if (
+			auto literalArgumentKind = (literalArguments && i <= literalArguments->size()) ?
+				literalArguments->at(i - 1) :
+				std::nullopt
+		)
 		{
 			if (!holds_alternative<Literal>(arg))
 				m_errorReporter.typeError(
@@ -334,17 +344,29 @@ vector<YulString> AsmAnalyzer::operator()(FunctionCall const& _funCall)
 					_funCall.functionName.location,
 					"Function expects direct literals as arguments."
 				);
-			else if (
-				_funCall.functionName.name.str() == "datasize" ||
-				_funCall.functionName.name.str() == "dataoffset"
-			)
-				if (!m_dataNames.count(std::get<Literal>(arg).value))
-					m_errorReporter.typeError(
-						3517_error,
-						_funCall.functionName.location,
-						"Unknown data object \"" + std::get<Literal>(arg).value.str() + "\"."
-					);
+			else if (*literalArgumentKind != get<Literal>(arg).kind)
+				m_errorReporter.typeError(
+					5859_error,
+					get<Literal>(arg).location,
+					"Function expects " + to_string(*literalArgumentKind) + " literal."
+				);
+			else if (*literalArgumentKind == LiteralKind::String)
+			{
+				if (
+					_funCall.functionName.name.str() == "datasize" ||
+					_funCall.functionName.name.str() == "dataoffset"
+				)
+					if (!m_dataNames.count(get<Literal>(arg).value))
+						m_errorReporter.typeError(
+							3517_error,
+							get<Literal>(arg).location,
+							"Unknown data object \"" + std::get<Literal>(arg).value.str() + "\"."
+						);
+				argTypes.emplace_back(expectUnlimitedStringLiteral(get<Literal>(arg)));
+				continue;
+			}
 		}
+		argTypes.emplace_back(expectExpression(arg));
 	}
 	std::reverse(argTypes.begin(), argTypes.end());
 
@@ -552,6 +574,12 @@ void AsmAnalyzer::expectValidIdentifier(YulString _identifier, SourceLocation co
 			"\"" + _identifier.str() + "\" is not a valid identifier (contains consecutive dots)."
 		);
 
+	if (m_dialect.reservedIdentifier(_identifier))
+		m_errorReporter.declarationError(
+			5017_error,
+			_location,
+			"The identifier \"" + _identifier.str() + "\" is reserved and can not be used."
+		);
 }
 
 void AsmAnalyzer::expectValidType(YulString _type, SourceLocation const& _location)
@@ -617,19 +645,18 @@ bool AsmAnalyzer::validateInstructions(evmasm::Instruction _instr, SourceLocatio
 		);
 	};
 
-	if ((
-		_instr == evmasm::Instruction::RETURNDATACOPY ||
-		_instr == evmasm::Instruction::RETURNDATASIZE
-	) && !m_evmVersion.supportsReturndata())
+	if (_instr == evmasm::Instruction::RETURNDATACOPY && !m_evmVersion.supportsReturndata())
 		errorForVM(7756_error, "only available for Byzantium-compatible");
+	else if (_instr == evmasm::Instruction::RETURNDATASIZE && !m_evmVersion.supportsReturndata())
+		errorForVM(4778_error, "only available for Byzantium-compatible");
 	else if (_instr == evmasm::Instruction::STATICCALL && !m_evmVersion.hasStaticCall())
 		errorForVM(1503_error, "only available for Byzantium-compatible");
-	else if ((
-		_instr == evmasm::Instruction::SHL ||
-		_instr == evmasm::Instruction::SHR ||
-		_instr == evmasm::Instruction::SAR
-	) && !m_evmVersion.hasBitwiseShifting())
+	else if (_instr == evmasm::Instruction::SHL && !m_evmVersion.hasBitwiseShifting())
 		errorForVM(6612_error, "only available for Constantinople-compatible");
+	else if (_instr == evmasm::Instruction::SHR && !m_evmVersion.hasBitwiseShifting())
+		errorForVM(7458_error, "only available for Constantinople-compatible");
+	else if (_instr == evmasm::Instruction::SAR && !m_evmVersion.hasBitwiseShifting())
+		errorForVM(2054_error, "only available for Constantinople-compatible");
 	else if (_instr == evmasm::Instruction::CREATE2 && !m_evmVersion.hasCreate2())
 		errorForVM(6166_error, "only available for Constantinople-compatible");
 	else if (_instr == evmasm::Instruction::EXTCODEHASH && !m_evmVersion.hasExtCodeHash())
@@ -650,4 +677,9 @@ bool AsmAnalyzer::validateInstructions(evmasm::Instruction _instr, SourceLocatio
 		return false;
 
 	return true;
+}
+
+bool AsmAnalyzer::validateInstructions(FunctionCall const& _functionCall)
+{
+	return validateInstructions(_functionCall.functionName.name.str(), _functionCall.functionName.location);
 }

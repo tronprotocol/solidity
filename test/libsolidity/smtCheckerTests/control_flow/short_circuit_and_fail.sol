@@ -15,5 +15,4 @@ contract c {
 	}
 }
 // ----
-// Warning 6328: (227-236): Assertion violation happens here
-// Warning 2661: (101-106): Overflow (resulting value larger than 2**256 - 1) happens here
+// Warning 6328: (227-236): CHC: Assertion violation happens here.\nCounterexample:\nx = 1\n\n = false\n\nTransaction trace:\nconstructor()\nState: x = 0\ng()

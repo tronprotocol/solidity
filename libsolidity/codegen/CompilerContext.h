@@ -36,6 +36,7 @@
 #include <liblangutil/ErrorReporter.h>
 #include <liblangutil/EVMVersion.h>
 #include <libsolutil/Common.h>
+#include <libsolutil/ErrorCodes.h>
 
 #include <libyul/AsmAnalysisInfo.h>
 #include <libyul/backends/evm/EVMDialect.h>
@@ -76,10 +77,8 @@ public:
 
 	langutil::EVMVersion const& evmVersion() const { return m_evmVersion; }
 
-	/// Update currently enabled set of experimental features.
-	void setExperimentalFeatures(std::set<ExperimentalFeature> const& _features) { m_experimentalFeatures = _features; }
-	/// @returns true if the given feature is enabled.
-	bool experimentalFeatureActive(ExperimentalFeature _feature) const { return m_experimentalFeatures.count(_feature); }
+	void setUseABICoderV2(bool _value) { m_useABICoderV2 = _value; }
+	bool useABICoderV2() const { return m_useABICoderV2; }
 
 	void addStateVariable(VariableDeclaration const& _declaration, u256 const& _storageOffset, unsigned _byteOffset);
 	void addImmutable(VariableDeclaration const& _declaration);
@@ -122,6 +121,9 @@ public:
 	void setMostDerivedContract(ContractDefinition const& _contract) { m_mostDerivedContract = &_contract; }
 	ContractDefinition const& mostDerivedContract() const;
 
+	void setArithmetic(Arithmetic _value) { m_arithmetic = _value; }
+	Arithmetic arithmetic() const { return m_arithmetic; }
+
 	/// @returns the next function in the queue of functions that are still to be compiled
 	/// (i.e. that were referenced during compilation but where we did not yet generate code for).
 	/// Returns nullptr if the queue is empty. Does not remove the function from the queue,
@@ -163,12 +165,14 @@ public:
 	void appendMissingLowLevelFunctions();
 	ABIFunctions& abiFunctions() { return m_abiFunctions; }
 	YulUtilFunctions& utilFunctions() { return m_yulUtilFunctions; }
-	/// @returns concatenation of all generated functions and a set of the
-	/// externally used functions.
-	/// Clears the internal list, i.e. calling it again will result in an
-	/// empty return value.
-	std::pair<std::string, std::set<std::string>> requestedYulFunctions();
-	bool requestedYulFunctionsRan() const { return m_requestedYulFunctionsRan; }
+
+	/// Appends concatenation of all generated Yul functions to the bytecode
+	/// and stores the Yul source code to be returned by @a generatedYulUtilityCode.
+	/// Should be called exactly once on each context.
+	void appendYulUtilityFunctions(OptimiserSettings const& _optimiserSettings);
+	bool appendYulUtilityFunctionsRan() const { return m_appendYulUtilityFunctionsRan; }
+	std::string const& generatedYulUtilityCode() const { return m_generatedYulUtilityCode; }
+	static std::string yulUtilityFileName() { return "#utility.yul"; }
 
 	/// Returns the distance of the given local variable from the bottom of the stack (of the current function).
 	unsigned baseStackOffsetOfVariable(Declaration const& _declaration) const;
@@ -189,10 +193,10 @@ public:
 	evmasm::AssemblyItem appendJumpToNew() { return m_asm->appendJump().tag(); }
 	/// Appends a JUMP to a tag already on the stack
 	CompilerContext& appendJump(evmasm::AssemblyItem::JumpType _jumpType = evmasm::AssemblyItem::JumpType::Ordinary);
-	/// Appends an INVALID instruction
-	CompilerContext& appendInvalid();
-	/// Appends a conditional INVALID instruction
-	CompilerContext& appendConditionalInvalid();
+	/// Appends code to revert with a Panic(uint256) error.
+	CompilerContext& appendPanic(util::PanicCode _code);
+	/// Appends code to revert with a Panic(uint256) error if the topmost stack element is nonzero.
+	CompilerContext& appendConditionalPanic(util::PanicCode _code);
 	/// Appends a REVERT(0, 0) call
 	/// @param _message is an optional revert message used in debug mode
 	CompilerContext& appendRevert(std::string const& _message = "");
@@ -246,17 +250,21 @@ public:
 	CompilerContext& operator<<(u256 const& _value) { m_asm->append(_value); return *this; }
 	CompilerContext& operator<<(bytes const& _data) { m_asm->append(_data); return *this; }
 
-	/// Appends inline assembly (strict mode).
-	/// @a _replacements are string-matching replacements that are performed prior to parsing the inline assembly.
+	/// Appends inline assembly (strict-EVM dialect for the current version).
+	/// @param _assembly the assembly text, should be a block.
 	/// @param _localVariables assigns stack positions to variables with the last one being the stack top
 	/// @param _externallyUsedFunctions a set of function names that are not to be renamed or removed.
-	/// @param _system if true, this is a "system-level" assembly where all functions use named labels.
+	/// @param _system if true, this is a "system-level" assembly where all functions use named labels
+	///                and the code is marked to be exported as "compiler-generated assembly utility file".
+	/// @param _optimiserSettings settings for the Yul optimiser, which is run in this function already.
+	/// @param _sourceName the name of the assembly file to be used for source locations
 	void appendInlineAssembly(
 		std::string const& _assembly,
 		std::vector<std::string> const& _localVariables = std::vector<std::string>(),
 		std::set<std::string> const& _externallyUsedFunctions = std::set<std::string>(),
 		bool _system = false,
-		OptimiserSettings const& _optimiserSettings = OptimiserSettings::none()
+		OptimiserSettings const& _optimiserSettings = OptimiserSettings::none(),
+		std::string _sourceName = "--CODEGEN--"
 	);
 
 	/// If m_revertStrings is debug, @returns inline assembly code that
@@ -282,21 +290,6 @@ public:
 	/// @returns a shared pointer to the assembly.
 	/// Should be avoided except when adding sub-assemblies.
 	std::shared_ptr<evmasm::Assembly> assemblyPtr() const { return m_asm; }
-
-	/// @arg _sourceCodes is the map of input files to source code strings
-	std::string assemblyString(StringMap const& _sourceCodes = StringMap()) const
-	{
-		return m_asm->assemblyString(_sourceCodes);
-	}
-
-	/// @arg _sourceCodes is the map of input files to source code strings
-	Json::Value assemblyJSON(std::map<std::string, unsigned> const& _indicies = std::map<std::string, unsigned>()) const
-	{
-		return m_asm->assemblyJSON(_indicies);
-	}
-
-	evmasm::LinkerObject const& assembledObject() const;
-	evmasm::LinkerObject const& assembledRuntimeObject(size_t _subIndex) const { return m_asm->sub(_subIndex).assemble(); }
 
 	/**
 	 * Helper class to pop the visited nodes stack when a scope closes
@@ -354,8 +347,7 @@ private:
 	/// Version of the EVM to compile against.
 	langutil::EVMVersion m_evmVersion;
 	RevertStrings const m_revertStrings;
-	/// Activated experimental features.
-	std::set<ExperimentalFeature> m_experimentalFeatures;
+	bool m_useABICoderV2 = false;
 	/// Other already compiled contracts to be used in contract creation calls.
 	std::map<ContractDefinition const*, std::shared_ptr<Compiler const>> m_otherCompilers;
 	/// Storage offsets of state variables
@@ -373,6 +365,8 @@ private:
 	std::map<Declaration const*, std::vector<unsigned>> m_localVariables;
 	/// The contract currently being compiled. Virtual function lookup starts from this contarct.
 	ContractDefinition const* m_mostDerivedContract = nullptr;
+	/// Whether to use checked arithmetic.
+	Arithmetic m_arithmetic = Arithmetic::Checked;
 	/// Stack of current visited AST nodes, used for location attachment
 	std::stack<ASTNode const*> m_visitedNodes;
 	/// The runtime context if in Creation mode, this is used for generating tags that would be stored into the storage and then used at runtime.
@@ -385,14 +379,17 @@ private:
 	MultiUseYulFunctionCollector m_yulFunctionCollector;
 	/// Set of externally used yul functions.
 	std::set<std::string> m_externallyUsedYulFunctions;
+	/// Generated Yul code used as utility. Source references from the bytecode can point here.
+	/// Produced from @a m_yulFunctionCollector.
+	std::string m_generatedYulUtilityCode;
 	/// Container for ABI functions to be generated.
 	ABIFunctions m_abiFunctions;
 	/// Container for Yul Util functions to be generated.
 	YulUtilFunctions m_yulUtilFunctions;
 	/// The queue of low-level functions to generate.
 	std::queue<std::tuple<std::string, unsigned, unsigned, std::function<void(CompilerContext&)>>> m_lowLevelFunctionGenerationQueue;
-	/// Flag to check that requestedYulFunctions() was called exactly once
-	bool m_requestedYulFunctionsRan = false;
+	/// Flag to check that appendYulUtilityFunctions() was called exactly once
+	bool m_appendYulUtilityFunctionsRan = false;
 };
 
 }

@@ -63,7 +63,7 @@ Data locations are not only relevant for persistency of data, but also for the s
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.5.0 <0.8.0;
+    pragma solidity >=0.5.0 <0.9.0;
 
     contract C {
         // The data location of x is storage.
@@ -174,7 +174,7 @@ or create a new memory array and copy every element.
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.16 <0.8.0;
+    pragma solidity >=0.4.16 <0.9.0;
 
     contract C {
         function f(uint len) public pure {
@@ -206,7 +206,7 @@ the first element to ``uint``.
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.16 <0.8.0;
+    pragma solidity >=0.4.16 <0.9.0;
 
     contract C {
         function f() public pure {
@@ -223,7 +223,7 @@ memory arrays, i.e. the following is not possible:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.0 <0.8.0;
+    pragma solidity >=0.4.0 <0.9.0;
 
     // This will not compile.
     contract C {
@@ -243,7 +243,7 @@ individual elements:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.0 <0.8.0;
+    pragma solidity >=0.4.16 <0.9.0;
 
     contract C {
         function f() public pure {
@@ -290,7 +290,7 @@ Array Members
 
 .. note::
     To use arrays of arrays in external (instead of public) functions, you need to
-    activate ABIEncoderV2.
+    activate ABI coder v2.
 
 .. note::
     In EVM versions before Byzantium, it was not possible to access
@@ -301,7 +301,7 @@ Array Members
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.6.0 <0.8.0;
+    pragma solidity >=0.6.0 <0.9.0;
 
     contract ArrayContract {
         uint[2**20] m_aLotOfIntegers;
@@ -391,7 +391,7 @@ Array Members
             // Create a dynamic byte array:
             bytes memory b = new bytes(200);
             for (uint i = 0; i < b.length; i++)
-                b[i] = byte(uint8(i));
+                b[i] = bytes1(uint8(i));
             return b;
         }
     }
@@ -434,8 +434,7 @@ Array slices are useful to ABI-decode secondary data passed in function paramete
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >0.6.99 <0.8.0;
-
+    pragma solidity >=0.7.0 <0.9.0;
     contract Proxy {
         /// @dev Address of the client contract managed by proxy i.e., this contract
         address client;
@@ -478,7 +477,7 @@ shown in the following example:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.6.0 <0.8.0;
+    pragma solidity >=0.6.0 <0.9.0;
 
     // Defines a new type with two fields.
     // Declaring a struct outside of a contract allows
@@ -550,3 +549,8 @@ members of the local variable actually write to the state.
 Of course, you can also directly access the members of the struct without
 assigning it to a local variable, as in
 ``campaigns[campaignID].amount = 0``.
+
+.. note::
+    Until Solidity 0.7.0, memory-structs containing members of storage-only types (e.g. mappings)
+    were allowed and assignments like ``campaigns[campaignID] = Campaign(beneficiary, goal, 0, 0)``
+    in the example above would work and just silently skip those members.

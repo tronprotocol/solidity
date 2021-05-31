@@ -93,9 +93,13 @@ KnownState::StoreOperation KnownState::feedItem(AssemblyItem const& _item, bool 
 		// can be ignored
 	}
 	else if (_item.type() == AssignImmutable)
+	{
 		// Since AssignImmutable breaks blocks, it should be fine to only consider its changes to the stack, which
-		// is the same as POP.
+		// is the same as two POPs.
+		// Note that the StoreOperation for POP is generic and _copyItem is ignored.
+		feedItem(AssemblyItem(Instruction::POP), _copyItem);
 		return feedItem(AssemblyItem(Instruction::POP), _copyItem);
+	}
 	else if (_item.type() != Operation)
 	{
 		assertThrow(_item.deposit() == 1, InvalidDeposit, "");
@@ -155,8 +159,10 @@ KnownState::StoreOperation KnownState::feedItem(AssemblyItem const& _item, bool 
 				);
 				break;
 			default:
-				bool invMem = SemanticInformation::invalidatesMemory(_item.instruction());
-				bool invStor = SemanticInformation::invalidatesStorage(_item.instruction());
+				bool invMem =
+					SemanticInformation::memory(_item.instruction()) == SemanticInformation::Write;
+				bool invStor =
+					SemanticInformation::storage(_item.instruction()) == SemanticInformation::Write;
 				// We could be a bit more fine-grained here (CALL only invalidates part of
 				// memory, etc), but we do not for now.
 				if (invMem)
@@ -420,4 +426,3 @@ KnownState::Id KnownState::tagUnion(set<u256> _tags)
 		return id;
 	}
 }
-

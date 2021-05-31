@@ -40,9 +40,10 @@ class SMTPortfolio: public SolverInterface, public boost::noncopyable
 {
 public:
 	SMTPortfolio(
-		std::map<util::h256, std::string> const& _smtlib2Responses,
-		frontend::ReadCallback::Callback const& _smtCallback,
-		SMTSolverChoice _enabledSolvers
+		std::map<util::h256, std::string> _smtlib2Responses = {},
+		frontend::ReadCallback::Callback _smtCallback = {},
+		SMTSolverChoice _enabledSolvers = SMTSolverChoice::All(),
+		std::optional<unsigned> _queryTimeout = {}
 	);
 
 	void reset() override;
@@ -57,7 +58,7 @@ public:
 	std::pair<CheckResult, std::vector<std::string>> check(std::vector<Expression> const& _expressionsToEvaluate) override;
 
 	std::vector<std::string> unhandledQueries() override;
-	unsigned solvers() override { return m_solvers.size(); }
+	size_t solvers() override { return m_solvers.size(); }
 private:
 	static bool solverAnswered(CheckResult result);
 

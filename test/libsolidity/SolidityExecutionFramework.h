@@ -32,9 +32,6 @@
 
 #include <libyul/AssemblyStack.h>
 
-#include <liblangutil/Exceptions.h>
-#include <liblangutil/SourceReferenceFormatter.h>
-
 namespace solidity::frontend::test
 {
 
@@ -43,8 +40,8 @@ class SolidityExecutionFramework: public solidity::test::ExecutionFramework
 
 public:
 	SolidityExecutionFramework(): m_showMetadata(solidity::test::CommonOptions::get().showMetadata) {}
-	explicit SolidityExecutionFramework(langutil::EVMVersion _evmVersion):
-		ExecutionFramework(_evmVersion), m_showMetadata(solidity::test::CommonOptions::get().showMetadata)
+	explicit SolidityExecutionFramework(langutil::EVMVersion _evmVersion, std::vector<boost::filesystem::path> const& _vmPaths):
+		ExecutionFramework(_evmVersion, _vmPaths), m_showMetadata(solidity::test::CommonOptions::get().showMetadata)
 	{}
 
 	bytes const& compileAndRunWithoutCheck(
@@ -72,12 +69,14 @@ public:
 		std::map<std::string, solidity::test::Address> const& _libraryAddresses = {}
 	);
 
-	/// Returns @param _sourceCode prefixed with the version pragma and the ABIEncoderV2 pragma,
-	/// the latter only if it is required.
+	/// Returns @param _sourceCode prefixed with the version pragma and the abi coder v1 pragma,
+	/// the latter only if it is forced.
 	static std::string addPreamble(std::string const& _sourceCode);
 protected:
+
 	solidity::frontend::CompilerStack m_compiler;
 	bool m_compileViaYul = false;
+	bool m_compileToEwasm = false;
 	bool m_showMetadata = false;
 	RevertStrings m_revertStrings = RevertStrings::Default;
 };

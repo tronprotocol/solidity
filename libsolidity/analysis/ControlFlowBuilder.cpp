@@ -17,7 +17,7 @@
 // SPDX-License-Identifier: GPL-3.0
 
 #include <libsolidity/analysis/ControlFlowBuilder.h>
-#include <libyul/AsmData.h>
+#include <libyul/AST.h>
 #include <libyul/backends/evm/EVMDialect.h>
 
 using namespace solidity;
@@ -290,7 +290,7 @@ bool ControlFlowBuilder::visit(ModifierInvocation const& _modifierInvocation)
 			appendControlFlow(*argument);
 
 	auto modifierDefinition = dynamic_cast<ModifierDefinition const*>(
-		_modifierInvocation.name()->annotation().referencedDeclaration
+		_modifierInvocation.name().annotation().referencedDeclaration
 	);
 	if (!modifierDefinition) return false;
 	solAssert(!!modifierDefinition, "");

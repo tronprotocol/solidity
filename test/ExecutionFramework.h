@@ -24,6 +24,7 @@
 #pragma once
 
 #include <test/Common.h>
+#include <test/EVMHost.h>
 
 #include <libsolidity/interface/OptimiserSettings.h>
 #include <libsolidity/interface/DebugSettings.h>
@@ -32,6 +33,7 @@
 
 #include <libsolutil/FixedHash.h>
 #include <libsolutil/Keccak256.h>
+#include <libsolutil/ErrorCodes.h>
 
 #include <functional>
 
@@ -39,23 +41,18 @@
 
 namespace solidity::test
 {
-class EVMHost;
-
 using rational = boost::rational<bigint>;
-/// An Ethereum address: 20 bytes.
-/// @NOTE This is not endian-specific; it's just a bunch of bytes.
-using Address = util::h160;
 
-	// The various denominations; here for ease of use where needed within code.
-    static const u256 sun = 1;
-    static const u256 trx = sun * 1000000;
+// The various denominations; here for ease of use where needed within code.
+static const u256 sun = 1;
+static const u256 trx = sun * 1000000;
 
 class ExecutionFramework
 {
 
 public:
 	ExecutionFramework();
-	explicit ExecutionFramework(langutil::EVMVersion _evmVersion);
+	ExecutionFramework(langutil::EVMVersion _evmVersion, std::vector<boost::filesystem::path> const& _vmPaths);
 	virtual ~ExecutionFramework() = default;
 
 	virtual bytes const& compileAndRunWithoutCheck(
@@ -63,7 +60,7 @@ public:
 		u256 const& _value = 0,
 		std::string const& _contractName = "",
 		bytes const& _arguments = {},
-		std::map<std::string, Address> const& _libraryAddresses = {}
+		std::map<std::string, util::h160> const& _libraryAddresses = {}
 	) = 0;
 
 	bytes const& compileAndRun(
@@ -71,7 +68,7 @@ public:
 		u256 const& _value = 0,
 		std::string const& _contractName = "",
 		bytes const& _arguments = {},
-		std::map<std::string, Address> const& _libraryAddresses = {}
+		std::map<std::string, util::h160> const& _libraryAddresses = {}
 	)
 	{
 		compileAndRunWithoutCheck(
@@ -177,6 +174,7 @@ public:
 		return encode(u256((value.numerator() << fractionalBits) / value.denominator()));
 	}
 	static bytes encode(util::h256 const& _value) { return _value.asBytes(); }
+	static bytes encode(util::h160 const& _value) { return encode(util::h256(_value, util::h256::AlignRight)); }
 	static bytes encode(bytes const& _value, bool _padLeft = true)
 	{
 		bytes padding = bytes((32 - _value.size() % 32) % 32, 0);
@@ -201,6 +199,9 @@ public:
 	{
 		return bytes();
 	}
+	/// @returns error returndata corresponding to the Panic(uint256) error code,
+	/// if REVERT is supported by the current EVM version and the empty string otherwise.
+	bytes panicData(util::PanicCode _code);
 
 	//@todo might be extended in the future
 	template <class Arg>
@@ -255,36 +256,39 @@ private:
 	}
 
 protected:
+	void selectVM(evmc_capabilities _cap = evmc_capabilities::EVMC_CAPABILITY_EVM1);
 	void reset();
 
 	void sendMessage(bytes const& _data, bool _isCreation, u256 const& _value = 0);
-	void sendEther(Address const& _to, u256 const& _value);
+	void sendEther(util::h160 const& _to, u256 const& _value);
 	size_t currentTimestamp();
 	size_t blockTimestamp(u256 _number);
 
 	/// @returns the (potentially newly created) _ith address.
-	Address account(size_t _i);
+	util::h160 account(size_t _i);
 
-	u256 balanceAt(Address const& _addr);
-	bool storageEmpty(Address const& _addr);
-	bool addressHasCode(Address const& _addr);
+	u256 balanceAt(util::h160 const& _addr);
+	bool storageEmpty(util::h160 const& _addr);
+	bool addressHasCode(util::h160 const& _addr);
 
 	size_t numLogs() const;
 	size_t numLogTopics(size_t _logIdx) const;
 	util::h256 logTopic(size_t _logIdx, size_t _topicIdx) const;
-	Address logAddress(size_t _logIdx) const;
+	util::h160 logAddress(size_t _logIdx) const;
 	bytes logData(size_t _logIdx) const;
 
 	langutil::EVMVersion m_evmVersion;
 	solidity::frontend::RevertStrings m_revertStrings = solidity::frontend::RevertStrings::Default;
 	solidity::frontend::OptimiserSettings m_optimiserSettings = solidity::frontend::OptimiserSettings::minimal();
 	bool m_showMessages = false;
-	std::shared_ptr<EVMHost> m_evmHost;
+	bool m_supportsEwasm = false;
+	std::unique_ptr<EVMHost> m_evmcHost;
+
+	std::vector<boost::filesystem::path> m_vmPaths;
 
 	bool m_transactionSuccessful = true;
-	Address m_sender = account(0);
-	Address m_contractAddress;
-	u256 m_blockNumber;
+	util::h160 m_sender = account(0);
+	util::h160 m_contractAddress;
 	u256 const m_gasPrice = 10000 * sun;
 	u256 const m_gas = 100000000;
 	bytes m_output;

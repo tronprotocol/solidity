@@ -10,12 +10,13 @@ contract Main {
 
     function s() public returns (bool) {
         Receiver r = new Receiver();
-        return address(r).send(0);
+        return payable(r).send(0);
     }
 }
 
 // ====
 // compileViaYul: also
+// compileToEwasm: also
 // ----
 // constructor(), 20 wei ->
 // s() -> true

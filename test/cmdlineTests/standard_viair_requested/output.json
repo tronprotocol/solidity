@@ -1,0 +1,222 @@
+{"contracts":{"A":{"C":{"evm":{"bytecode":{"generatedSources":[],"object":"<BYTECODE REMOVED>"},"deployedBytecode":{"object":""}},"ir":"/*******************************************************
+ *                       WARNING                       *
+ *  Solidity to Yul compilation is still EXPERIMENTAL  *
+ *       It can result in LOSS OF FUNDS or worse       *
+ *                !USE AT YOUR OWN RISK!               *
+ *******************************************************/
+
+
+object \"C_3\" {
+    code {
+        mstore(64, 128)
+        if callvalue() { revert(0, 0) }
+
+        constructor_C_3()
+
+        codecopy(0, dataoffset(\"C_3_deployed\"), datasize(\"C_3_deployed\"))
+
+        return(0, datasize(\"C_3_deployed\"))
+
+        function constructor_C_3() {
+
+        }
+
+    }
+    object \"C_3_deployed\" {
+        code {
+            mstore(64, 128)
+
+            if iszero(lt(calldatasize(), 4))
+            {
+                let selector := shift_right_224_unsigned(calldataload(0))
+                switch selector
+
+                default {}
+            }
+            if iszero(calldatasize()) {  }
+            revert(0, 0)
+
+            function shift_right_224_unsigned(value) -> newValue {
+                newValue :=
+
+                shr(224, value)
+
+            }
+
+        }
+
+    }
+
+}
+
+"},"D":{"evm":{"bytecode":{"generatedSources":[],"object":"<BYTECODE REMOVED>"},"deployedBytecode":{"object":""}},"ir":"/*******************************************************
+ *                       WARNING                       *
+ *  Solidity to Yul compilation is still EXPERIMENTAL  *
+ *       It can result in LOSS OF FUNDS or worse       *
+ *                !USE AT YOUR OWN RISK!               *
+ *******************************************************/
+
+
+object \"D_16\" {
+    code {
+        mstore(64, 128)
+        if callvalue() { revert(0, 0) }
+
+        constructor_D_16()
+
+        codecopy(0, dataoffset(\"D_16_deployed\"), datasize(\"D_16_deployed\"))
+
+        return(0, datasize(\"D_16_deployed\"))
+
+        function constructor_D_16() {
+
+        }
+
+    }
+    object \"D_16_deployed\" {
+        code {
+            mstore(64, 128)
+
+            if iszero(lt(calldatasize(), 4))
+            {
+                let selector := shift_right_224_unsigned(calldataload(0))
+                switch selector
+
+                case 0x26121ff0
+                {
+                    // f()
+                    if callvalue() { revert(0, 0) }
+                    abi_decode_tuple_(4, calldatasize())
+                    fun_f_15()
+                    let memPos := allocateMemory(0)
+                    let memEnd := abi_encode_tuple__to__fromStack(memPos  )
+                    return(memPos, sub(memEnd, memPos))
+                }
+
+                default {}
+            }
+            if iszero(calldatasize()) {  }
+            revert(0, 0)
+
+            function abi_decode_tuple_(headStart, dataEnd)   {
+                if slt(sub(dataEnd, headStart), 0) { revert(0, 0) }
+
+            }
+
+            function abi_encode_tuple__to__fromStack(headStart ) -> tail {
+                tail := add(headStart, 0)
+
+            }
+
+            function allocateMemory(size) -> memPtr {
+                memPtr := mload(64)
+                let newFreePtr := add(memPtr, size)
+                // protect against overflow
+                if or(gt(newFreePtr, 0xffffffffffffffff), lt(newFreePtr, memPtr)) { panic_error_0x41() }
+                mstore(64, newFreePtr)
+            }
+
+            function allocateTemporaryMemory() -> memPtr {
+                memPtr := mload(64)
+            }
+
+            function fun_f_15() {
+
+                let _1 := allocateTemporaryMemory()
+                let _2 := add(_1, datasize(\"C_3\"))
+                if or(gt(_2, 0xffffffffffffffff), lt(_2, _1)) { panic_error_0x41() }
+                datacopy(_1, dataoffset(\"C_3\"), datasize(\"C_3\"))
+                _2 := abi_encode_tuple__to__fromStack(_2)
+
+                let expr_12_address := create(0, _1, sub(_2, _1))
+
+                if iszero(expr_12_address) { revert_forward_1() }
+
+                releaseTemporaryMemory()
+                let vloc_c_8_address := expr_12_address
+
+            }
+
+            function panic_error_0x41() {
+                mstore(0, 35408467139433450592217433187231851964531694900788300625387963629091585785856)
+                mstore(4, 0x41)
+                revert(0, 0x24)
+            }
+
+            function releaseTemporaryMemory() {
+            }
+
+            function revert_forward_1() {
+                returndatacopy(0, 0, returndatasize())
+                revert(0, returndatasize())
+            }
+
+            function shift_right_224_unsigned(value) -> newValue {
+                newValue :=
+
+                shr(224, value)
+
+            }
+
+        }
+        /*******************************************************
+        *                       WARNING                       *
+        *  Solidity to Yul compilation is still EXPERIMENTAL  *
+        *       It can result in LOSS OF FUNDS or worse       *
+        *                !USE AT YOUR OWN RISK!               *
+        *******************************************************/
+
+        object \"C_3\" {
+            code {
+                mstore(64, 128)
+                if callvalue() { revert(0, 0) }
+
+                constructor_C_3()
+
+                codecopy(0, dataoffset(\"C_3_deployed\"), datasize(\"C_3_deployed\"))
+
+                return(0, datasize(\"C_3_deployed\"))
+
+                function constructor_C_3() {
+
+                }
+
+            }
+            object \"C_3_deployed\" {
+                code {
+                    mstore(64, 128)
+
+                    if iszero(lt(calldatasize(), 4))
+                    {
+                        let selector := shift_right_224_unsigned(calldataload(0))
+                        switch selector
+
+                        default {}
+                    }
+                    if iszero(calldatasize()) {  }
+                    revert(0, 0)
+
+                    function shift_right_224_unsigned(value) -> newValue {
+                        newValue :=
+
+                        shr(224, value)
+
+                    }
+
+                }
+
+            }
+
+        }
+
+    }
+
+}
+
+"}}},"errors":[{"component":"general","errorCode":"2072","formattedMessage":"Warning: Unused local variable.
+ --> A:2:93:
+  |
+2 | pragma solidity >=0.0; pragma abicoder v2; contract C {} contract D { function f() public { C c = new C(); } }
+  |                                                                                             ^^^
+
+","message":"Unused local variable.","severity":"warning","sourceLocation":{"end":131,"file":"A","start":128},"type":"Warning"}],"sources":{"A":{"id":0}}}

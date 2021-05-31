@@ -9,6 +9,8 @@ contract C {
 		assert(a[0][a[0].length - 1] == y);
 	}
 }
+// ====
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (150-184): Assertion violation happens here
-// Warning 4144: (162-177): Underflow (resulting value less than 0) happens here
+// Warning 3944: (162-177): CHC: Underflow (resulting value less than 0) happens here.
+// Warning 6328: (150-184): CHC: Assertion violation happens here.

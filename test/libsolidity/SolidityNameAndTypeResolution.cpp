@@ -52,7 +52,7 @@ BOOST_AUTO_TEST_CASE(function_no_implementation)
 	std::vector<ASTPointer<ASTNode>> nodes = sourceUnit->nodes();
 	ContractDefinition* contract = dynamic_cast<ContractDefinition*>(nodes[1].get());
 	BOOST_REQUIRE(contract);
-	BOOST_CHECK(!contract->annotation().unimplementedDeclarations.empty());
+	BOOST_CHECK(!contract->annotation().unimplementedDeclarations->empty());
 	BOOST_CHECK(!contract->definedFunctions()[0]->isImplemented());
 }
 
@@ -68,10 +68,10 @@ BOOST_AUTO_TEST_CASE(abstract_contract)
 	ContractDefinition* base = dynamic_cast<ContractDefinition*>(nodes[1].get());
 	ContractDefinition* derived = dynamic_cast<ContractDefinition*>(nodes[2].get());
 	BOOST_REQUIRE(base);
-	BOOST_CHECK(!base->annotation().unimplementedDeclarations.empty());
+	BOOST_CHECK(!base->annotation().unimplementedDeclarations->empty());
 	BOOST_CHECK(!base->definedFunctions()[0]->isImplemented());
 	BOOST_REQUIRE(derived);
-	BOOST_CHECK(derived->annotation().unimplementedDeclarations.empty());
+	BOOST_CHECK(derived->annotation().unimplementedDeclarations->empty());
 	BOOST_CHECK(derived->definedFunctions()[0]->isImplemented());
 }
 
@@ -87,9 +87,9 @@ BOOST_AUTO_TEST_CASE(abstract_contract_with_overload)
 	ContractDefinition* base = dynamic_cast<ContractDefinition*>(nodes[1].get());
 	ContractDefinition* derived = dynamic_cast<ContractDefinition*>(nodes[2].get());
 	BOOST_REQUIRE(base);
-	BOOST_CHECK(!base->annotation().unimplementedDeclarations.empty());
+	BOOST_CHECK(!base->annotation().unimplementedDeclarations->empty());
 	BOOST_REQUIRE(derived);
-	BOOST_CHECK(!derived->annotation().unimplementedDeclarations.empty());
+	BOOST_CHECK(!derived->annotation().unimplementedDeclarations->empty());
 }
 
 BOOST_AUTO_TEST_CASE(implement_abstract_via_constructor)
@@ -104,7 +104,7 @@ BOOST_AUTO_TEST_CASE(implement_abstract_via_constructor)
 	BOOST_CHECK_EQUAL(nodes.size(), 3);
 	ContractDefinition* derived = dynamic_cast<ContractDefinition*>(nodes[2].get());
 	BOOST_REQUIRE(derived);
-	BOOST_CHECK(!derived->annotation().unimplementedDeclarations.empty());
+	BOOST_CHECK(!derived->annotation().unimplementedDeclarations->empty());
 }
 
 BOOST_AUTO_TEST_CASE(function_canonical_signature)
@@ -197,7 +197,7 @@ BOOST_AUTO_TEST_CASE(enum_external_type)
 BOOST_AUTO_TEST_CASE(external_struct_signatures)
 {
 	char const* text = R"(
-		pragma experimental ABIEncoderV2;
+		pragma abicoder v2;
 		contract Test {
 			enum ActionChoices { GoLeft, GoRight, GoStraight, Sit }
 			struct Simple { uint i; }
@@ -228,7 +228,7 @@ BOOST_AUTO_TEST_CASE(external_struct_signatures)
 BOOST_AUTO_TEST_CASE(external_struct_signatures_in_libraries)
 {
 	char const* text = R"(
-		pragma experimental ABIEncoderV2;
+		pragma abicoder v2;
 		library Test {
 			enum ActionChoices { GoLeft, GoRight, GoStraight, Sit }
 			struct Simple { uint i; }

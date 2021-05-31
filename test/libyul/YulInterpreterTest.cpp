@@ -87,8 +87,9 @@ bool YulInterpreterTest::parse(ostream& _stream, string const& _linePrefix, bool
 string YulInterpreterTest::interpret()
 {
 	InterpreterState state;
-	state.maxTraceSize = 10000;
-	state.maxSteps = 10000;
+	state.maxTraceSize = 32;
+	state.maxSteps = 512;
+	state.maxExprNesting = 64;
 	try
 	{
 		Interpreter::run(state, EVMDialect::strictAssemblyForEVMObjects(langutil::EVMVersion{}), *m_ast);
@@ -104,7 +105,7 @@ string YulInterpreterTest::interpret()
 
 void YulInterpreterTest::printErrors(ostream& _stream, ErrorList const& _errors)
 {
-	SourceReferenceFormatter formatter(_stream);
+	SourceReferenceFormatter formatter(_stream, true, false);
 
 	for (auto const& error: _errors)
 		formatter.printErrorInformation(*error);

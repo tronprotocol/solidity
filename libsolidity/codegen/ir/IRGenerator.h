@@ -53,13 +53,13 @@ public:
 	/// (or just pretty-printed, depending on the optimizer settings).
 	std::pair<std::string, std::string> run(
 		ContractDefinition const& _contract,
-		std::map<ContractDefinition const*, std::string const> const& _otherYulSources
+		std::map<ContractDefinition const*, std::string_view const> const& _otherYulSources
 	);
 
 private:
 	std::string generate(
 		ContractDefinition const& _contract,
-		std::map<ContractDefinition const*, std::string const> const& _otherYulSources
+		std::map<ContractDefinition const*, std::string_view const> const& _otherYulSources
 	);
 	std::string generate(Block const& _block);
 
@@ -100,7 +100,9 @@ private:
 
 	std::string dispatchRoutine(ContractDefinition const& _contract);
 
-	std::string memoryInit();
+	/// @a _useMemoryGuard If true, use a memory guard, allowing the optimiser
+	/// to perform memory optimizations.
+	std::string memoryInit(bool _useMemoryGuard);
 
 	void resetContext(ContractDefinition const& _contract);
 

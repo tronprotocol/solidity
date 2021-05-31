@@ -37,7 +37,8 @@ contract C {
 		assert(owner == address(0) || y != z);
 	}
 }
+// ====
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (435-461): Assertion violation happens here
-// Warning 6328: (594-631): Assertion violation happens here
-// Warning 5084: (610-620): Type conversion is not yet fully supported and might yield false positives.
+// Warning 6328: (435-461): CHC: Assertion violation happens here.
+// Warning 6328: (594-631): CHC: Assertion violation happens here.

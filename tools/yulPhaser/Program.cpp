@@ -27,6 +27,7 @@
 #include <libyul/AsmJsonConverter.h>
 #include <libyul/AsmParser.h>
 #include <libyul/AsmPrinter.h>
+#include <libyul/AST.h>
 #include <libyul/ObjectParser.h>
 #include <libyul/YulString.h>
 #include <libyul/backends/evm/EVMDialect.h>
@@ -59,7 +60,7 @@ ostream& operator<<(ostream& _stream, Program const& _program);
 
 ostream& std::operator<<(ostream& _outputStream, ErrorList const& _errors)
 {
-	SourceReferenceFormatter formatter(_outputStream);
+	SourceReferenceFormatter formatter(_outputStream, true, false);
 
 	for (auto const& error: _errors)
 		formatter.printErrorInformation(*error);

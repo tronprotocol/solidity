@@ -61,7 +61,8 @@ public:
 		langutil::ErrorReporter& _errorReporter,
 		std::map<h256, std::string> const& _smtlib2Responses,
 		ReadCallback::Callback const& _smtCallback,
-		smtutil::SMTSolverChoice _enabledSolvers
+		smtutil::SMTSolverChoice _enabledSolvers,
+		std::optional<unsigned> timeout
 	);
 
 	void analyze(SourceUnit const& _sources, std::map<ASTNode const*, std::set<VerificationTarget::Type>> _solvedTargets);
@@ -84,21 +85,23 @@ private:
 	bool visit(FunctionDefinition const& _node) override;
 	void endVisit(FunctionDefinition const& _node) override;
 	bool visit(IfStatement const& _node) override;
+	bool visit(Conditional const& _node) override;
 	bool visit(WhileStatement const& _node) override;
 	bool visit(ForStatement const& _node) override;
 	void endVisit(UnaryOperation const& _node) override;
 	void endVisit(FunctionCall const& _node) override;
+	void endVisit(Return const& _node) override;
 	//@}
 
 	/// Visitor helpers.
 	//@{
 	void visitAssert(FunctionCall const& _funCall);
 	void visitRequire(FunctionCall const& _funCall);
+	void visitAddMulMod(FunctionCall const& _funCall) override;
+	void assignment(smt::SymbolicVariable& _symVar, smtutil::Expression const& _value) override;
 	/// Visits the FunctionDefinition of the called function
 	/// if available and inlines the return value.
 	void inlineFunctionCall(FunctionCall const& _funCall);
-	/// Creates an uninterpreted function call.
-	void abstractFunctionCall(FunctionCall const& _funCall);
 	/// Inlines if the function call is internal or external to `this`.
 	/// Erases knowledge about state variables if external.
 	void internalOrExternalFunctionCall(FunctionCall const& _funCall);

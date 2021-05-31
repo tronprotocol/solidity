@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9.0)
+cmake_minimum_required(VERSION 3.13.0)
 
 set(ETH_CMAKE_DIR   "${CMAKE_CURRENT_LIST_DIR}/cmake"   CACHE PATH "The the path to the cmake directory")
 list(APPEND CMAKE_MODULE_PATH ${ETH_CMAKE_DIR})
@@ -10,7 +10,7 @@ include(EthPolicy)
 eth_policy()
 
 # project name and version should be set after cmake_policy CMP0048
-set(PROJECT_VERSION "0.7.0")
+set(PROJECT_VERSION "0.8.0")
 # OSX target needed in order to support std::visit
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.14")
 project(solidity VERSION ${PROJECT_VERSION} LANGUAGES C CXX)
@@ -22,6 +22,7 @@ if (IS_BIG_ENDIAN)
 endif()
 
 option(SOLC_LINK_STATIC "Link solc executable statically on supported platforms" OFF)
+option(SOLC_STATIC_STDLIBS "Link solc against static versions of libgcc and libstdc++ on supported platforms" OFF)
 
 # Setup cccache.
 include(EthCcache)
@@ -51,8 +52,27 @@ configure_file("${CMAKE_SOURCE_DIR}/cmake/templates/license.h.in" include/licens
 include(EthOptions)
 configure_project(TESTS)
 
-find_package(Z3 4.6.0)
-if (${Z3_FOUND})
+find_package(Z3 4.8.0)
+if(${USE_Z3_DLOPEN})
+  add_definitions(-DHAVE_Z3)
+  add_definitions(-DHAVE_Z3_DLOPEN)
+  find_package(Python3 COMPONENTS Interpreter)
+  if(${Z3_FOUND})
+    get_target_property(Z3_HEADER_HINTS z3::libz3 INTERFACE_INCLUDE_DIRECTORIES)
+  endif()
+  find_path(Z3_HEADER_PATH z3.h HINTS ${Z3_HEADER_HINTS})
+  if(Z3_HEADER_PATH)
+    set(Z3_FOUND TRUE)
+  else()
+    message(SEND_ERROR "Dynamic loading of Z3 requires Z3 headers to be present at build time.")
+  endif()
+  if(NOT ${Python3_FOUND})
+    message(SEND_ERROR "Dynamic loading of Z3 requires Python 3 to be present at build time.")
+  endif()
+  if(${SOLC_LINK_STATIC})
+    message(SEND_ERROR "solc cannot be linked statically when dynamically loading Z3.")
+  endif()
+elseif (${Z3_FOUND})
   add_definitions(-DHAVE_Z3)
   message("Z3 SMT solver found. This enables optional SMT checking with Z3.")
 endif()
