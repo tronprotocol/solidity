@@ -23,14 +23,12 @@
 
 #pragma once
 
-#include <libyul/AsmData.h>
+#include <libyul/ASTForward.h>
 #include <libyul/Dialect.h>
 
 #include <liblangutil/SourceLocation.h>
 #include <liblangutil/Scanner.h>
 #include <liblangutil/ParserBase.h>
-
-#include <libevmasm/Instruction.h>
 
 #include <memory>
 #include <variant>
@@ -62,12 +60,7 @@ public:
 	/// @returns an empty shared pointer on error.
 	std::unique_ptr<Block> parse(std::shared_ptr<langutil::Scanner> const& _scanner, bool _reuseScanner);
 
-	/// @returns a map of all EVM instructions available to assembly.
-	static std::map<std::string, evmasm::Instruction> const& instructions();
-
 protected:
-	using ElementaryOperation = std::variant<Literal, Identifier, FunctionCall>;
-
 	langutil::SourceLocation currentLocation() const override
 	{
 		return m_locationOverride ? *m_locationOverride : ParserBase::currentLocation();
@@ -89,10 +82,10 @@ protected:
 	Expression parseExpression();
 	/// Parses an elementary operation, i.e. a literal, identifier, instruction or
 	/// builtin functian call (only the name).
-	ElementaryOperation parseElementaryOperation();
+	std::variant<Literal, Identifier> parseLiteralOrIdentifier();
 	VariableDeclaration parseVariableDeclaration();
 	FunctionDefinition parseFunctionDefinition();
-	Expression parseCall(ElementaryOperation&& _initialOp);
+	FunctionCall parseCall(std::variant<Literal, Identifier>&& _initialOp);
 	TypedName parseTypedName();
 	YulString expectAsmIdentifier();
 

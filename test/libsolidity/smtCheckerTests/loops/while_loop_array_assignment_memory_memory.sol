@@ -11,14 +11,17 @@ contract LoopFor2 {
 			c[i] = b[i];
 			++i;
 		}
-		assert(b[0] == c[0]);
+		// Removed because current Spacer seg faults in cex generation.
+		//assert(b[0] == c[0]);
 		assert(a[0] == 900);
 		assert(b[0] == 900);
 	}
 }
 // ====
+// SMTIgnoreCex: yes
 // SMTSolvers: z3
 // ----
-// Warning 6328: (281-301): Assertion violation happens here
-// Warning 6328: (305-324): Assertion violation happens here
-// Warning 6328: (328-347): Assertion violation happens here
+// Warning 4984: (244-249): CHC: Overflow (resulting value larger than 2**256 - 1) might happen here.
+// Warning 4984: (270-273): CHC: Overflow (resulting value larger than 2**256 - 1) might happen here.
+// Warning 6328: (373-392): CHC: Assertion violation happens here.
+// Warning 6328: (396-415): CHC: Assertion violation happens here.

@@ -8,13 +8,10 @@ import json
 SOLC_BIN = sys.argv[1]
 REPORT_FILE = open("report.txt", mode="w", encoding='utf8', newline='\n')
 
-def removeSMT(source):
-    return source.replace('pragma experimental SMTChecker;', '')
-
 for optimize in [False, True]:
     for f in sorted(glob.glob("*.sol")):
         sources = {}
-        sources[f] = {'content': removeSMT(open(f, mode='r', encoding='utf8').read())}
+        sources[f] = {'content': open(f, mode='r', encoding='utf8').read()}
         input_json = {
             'language': 'Solidity',
             'sources': sources,
@@ -22,7 +19,8 @@ for optimize in [False, True]:
                 'optimizer': {
                     'enabled': optimize
                 },
-                'outputSelection': {'*': {'*': ['evm.bytecode.object', 'metadata']}}
+                'outputSelection': {'*': {'*': ['evm.bytecode.object', 'metadata']}},
+                'modelChecker': { "engine": 'none' }
             }
         }
         args = [SOLC_BIN, '--standard-json']

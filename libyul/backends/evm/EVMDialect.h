@@ -24,7 +24,7 @@
 #include <libyul/Dialect.h>
 
 #include <libyul/backends/evm/AbstractAssembly.h>
-#include <libyul/AsmData.h>
+#include <libyul/ASTForward.h>
 #include <liblangutil/EVMVersion.h>
 
 #include <map>
@@ -73,6 +73,10 @@ struct EVMDialect: public Dialect
 	BuiltinFunctionForEVM const* discardFunction(YulString /*_type*/) const override { return builtin("pop"_yulstring); }
 	BuiltinFunctionForEVM const* equalityFunction(YulString /*_type*/) const override { return builtin("eq"_yulstring); }
 	BuiltinFunctionForEVM const* booleanNegationFunction() const override { return builtin("iszero"_yulstring); }
+	BuiltinFunctionForEVM const* memoryStoreFunction(YulString /*_type*/) const override { return builtin("mstore"_yulstring); }
+	BuiltinFunctionForEVM const* memoryLoadFunction(YulString /*_type*/) const override { return builtin("mload"_yulstring); }
+	BuiltinFunctionForEVM const* storageStoreFunction(YulString /*_type*/) const override { return builtin("sstore"_yulstring); }
+	BuiltinFunctionForEVM const* storageLoadFunction(YulString /*_type*/) const override { return builtin("sload"_yulstring); }
 
 	static EVMDialect const& strictAssemblyForEVM(langutil::EVMVersion _version);
 	static EVMDialect const& strictAssemblyForEVMObjects(langutil::EVMVersion _version);

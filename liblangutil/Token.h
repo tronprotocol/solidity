@@ -83,7 +83,8 @@ namespace solidity::langutil
 	T(Semicolon, ";", 0)                                                \
 	T(Period, ".", 0)                                                   \
 	T(Conditional, "?", 3)                                              \
-	T(Arrow, "=>", 0)                                                   \
+	T(DoubleArrow, "=>", 0)                                             \
+	T(RightArrow, "->", 0)                                              \
 	\
 	/* Assignment operators. */										\
 	/* IsAssignmentOp() relies on this block of enum values being */	\
@@ -271,6 +272,9 @@ namespace solidity::langutil
 	K(Unchecked, "unchecked", 0)                                       \
 	K(Var, "var", 0)                                                   \
 	\
+	/* Yul-specific tokens, but not keywords. */                       \
+	T(Leave, "leave", 0)                                               \
+	\
 	/* Illegal token - not able to scan. */                            \
 	T(Illegal, "ILLEGAL", 0)                                           \
 	\
@@ -318,7 +322,16 @@ namespace TokenTraits
 	constexpr bool isEtherSubdenomination(Token op) { return op >= Token::SubWei && op <= Token::SubEther; }
 	constexpr bool isTronSubdenomination(Token op) { return op == Token::SubTrx || op == Token::SubSun; }
 	constexpr bool isTimeSubdenomination(Token op) { return op == Token::SubSecond || op == Token::SubMinute || op == Token::SubHour || op == Token::SubDay || op == Token::SubWeek || op == Token::SubYear; }
-	constexpr bool isReservedKeyword(Token op) { return (Token::After <= op && op <= Token::Unchecked); }
+	constexpr bool isReservedKeyword(Token op) { return (Token::After <= op && op <= Token::Var); }
+
+	constexpr bool isYulKeyword(Token tok)
+	{
+		return tok == Token::Function || tok == Token::Let || tok == Token::If || tok == Token::Switch || tok == Token::Case ||
+			tok == Token::Default || tok == Token::For || tok == Token::Break || tok == Token::Continue || tok == Token::Leave ||
+			tok == Token::TrueLiteral || tok == Token::FalseLiteral || tok == Token::HexStringLiteral || tok == Token::Hex;
+	}
+
+	bool isYulKeyword(std::string const& _literal);
 
 	inline Token AssignmentToBinaryOp(Token op)
 	{

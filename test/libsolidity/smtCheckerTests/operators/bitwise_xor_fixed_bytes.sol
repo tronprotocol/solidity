@@ -1,9 +1,11 @@
 pragma experimental SMTChecker;
 contract Simp {
-    function f3() public pure returns (byte) {
-        bytes memory y = "def";
-        return y[0] ^ "e";
-    }
+	function f3() public pure returns (byte) {
+		bytes memory y = "def";
+		assert(y[0] ^ "e" != byte(0)); // should hold
+		assert(y[1] ^ "e" != byte(0)); // should fail
+		return y[0];
+	}
 }
 // ----
-// Warning 1093: (142-152): Assertion checker does not yet implement this bitwise operator.
+// Warning 6328: (168-197): CHC: Assertion violation happens here.\nCounterexample:\n\n\n = 0\n\nTransaction trace:\nconstructor()\nf3()

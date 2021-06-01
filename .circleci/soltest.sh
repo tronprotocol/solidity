@@ -4,7 +4,7 @@
 #
 # The documentation for solidity is hosted at:
 #
-#     https://solidity.readthedocs.org
+#     https://docs.soliditylang.org
 #
 # ------------------------------------------------------------------------------
 # Configuration Environment Variables:
@@ -36,7 +36,6 @@ set -e
 
 OPTIMIZE=${OPTIMIZE:-"0"}
 EVM=${EVM:-"invalid"}
-WORKDIR=${CIRCLE_WORKING_DIRECTORY:-.}
 REPODIR="$(realpath $(dirname $0)/..)"
 
 source "${REPODIR}/scripts/common.sh"

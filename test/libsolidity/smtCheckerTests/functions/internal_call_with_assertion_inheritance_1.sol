@@ -17,5 +17,3 @@ contract C is A {
 	}
 }
 // ----
-// Warning 4144: (100-103): Underflow (resulting value less than 0) happens here
-// Warning 4144: (100-103): Underflow (resulting value less than 0) happens here

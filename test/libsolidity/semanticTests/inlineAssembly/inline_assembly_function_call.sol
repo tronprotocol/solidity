@@ -1,7 +1,7 @@
 contract C {
     function f() public {
         assembly {
-            function asmfun(a, b, c) - > x, y, z {
+            function asmfun(a, b, c) -> x, y, z {
                 x := a
                 y := b
                 z := 7
@@ -17,5 +17,6 @@ contract C {
 
 // ====
 // compileViaYul: also
+// compileToEwasm: also
 // ----
 // f() -> 1, 2, 7

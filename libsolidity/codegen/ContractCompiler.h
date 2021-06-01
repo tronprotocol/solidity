@@ -130,7 +130,10 @@ private:
 	/// body itself if the last modifier was reached.
 	void appendModifierOrFunctionCode();
 
-	void appendStackVariableInitialisation(VariableDeclaration const& _variable);
+	/// Creates a stack slot for the given variable and assigns a default value.
+	/// If the default value is complex (needs memory allocation) and @a _provideDefaultValue
+	/// is false, this might be skipped.
+	void appendStackVariableInitialisation(VariableDeclaration const& _variable, bool _provideDefaultValue);
 	void compileExpression(Expression const& _expression, TypePointer const& _targetType = TypePointer());
 
 	/// Frees the variables of a certain scope (to be used when leaving).
@@ -143,6 +146,7 @@ private:
 	/// Pointer to the runtime compiler in case this is a creation compiler.
 	ContractCompiler* m_runtimeCompiler = nullptr;
 	CompilerContext& m_context;
+
 	/// Tag to jump to for a "break" statement and the stack height after freeing the local loop variables.
 	std::vector<std::pair<evmasm::AssemblyItem, unsigned>> m_breakTags;
 	/// Tag to jump to for a "continue" statement and the stack height after freeing the local loop variables.

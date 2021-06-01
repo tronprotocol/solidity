@@ -28,7 +28,9 @@ namespace solidity::smtutil
 class Z3Interface: public SolverInterface, public boost::noncopyable
 {
 public:
-	Z3Interface();
+	Z3Interface(std::optional<unsigned> _queryTimeout = {});
+
+	static bool available();
 
 	void reset() override;
 
@@ -41,6 +43,7 @@ public:
 	std::pair<CheckResult, std::vector<std::string>> check(std::vector<Expression> const& _expressionsToEvaluate) override;
 
 	z3::expr toZ3Expr(Expression const& _expr);
+	smtutil::Expression fromZ3Expr(z3::expr const& _expr);
 
 	std::map<std::string, z3::expr> constants() const { return m_constants; }
 	std::map<std::string, z3::func_decl> functions() const { return m_functions; }
@@ -49,15 +52,15 @@ public:
 
 	// Z3 "basic resources" limit.
 	// This is used to make the runs more deterministic and platform/machine independent.
-	// The tests start failing for Z3 with less than 10000000,
-	// so using double that.
-	static int const resourceLimit = 20000000;
+	static int const resourceLimit = 1000000;
 
 private:
 	void declareFunction(std::string const& _name, Sort const& _sort);
 
 	z3::sort z3Sort(Sort const& _sort);
 	z3::sort_vector z3Sort(std::vector<SortPointer> const& _sorts);
+	smtutil::SortPointer fromZ3Sort(z3::sort const& _sort);
+	std::vector<smtutil::SortPointer> fromZ3Sort(z3::sort_vector const& _sorts);
 
 	z3::context m_context;
 	z3::solver m_solver;
