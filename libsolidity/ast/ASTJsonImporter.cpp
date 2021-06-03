@@ -22,18 +22,21 @@
  */
 
 #include <libsolidity/ast/ASTJsonImporter.h>
-#include <libsolidity/ast/AsmJsonImporter.h>
-#include <liblangutil/Scanner.h>
+
+#include <libyul/AsmJsonImporter.h>
+#include <libyul/AsmParser.h>
+#include <libyul/AST.h>
 #include <libyul/Dialect.h>
+#include <libyul/backends/evm/EVMDialect.h>
+
+#include <liblangutil/ErrorReporter.h>
+#include <liblangutil/Exceptions.h>
+#include <liblangutil/Scanner.h>
+#include <liblangutil/SourceLocation.h>
+#include <liblangutil/Token.h>
+
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string.hpp>
-#include <liblangutil/Token.h>
-#include <libyul/AsmParser.h>
-#include <libyul/backends/evm/EVMDialect.h>
-#include <liblangutil/SourceLocation.h>
-#include <liblangutil/Exceptions.h>
-#include <liblangutil/ErrorReporter.h>
-
 
 using namespace std;
 
@@ -381,6 +384,7 @@ ASTPointer<FunctionDefinition> ASTJsonImporter::createFunctionDefinition(Json::V
 	astAssert(_node["kind"].isString(), "Expected 'kind' to be a string!");
 
 	Token kind;
+	bool freeFunction = false;
 	string kindStr = member(_node, "kind").asString();
 
 	if (kindStr == "constructor")
@@ -391,17 +395,27 @@ ASTPointer<FunctionDefinition> ASTJsonImporter::createFunctionDefinition(Json::V
 		kind = Token::Fallback;
 	else if (kindStr == "receive")
 		kind = Token::Receive;
+	else if (kindStr == "freeFunction")
+	{
+		kind = Token::Function;
+		freeFunction = true;
+	}
 	else
 		astAssert(false, "Expected 'kind' to be one of [constructor, function, fallback, receive]");
 
 	std::vector<ASTPointer<ModifierInvocation>> modifiers;
 	for (auto& mod: member(_node, "modifiers"))
 		modifiers.push_back(createModifierInvocation(mod));
+
+	Visibility vis = Visibility::Default;
+	if (!freeFunction)
+		vis = visibility(_node);
 	return createASTNode<FunctionDefinition>(
 		_node,
 		memberAsASTString(_node, "name"),
-		kind == Token::Constructor ? Visibility::Default : visibility(_node),
+		vis,
 		stateMutability(_node),
+		freeFunction,
 		kind,
 		memberAsBool(_node, "virtual"),
 		_node["overrides"].isNull() ? nullptr : createOverrideSpecifier(member(_node, "overrides")),
@@ -443,7 +457,6 @@ ASTPointer<VariableDeclaration> ASTJsonImporter::createVariableDeclaration(Json:
 		nullOrCast<Expression>(member(_node, "value")),
 		visibility(_node),
 		_node["documentation"].isNull() ? nullptr : createDocumentation(member(_node, "documentation")),
-		memberAsBool(_node, "stateVariable"),
 		_node.isMember("indexed") ? memberAsBool(_node, "indexed") : false,
 		mutability,
 		_node["overrides"].isNull() ? nullptr : createOverrideSpecifier(member(_node, "overrides")),
@@ -559,7 +572,7 @@ ASTPointer<InlineAssembly> ASTJsonImporter::createInlineAssembly(Json::Value con
 	astAssert(m_evmVersion == evmVersion, "Imported tree evm version differs from configured evm version!");
 
 	yul::Dialect const& dialect = yul::EVMDialect::strictAssemblyForEVM(evmVersion.value());
-	shared_ptr<yul::Block> operations = make_shared<yul::Block>(AsmJsonImporter(m_currentSourceName).createBlock(member(_node, "AST")));
+	shared_ptr<yul::Block> operations = make_shared<yul::Block>(yul::AsmJsonImporter(m_currentSourceName).createBlock(member(_node, "AST")));
 	return createASTNode<InlineAssembly>(
 		_node,
 		nullOrASTString(_node, "documentation"),

@@ -20,6 +20,9 @@ contract C {
     }
 }
 
+// ====
+// compileViaYul: also
+// compileToEwasm: also
 // ----
 // set() -> 7
 // ca() -> 7

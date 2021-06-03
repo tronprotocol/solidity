@@ -243,7 +243,7 @@ individual elements:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.0 <0.8.0;
+    pragma solidity >=0.4.16 <0.8.0;
 
     contract C {
         function f() public pure {
@@ -290,7 +290,7 @@ Array Members
 
 .. note::
     To use arrays of arrays in external (instead of public) functions, you need to
-    activate ABIEncoderV2.
+    activate ABI coder v2.
 
 .. note::
     In EVM versions before Byzantium, it was not possible to access
@@ -434,7 +434,7 @@ Array slices are useful to ABI-decode secondary data passed in function paramete
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >0.6.99 <0.8.0;
+    pragma solidity ^0.7.0;
 
     contract Proxy {
         /// @dev Address of the client contract managed by proxy i.e., this contract
@@ -550,3 +550,8 @@ members of the local variable actually write to the state.
 Of course, you can also directly access the members of the struct without
 assigning it to a local variable, as in
 ``campaigns[campaignID].amount = 0``.
+
+.. note::
+    Until Solidity 0.7.0, memory-structs containing members of storage-only types (e.g. mappings)
+    were allowed and assignments like ``campaigns[campaignID] = Campaign(beneficiary, goal, 0, 0)``
+    in the example above would work and just silently skip those members.

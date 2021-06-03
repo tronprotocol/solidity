@@ -3,6 +3,7 @@ contract c {
         uint256 a;
         uint256 b;
     }
+    uint[75] r;
     Struct data1;
     Struct data2;
 
@@ -15,5 +16,8 @@ contract c {
     }
 }
 
+// ====
+// compileViaYul: also
+// compileToEwasm: also
 // ----
 // test() -> true

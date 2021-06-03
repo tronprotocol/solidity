@@ -1,4 +1,4 @@
-pragma experimental ABIEncoderV2;
+pragma abicoder               v2;
 
 contract C {
     function g(uint256[] calldata) external pure returns (bytes memory) {
@@ -15,6 +15,7 @@ contract C {
     }
 }
 // ====
+// compileViaYul: also
 // EVMVersion: >homestead
 // ----
 // f(uint256[][1]): 32, 32, 0 -> true

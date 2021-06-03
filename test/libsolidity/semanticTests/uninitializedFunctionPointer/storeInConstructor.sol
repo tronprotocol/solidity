@@ -14,6 +14,9 @@ contract InvalidTest {
     storedFn();
   }
 }
+// ====
+// compileViaYul: also
+// compileToEwasm: also
 // ----
 // f() -> FAILURE
 // f() -> FAILURE

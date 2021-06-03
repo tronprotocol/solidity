@@ -19,7 +19,7 @@ Solidity also supports exception handling in the form of ``try``/``catch``-state
 but only for :ref:`external function calls <external-function-calls>` and
 contract creation calls.
 
-Parentheses can *not* be omitted for conditionals, but curly brances can be omitted
+Parentheses can *not* be omitted for conditionals, but curly braces can be omitted
 around single-statement bodies.
 
 Note that there is no type conversion from non-boolean to boolean types as
@@ -105,8 +105,12 @@ otherwise, the ``value`` option would not be available.
   parentheses at the end perform the actual call. So in this case, the
   function is not called and the ``value`` and ``gas`` settings are lost.
 
-Function calls cause exceptions if the called contract does not exist (in the
-sense that the account does not contain code) or if the called contract itself
+Due to the fact that the EVM considers a call to a non-existing contract to
+always succeed, Solidity uses the ``extcodesize`` opcode to check that
+the contract that is about to be called actually exists (it contains code)
+and causes an exception if it does not.
+
+Function calls also cause exceptions if the called contract itself
 throws an exception or goes out of gas.
 
 .. warning::
@@ -188,7 +192,7 @@ is compiled so recursive creation-dependencies are not possible.
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >0.6.99 <0.8.0;
+    pragma solidity ^0.7.0;
 
     contract D {
         uint public x;
@@ -244,7 +248,7 @@ which only need to be created if there is a dispute.
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >0.6.99 <0.8.0;
+    pragma solidity ^0.7.0;
 
     contract D {
         uint public x;
@@ -517,7 +521,6 @@ An ``assert``-style exception is generated in the following situations:
 #. If you access an array or an array slice at a too large or negative index (i.e. ``x[i]`` where ``i >= x.length`` or ``i < 0``).
 #. If you access a fixed-length ``bytesN`` at a too large or negative index.
 #. If you divide or modulo by zero (e.g. ``5 / 0`` or ``23 % 0``).
-#. If you shift by a negative amount.
 #. If you convert a value too big or negative into an enum type.
 #. If you call a zero-initialized variable of internal function type.
 #. If you call ``assert`` with an argument that evaluates to false.
@@ -612,7 +615,13 @@ The following example shows how to use an error string together with ``revert`` 
         }
     }
 
-The two syntax options are equivalent, it's developer preference which to use.
+If you provide the reason string directly, then the two syntax options are equivalent, it is the developer's preference which one to use.
+
+.. note::
+    The ``require`` function is evaluated just as any other function.
+    This means that all arguments are evaluated before the function itself is executed.
+    In particular, in ``require(condition, f())`` the function ``f`` is executed even if
+    ``condition`` is true.
 
 The provided string is :ref:`abi-encoded <ABI>` as if it were a call to a function ``Error(string)``.
 In the above example, ``revert("Not enough Ether provided.");`` returns the following hexadecimal as error return data:

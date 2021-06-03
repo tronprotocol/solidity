@@ -1,4 +1,4 @@
-pragma experimental ABIEncoderV2;
+pragma abicoder               v2;
 
 contract C
 {
@@ -9,5 +9,6 @@ contract C
 }
 // ====
 // compileViaYul: also
+// compileToEwasm: also
 // ----
 // f() -> 2, 0x5c00000000000000000000000000000000000000000000000000000000000000, 0x5c00000000000000000000000000000000000000000000000000000000000000

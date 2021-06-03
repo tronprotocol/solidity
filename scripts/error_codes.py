@@ -12,8 +12,10 @@ SOURCE_FILE_PATTERN = r"\b\d+_error\b"
 
 def read_file(file_name):
     content = None
+    _, tail = path.split(file_name)
+    is_latin = tail == "invalid_utf8_sequence.sol"
     try:
-        with open(file_name, "r", encoding=ENCODING) as f:
+        with open(file_name, "r", encoding="latin-1" if is_latin else ENCODING) as f:
             content = f.read()
     finally:
         if content == None:
@@ -167,16 +169,17 @@ def print_ids_per_file(ids, id_to_file_names, top_dir):
         print()
 
 
-def examine_id_coverage(top_dir, source_id_to_file_names):
+def examine_id_coverage(top_dir, source_id_to_file_names, new_ids_only=False):
     test_sub_dirs = [
         path.join("test", "libsolidity", "errorRecoveryTests"),
         path.join("test", "libsolidity", "smtCheckerTests"),
-        path.join("test", "libsolidity", "syntaxTests")
+        path.join("test", "libsolidity", "syntaxTests"),
+        path.join("test", "libyul", "yulSyntaxTests")
     ]
     test_file_names = find_files(
         top_dir,
         test_sub_dirs,
-        [".sol"]
+        [".sol", ".yul"]
     )
     source_ids = source_id_to_file_names.keys()
     test_ids = find_ids_in_test_files(test_file_names)
@@ -185,6 +188,7 @@ def examine_id_coverage(top_dir, source_id_to_file_names):
     # Warning (1878): SPDX license identifier not provided in source file. ....
     # Warning (3420): Source file does not specify required compiler version!
     test_ids |= find_ids_in_cmdline_test_err(path.join(top_dir, "test", "cmdlineTests", "error_codes", "err"))
+    test_ids |= find_ids_in_cmdline_test_err(path.join(top_dir, "test", "cmdlineTests", "yul_unimplemented", "err"))
 
     # white list of ids which are not covered by tests
     white_ids = {
@@ -196,24 +200,49 @@ def examine_id_coverage(top_dir, source_id_to_file_names):
     assert len(test_ids & white_ids) == 0, "The sets are not supposed to intersect"
     test_ids |= white_ids
 
-    print(f"IDs in source files: {len(source_ids)}")
-    print(f"IDs in test files  : {len(test_ids)} ({len(test_ids) - len(source_ids)})")
-    print()
-
     test_only_ids = test_ids - source_ids
-    if len(test_only_ids) != 0:
-        print("Error. The following error codes found in tests, but not in sources:")
-        print_ids(test_only_ids)
-        return 1
-
     source_only_ids = source_ids - test_ids
-    if len(source_only_ids) != 0:
-        print("The following error codes found in sources, but not in tests:")
-        print_ids_per_file(source_only_ids, source_id_to_file_names, top_dir)
-        print("\n\nPlease make sure to add appropriate tests.")
-        return 1
 
-    return 0
+    if not new_ids_only:
+        print(f"IDs in source files: {len(source_ids)}")
+        print(f"IDs in test files  : {len(test_ids)} ({len(test_ids) - len(source_ids)})")
+        print()
+
+        if len(test_only_ids) != 0:
+            print("Error. The following error codes found in tests, but not in sources:")
+            print_ids(test_only_ids)
+            return False
+
+        if len(source_only_ids) != 0:
+            print("The following error codes found in sources, but not in tests:")
+            print_ids_per_file(source_only_ids, source_id_to_file_names, top_dir)
+            print("\n\nPlease make sure to add appropriate tests.")
+            return False
+
+    old_source_only_ids = {
+        "1123", "1220", "1584", "1823",
+        "1988", "2066", "2657", "2800", "3356",
+        "3893", "3996", "4010", "4802",
+        "5073", "5272", "5622", "7128",
+        "7589", "7593", "7653", "8065", "8084", "8140",
+        "8312", "8592", "9085", "9390"
+    }
+
+    new_source_only_ids = source_only_ids - old_source_only_ids
+    if len(new_source_only_ids) != 0:
+        print("The following new error code(s), not covered by tests, found:")
+        print_ids(new_source_only_ids)
+        print(
+            "\nYou can:\n"
+            "- create appropriate test(s);\n"
+            "- add the error code(s) to old_source_only_ids in error_codes.py\n"
+            "  (to silence the checking script, with a promise to add a test later);\n"
+            "- add the error code(s) to white_ids in error_codes.py\n"
+            "  (for rare cases when the error is not supposed to be tested)"
+        )
+        return False
+
+    return True
 
 
 def main(argv):
@@ -267,8 +296,10 @@ def main(argv):
         if not ok:
             print("Incorrect IDs have to be fixed before applying --examine-coverage")
             exit(1)
-        res = examine_id_coverage(cwd, source_id_to_file_names)
+        res = 0 if examine_id_coverage(cwd, source_id_to_file_names) else 1
         exit(res)
+
+    ok &= examine_id_coverage(cwd, source_id_to_file_names, new_ids_only=True)
 
     random.seed()
 

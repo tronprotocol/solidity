@@ -48,8 +48,13 @@ struct BuiltinFunction
 	ControlFlowSideEffects controlFlowSideEffects;
 	/// If true, this is the msize instruction.
 	bool isMSize = false;
-	/// If set, same length as the arguments, if true at index i, the i'th argument has to be a literal which means it can't be moved to variables.
-	std::optional<std::vector<bool>> literalArguments;
+	/// Must be empty or the same length as the arguments.
+	/// If set at index i, the i'th argument has to be a literal which means it can't be moved to variables.
+	std::vector<std::optional<LiteralKind>> literalArguments{};
+	std::optional<LiteralKind> literalArgument(size_t i) const
+	{
+		return literalArguments.empty() ? std::nullopt : literalArguments.at(i);
+	}
 };
 
 struct Dialect: boost::noncopyable
@@ -67,11 +72,17 @@ struct Dialect: boost::noncopyable
 	virtual BuiltinFunction const* equalityFunction(YulString /* _type */) const { return nullptr; }
 	virtual BuiltinFunction const* booleanNegationFunction() const { return nullptr; }
 
+	virtual BuiltinFunction const* memoryStoreFunction(YulString /* _type */) const { return nullptr; }
+	virtual BuiltinFunction const* memoryLoadFunction(YulString /* _type */) const { return nullptr; }
+	virtual BuiltinFunction const* storageStoreFunction(YulString /* _type */) const { return nullptr; }
+	virtual BuiltinFunction const* storageLoadFunction(YulString /* _type */) const { return nullptr; }
+
 	/// Check whether the given type is legal for the given literal value.
 	/// Should only be called if the type exists in the dialect at all.
 	virtual bool validTypeForLiteral(LiteralKind _kind, YulString _value, YulString _type) const;
 
 	virtual Literal zeroLiteralForType(YulString _type) const;
+	virtual Literal trueLiteral() const;
 
 	virtual std::set<YulString> fixedFunctionNames() const { return {}; }
 

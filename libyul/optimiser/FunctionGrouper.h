@@ -16,13 +16,13 @@
 */
 // SPDX-License-Identifier: GPL-3.0
 /**
- * Optimiser component that changes the code of a black so that all non-function definition
+ * Optimiser component that changes the code of a block so that all non-function definition
  * instructions are moved to a block of their own followed by all function definitions.
  */
 
 #pragma once
 
-#include <libyul/AsmDataForward.h>
+#include <libyul/ASTForward.h>
 
 namespace solidity::yul
 {

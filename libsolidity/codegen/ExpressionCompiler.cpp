@@ -33,6 +33,7 @@
 
 #include <libevmasm/GasMeter.h>
 #include <libsolutil/Common.h>
+#include <libsolutil/FunctionSelector.h>
 #include <libsolutil/Keccak256.h>
 #include <libsolutil/Whiskers.h>
 
@@ -130,7 +131,7 @@ void ExpressionCompiler::appendStateVariableAccessor(VariableDeclaration const& 
 				// stack: <keys..> <slot position>
 
 				// copy key[i] to top.
-				utils().copyToStackTop(paramTypes.size() - i + 1, 1);
+				utils().copyToStackTop(static_cast<unsigned>(paramTypes.size() - i + 1), 1);
 
 				m_context.appendInlineAssembly(R"({
 					let key_len := mload(key_ptr)
@@ -154,7 +155,7 @@ void ExpressionCompiler::appendStateVariableAccessor(VariableDeclaration const& 
 				utils().storeInMemory(32);
 
 				// move key to memory.
-				utils().copyToStackTop(paramTypes.size() - i, 1);
+				utils().copyToStackTop(static_cast<unsigned>(paramTypes.size() - i), 1);
 				utils().storeInMemory(0);
 				m_context << u256(64) << u256(0);
 				m_context << Instruction::KECCAK256;
@@ -168,8 +169,17 @@ void ExpressionCompiler::appendStateVariableAccessor(VariableDeclaration const& 
 		{
 			// pop offset
 			m_context << Instruction::POP;
-			utils().copyToStackTop(paramTypes.size() - i + 1, 1);
-			ArrayUtils(m_context).accessIndex(*arrayType);
+			utils().copyToStackTop(static_cast<unsigned>(paramTypes.size() - i + 1), 1);
+
+			ArrayUtils(m_context).retrieveLength(*arrayType, 1);
+			// Stack: ref [length] index length
+			// check out-of-bounds access
+			m_context << Instruction::DUP2 << Instruction::LT;
+			auto tag = m_context.appendConditionalJump();
+			m_context << u256(0) << Instruction::DUP1 << Instruction::REVERT;
+			m_context << tag;
+
+			ArrayUtils(m_context).accessIndex(*arrayType, false);
 			returnType = arrayType->baseType();
 		}
 		else
@@ -180,9 +190,9 @@ void ExpressionCompiler::appendStateVariableAccessor(VariableDeclaration const& 
 		m_context << Instruction::SWAP2 << Instruction::POP << Instruction::SWAP1;
 	else if (paramTypes.size() >= 2)
 	{
-		m_context << swapInstruction(paramTypes.size());
+		m_context << swapInstruction(static_cast<unsigned>(paramTypes.size()));
 		m_context << Instruction::POP;
-		m_context << swapInstruction(paramTypes.size());
+		m_context << swapInstruction(static_cast<unsigned>(paramTypes.size()));
 		utils().popStackSlots(paramTypes.size() - 1);
 	}
 	unsigned retSizeOnStack = 0;
@@ -492,8 +502,10 @@ bool ExpressionCompiler::visit(BinaryOperation const& _binaryOperation)
 
 bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 {
+	auto functionCallKind = *_functionCall.annotation().kind;
+
 	CompilerContext::LocationSetter locationSetter(m_context, _functionCall);
-	if (_functionCall.annotation().kind == FunctionCallKind::TypeConversion)
+	if (functionCallKind == FunctionCallKind::TypeConversion)
 	{
 		solAssert(_functionCall.arguments().size() == 1, "");
 		solAssert(_functionCall.names().empty(), "");
@@ -517,7 +529,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 	}
 
 	FunctionTypePointer functionType;
-	if (_functionCall.annotation().kind == FunctionCallKind::StructConstructorCall)
+	if (functionCallKind == FunctionCallKind::StructConstructorCall)
 	{
 		auto const& type = dynamic_cast<TypeType const&>(*_functionCall.expression().annotation().type);
 		auto const& structType = dynamic_cast<StructType const&>(*type.actualType());
@@ -527,28 +539,10 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 		functionType = dynamic_cast<FunctionType const*>(_functionCall.expression().annotation().type);
 
 	TypePointers parameterTypes = functionType->parameterTypes();
-	vector<ASTPointer<Expression const>> const& callArguments = _functionCall.arguments();
-	vector<ASTPointer<ASTString>> const& callArgumentNames = _functionCall.names();
-	if (!functionType->takesArbitraryParameters())
-		solAssert(callArguments.size() == parameterTypes.size(), "");
 
-	vector<ASTPointer<Expression const>> arguments;
-	if (callArgumentNames.empty())
-		// normal arguments
-		arguments = callArguments;
-	else
-		// named arguments
-		for (auto const& parameterName: functionType->parameterNames())
-		{
-			bool found = false;
-			for (size_t j = 0; j < callArgumentNames.size() && !found; j++)
-				if ((found = (parameterName == *callArgumentNames[j])))
-					// we found the actual parameter position
-					arguments.push_back(callArguments[j]);
-			solAssert(found, "");
-		}
+	vector<ASTPointer<Expression const>> const& arguments = _functionCall.sortedArguments();
 
-	if (_functionCall.annotation().kind == FunctionCallKind::StructConstructorCall)
+	if (functionCallKind == FunctionCallKind::StructConstructorCall)
 	{
 		TypeType const& type = dynamic_cast<TypeType const&>(*_functionCall.expression().annotation().type);
 		auto const& structType = dynamic_cast<StructType const&>(*type.actualType());
@@ -593,6 +587,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 						// Do not directly visit the identifier, because this way, we can avoid
 						// the runtime entry label to be created at the creation time context.
 						CompilerContext::LocationSetter locationSetter2(m_context, *identifier);
+						solAssert(*identifier->annotation().requiredLookup == VirtualLookup::Virtual, "");
 						utils().pushCombinedFunctionEntryLabel(
 							functionDef->resolveVirtual(m_context.mostDerivedContract()),
 							false
@@ -844,7 +839,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 				solAssert(function.parameterTypes().size() == 1, "");
 				if (m_context.revertStrings() == RevertStrings::Strip)
 				{
-					if (!arguments.front()->annotation().isPure)
+					if (!*arguments.front()->annotation().isPure)
 					{
 						arguments.front()->accept(*this);
 						utils().popStackElement(*arguments.front()->annotation().type);
@@ -913,7 +908,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 			unsigned numIndexed = 0;
 			TypePointers paramTypes = function.parameterTypes();
 			// All indexed arguments go to the stack
-			for (unsigned arg = arguments.size(); arg > 0; --arg)
+			for (size_t arg = arguments.size(); arg > 0; --arg)
 				if (event.parameters()[arg - 1]->isIndexed())
 				{
 					++numIndexed;
@@ -931,11 +926,26 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 					else
 					{
 						solAssert(paramTypes[arg - 1]->isValueType(), "");
-						utils().convertType(
-							*arguments[arg - 1]->annotation().type,
-							*paramTypes[arg - 1],
-							true
-						);
+						if (auto functionType =	dynamic_cast<FunctionType const*>(paramTypes[arg - 1]))
+						{
+							auto argumentType =
+								dynamic_cast<FunctionType const*>(arguments[arg-1]->annotation().type);
+							solAssert(
+								argumentType &&
+								functionType->kind() == FunctionType::Kind::External &&
+								argumentType->kind() == FunctionType::Kind::External &&
+								!argumentType->bound(),
+								""
+							);
+
+							utils().combineExternalFunctionType(true);
+						}
+						else
+							utils().convertType(
+								*arguments[arg - 1]->annotation().type,
+								*paramTypes[arg - 1],
+								true
+							);
 					}
 				}
 			if (!event.isAnonymous())
@@ -1155,7 +1165,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 				solAssert(function.kind() == FunctionType::Kind::Require, "");
 				if (m_context.revertStrings() == RevertStrings::Strip)
 				{
-					if (!arguments.at(1)->annotation().isPure)
+					if (!*arguments.at(1)->annotation().isPure)
 					{
 						arguments.at(1)->accept(*this);
 						utils().popStackElement(*arguments.at(1)->annotation().type);
@@ -1248,8 +1258,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 					// hash the signature
 					if (auto const* stringType = dynamic_cast<StringLiteralType const*>(selectorType))
 					{
-						FixedHash<4> hash(keccak256(stringType->value()));
-						m_context << (u256(FixedHash<4>::Arith(hash)) << (256 - 32));
+						m_context << util::selectorFromSignature(stringType->value());
 						dataOnStack = TypeProvider::fixedBytes(4);
 					}
 					else
@@ -1398,7 +1407,7 @@ bool ExpressionCompiler::visit(FunctionCallOptions const& _functionCallOptions)
 		solAssert(!contains(presentOptions, newOption), "");
 		ptrdiff_t insertPos = presentOptions.end() - lower_bound(presentOptions.begin(), presentOptions.end(), newOption);
 
-		utils().moveIntoStack(static_cast<size_t>(insertPos), 1);
+		utils().moveIntoStack(static_cast<unsigned>(insertPos), 1);
 		presentOptions.insert(presentOptions.end() - insertPos, newOption);
 	}
 
@@ -1423,6 +1432,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 			if (funType->kind() == FunctionType::Kind::Internal)
 			{
 				FunctionDefinition const& funDef = dynamic_cast<decltype(funDef)>(funType->declaration());
+				solAssert(*_memberAccess.annotation().requiredLookup == VirtualLookup::Static, "");
 				utils().pushCombinedFunctionEntryLabel(funDef);
 				utils().moveIntoStack(funType->selfType()->sizeOnStack(), 1);
 			}
@@ -1458,7 +1468,10 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 					// internal library function call, this would push the library address forcing
 					// us to link against it although we actually do not need it.
 					if (auto const* function = dynamic_cast<FunctionDefinition const*>(_memberAccess.annotation().referencedDeclaration))
+					{
+						solAssert(*_memberAccess.annotation().requiredLookup == VirtualLookup::Static, "");
 						utils().pushCombinedFunctionEntryLabel(*function);
+					}
 					else
 						solAssert(false, "Function not found in member access");
 					break;
@@ -1580,6 +1593,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 		if (type.isSuper())
 		{
 			solAssert(!!_memberAccess.annotation().referencedDeclaration, "Referenced declaration not resolved.");
+			solAssert(*_memberAccess.annotation().requiredLookup == VirtualLookup::Super, "");
 			utils().pushCombinedFunctionEntryLabel(m_context.superFunction(
 				dynamic_cast<FunctionDefinition const&>(*_memberAccess.annotation().referencedDeclaration),
 				type.contractDefinition()
@@ -1740,10 +1754,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 		{
 			TypePointer arg = dynamic_cast<MagicType const&>(*_memberAccess.expression().annotation().type).typeArgument();
 			ContractDefinition const& contract = dynamic_cast<ContractType const&>(*arg).contractDefinition();
-			uint64_t result{0};
-			for (auto const& function: contract.interfaceFunctionList(false))
-				result ^= fromBigEndian<uint64_t>(function.first.ref());
-			m_context << (u256{result} << (256 - 32));
+			m_context << (u256{contract.interfaceId()} << (256 - 32));
 		}
 		else if (member == "min" || member == "max")
 		{
@@ -1797,7 +1808,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 				{
 					solAssert(memberType->calldataEncodedSize() > 0, "");
 					solAssert(memberType->storageBytes() <= 32, "");
-					if (memberType->storageBytes() < 32 && m_context.experimentalFeatureActive(ExperimentalFeature::ABIEncoderV2))
+					if (memberType->storageBytes() < 32 && m_context.useABICoderV2())
 					{
 						m_context << u256(32);
 						CompilerUtils(m_context).abiDecodeV2({memberType}, false);
@@ -1877,10 +1888,30 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 	{
 		Type::Category category = _memberAccess.annotation().type->category();
 		solAssert(
+			dynamic_cast<VariableDeclaration const*>(_memberAccess.annotation().referencedDeclaration) ||
+			dynamic_cast<FunctionDefinition const*>(_memberAccess.annotation().referencedDeclaration) ||
 			category == Type::Category::TypeType ||
 			category == Type::Category::Module,
 			""
 		);
+		if (auto variable = dynamic_cast<VariableDeclaration const*>(_memberAccess.annotation().referencedDeclaration))
+		{
+			solAssert(variable->isConstant(), "");
+			appendVariable(*variable, static_cast<Expression const&>(_memberAccess));
+		}
+		else if (auto const* function = dynamic_cast<FunctionDefinition const*>(_memberAccess.annotation().referencedDeclaration))
+		{
+			auto funType = dynamic_cast<FunctionType const*>(_memberAccess.annotation().type);
+			solAssert(function && function->isFree(), "");
+			solAssert(funType->kind() == FunctionType::Kind::Internal, "");
+			solAssert(*_memberAccess.annotation().requiredLookup == VirtualLookup::Static, "");
+			utils().pushCombinedFunctionEntryLabel(*function);
+		}
+		else if (auto const* contract = dynamic_cast<ContractDefinition const*>(_memberAccess.annotation().referencedDeclaration))
+		{
+			if (contract->isLibrary())
+				m_context.appendLibraryAddress(contract->fullyQualifiedName());
+		}
 		break;
 	}
 	default:
@@ -2070,11 +2101,14 @@ void ExpressionCompiler::endVisit(Identifier const& _identifier)
 		}
 	}
 	else if (FunctionDefinition const* functionDef = dynamic_cast<FunctionDefinition const*>(declaration))
+	{
 		// If the identifier is called right away, this code is executed in visit(FunctionCall...), because
 		// we want to avoid having a reference to the runtime function entry point in the
 		// constructor context, since this would force the compiler to include unreferenced
 		// internal functions in the runtime context.
+		solAssert(*_identifier.annotation().requiredLookup == VirtualLookup::Virtual, "");
 		utils().pushCombinedFunctionEntryLabel(functionDef->resolveVirtual(m_context.mostDerivedContract()));
+	}
 	else if (auto variable = dynamic_cast<VariableDeclaration const*>(declaration))
 		appendVariable(*variable, static_cast<Expression const&>(_identifier));
 	else if (auto contract = dynamic_cast<ContractDefinition const*>(declaration))
@@ -2628,7 +2662,7 @@ void ExpressionCompiler::appendExternalFunctionCall(
 		// memory pointer), but kept references to the return data for
 		// (statically-sized) arrays
 		bool needToUpdateFreeMemoryPtr = false;
-		if (dynamicReturnSize || m_context.experimentalFeatureActive(ExperimentalFeature::ABIEncoderV2))
+		if (dynamicReturnSize || m_context.useABICoderV2())
 			needToUpdateFreeMemoryPtr = true;
 		else
 			for (auto const& retType: returnTypes)
