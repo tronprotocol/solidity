@@ -236,8 +236,8 @@ BOOST_AUTO_TEST_CASE(int_with_gwei_ether_subdenomination)
 {
 	char const* sourceCode = R"(
 		contract test {
-			function test () {
-				 uint x = 100 sun;
+			function f() public {
+				uint x = 100 sun;
 			}
 		}
 	)";
