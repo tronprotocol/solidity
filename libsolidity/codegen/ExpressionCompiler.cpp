@@ -912,6 +912,9 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
         case FunctionType::Kind::verifyTransferProof:
         case FunctionType::Kind::verifyMintProof:
         case FunctionType::Kind::pedersenHash:
+        case FunctionType::Kind::rewardBalance:
+        case FunctionType::Kind::isSrCandidate:
+        case FunctionType::Kind::voteCount:
 		{
 			_functionCall.expression().accept(*this);
 			static map<FunctionType::Kind, u256> const contractAddresses{
@@ -923,7 +926,10 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
                 {FunctionType::Kind::verifyMintProof, 16777217},
                 {FunctionType::Kind::verifyTransferProof, 16777218},
                 {FunctionType::Kind::verifyBurnProof, 16777219},
-                {FunctionType::Kind::pedersenHash, 16777220}
+                {FunctionType::Kind::pedersenHash, 16777220},
+                {FunctionType::Kind::rewardBalance, 16777221},
+                {FunctionType::Kind::isSrCandidate, 16777222},
+                {FunctionType::Kind::voteCount, 16777223}
 			};
 			m_context << contractAddresses.at(function.kind());
 			for (unsigned i = function.sizeOnStack(); i > 0; --i)
@@ -1319,6 +1325,9 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
                 case FunctionType::Kind::verifyTransferProof:
                 case FunctionType::Kind::verifyMintProof:
                 case FunctionType::Kind::pedersenHash:
+                case FunctionType::Kind::rewardBalance:
+                case FunctionType::Kind::isSrCandidate:
+                case FunctionType::Kind::voteCount:
 				case FunctionType::Kind::SHA256:
 				case FunctionType::Kind::RIPEMD160:
 				default:

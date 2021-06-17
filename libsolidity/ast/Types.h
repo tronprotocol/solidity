@@ -1013,6 +1013,9 @@ public:
         Freeze,//< CALL to freeze balance
 		Unfreeze,//< CALL to unfreeze balance
         FreezeExpireTime,// < CALL to freeze expire time
+        rewardBalance, ///< get reward balance
+        isSrCandidate, ///< Judge witness whether or not
+        voteCount, ///< get vote count
 		Log0,
 		Log1,
 		Log2,

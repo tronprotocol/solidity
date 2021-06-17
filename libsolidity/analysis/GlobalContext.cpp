@@ -89,6 +89,9 @@ namespace dev
             addVerifyBurnProofMethod();
             addVerifyTransferProofMethod();
             addPedersenHashMethod();
+            addRewardBalanceMethod();
+            addIsSRCandidateMethod();
+            addVoteCountMethod();
         }
 
         void GlobalContext::addVerifyMintProofMethod() {
@@ -339,6 +342,90 @@ namespace dev
                     false)
             ));
         }
+
+        void GlobalContext::addRewardBalanceMethod() {
+            // uint rewardBalance(address)
+            TypePointers parameterTypes;
+            parameterTypes.push_back(TypeProvider::address());
+
+            TypePointers returnParameterTypes;
+            returnParameterTypes.push_back(TypeProvider::uint256());
+            strings parameterNames;
+            parameterNames.push_back("address");
+            strings returnParameterNames;
+            returnParameterNames.push_back("result");
+
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("rewardBalance", TypeProvider::function(
+                    parameterTypes,
+                    returnParameterTypes,
+                    parameterNames,
+                    returnParameterNames,
+                    FunctionType::Kind::rewardBalance,
+                    false,
+                    StateMutability::View,
+                    nullptr,
+                    false,
+                    false,
+                    false,
+                    false)
+            ));
+        }
+
+        void GlobalContext::addIsSRCandidateMethod() {
+            // bool isSrCandidate(address)
+            TypePointers parameterTypes;
+            parameterTypes.push_back(TypeProvider::address());
+
+            TypePointers returnParameterTypes;
+            returnParameterTypes.push_back(TypeProvider::boolean());
+            strings parameterNames;
+            parameterNames.push_back("address");
+            strings returnParameterNames;
+            returnParameterNames.push_back("ok");
+
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("isSrCandidate", TypeProvider::function(
+                parameterTypes,
+                returnParameterTypes,
+                parameterNames,
+                returnParameterNames,
+                FunctionType::Kind::isSrCandidate,
+                false,
+                StateMutability::View,
+                nullptr,
+                false,
+                false,
+                false,
+                false)
+            ));
+        }
+
+    void GlobalContext::addVoteCountMethod() {
+        // uint voteCount(address)
+        TypePointers parameterTypes;
+        parameterTypes.push_back(TypeProvider::address());
+
+        TypePointers returnParameterTypes;
+        returnParameterTypes.push_back(TypeProvider::uint256());
+        strings parameterNames;
+        parameterNames.push_back("address");
+        strings returnParameterNames;
+        returnParameterNames.push_back("result");
+
+        m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("voteCount", TypeProvider::function(
+            parameterTypes,
+            returnParameterTypes,
+            parameterNames,
+            returnParameterNames,
+            FunctionType::Kind::voteCount,
+            false,
+            StateMutability::View,
+            nullptr,
+            false,
+            false,
+            false,
+            false)
+        ));
+    }
 
         void GlobalContext::setCurrentContract(ContractDefinition const& _contract)
         {
