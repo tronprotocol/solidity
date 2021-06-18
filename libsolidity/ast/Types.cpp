@@ -480,6 +480,7 @@ MemberList::MemberMap AddressType::nativeMembers(ContractDefinition const*) cons
 		members.emplace_back(MemberList::Member{"transferToken", TypeProvider::function(strings{"uint", "trcToken"}, strings(), FunctionType::Kind::TransferToken)});
         members.emplace_back(MemberList::Member{"freeze", TypeProvider::function(strings{"uint", "uint"}, strings(), FunctionType::Kind::Freeze, false, StateMutability::NonPayable)});
         members.emplace_back(MemberList::Member{"unfreeze", TypeProvider::function(strings{"uint"}, strings(), FunctionType::Kind::Unfreeze, false, StateMutability::NonPayable)});
+		members.emplace_back(MemberList::Member{"withdrawreward", TypeProvider::function(strings{}, strings{"uint"}, FunctionType::Kind::WithdrawReward, false, StateMutability::NonPayable)});
     }
 	return members;
 }
@@ -2751,6 +2752,8 @@ string FunctionType::richIdentifier() const
     	case Kind::Freeze: id += "freeze"; break;
     	case Kind::Unfreeze: id += "unfreeze"; break;
         case Kind::FreezeExpireTime: id += "freezeExpireTime"; break;
+        case Kind::vote: id += "vote"; break;
+	    case Kind::WithdrawReward: id += "withdrawreward"; break;
         case Kind::rewardBalance: id += "rewardBalance"; break;
         case Kind::isSrCandidate: id += "isSrCandidate"; break;
         case Kind::voteCount: id += "voteCount"; break;
@@ -3160,6 +3163,9 @@ bool FunctionType::isBareCall() const
 	case Kind::verifyTransferProof:
 	case Kind::verifyMintProof:
 	case Kind::pedersenHash:
+    case Kind::rewardBalance:
+    case Kind::isSrCandidate:
+    case Kind::voteCount:
 	case Kind::SHA256:
 	case Kind::RIPEMD160:
 		return true;

@@ -423,6 +423,8 @@ u256 EVMInstructionInterpreter::eval(
     case Instruction::NATIVEFREEZE:
     case Instruction::NATIVEUNFREEZE:
     case Instruction::NATIVEFREEZEEXPIRETIME:
+    case Instruction::NATIVEVOTE:
+    case Instruction::NATIVEWITHDRAWREWARD:
 	{
 		yulAssert(false, "");
 		return 0;

@@ -70,7 +70,8 @@ namespace dev
                     magicVarDecl("freeze", TypeProvider::function(strings{"uint", "uint"}, strings{"bool"}, FunctionType::Kind::Freeze, false, StateMutability::NonPayable)),
                     magicVarDecl("unfreeze", TypeProvider::function(strings{"uint"}, strings{"bool"}, FunctionType::Kind::Unfreeze, false, StateMutability::NonPayable)),
                     magicVarDecl("freezeExpireTime", TypeProvider::function(strings{"uint"}, strings{"uint"}, FunctionType::Kind::FreezeExpireTime, false, StateMutability::NonPayable)),
-                    magicVarDecl("tx", TypeProvider::magic(MagicType::Kind::Transaction)),
+                    magicVarDecl("withdrawreward", TypeProvider::function(strings{}, strings{"uint"}, FunctionType::Kind::WithdrawReward)),
+	                magicVarDecl("tx", TypeProvider::magic(MagicType::Kind::Transaction)),
                     magicVarDecl("type", TypeProvider::function(
                             strings{"address"} /* accepts any contract type, handled by the type checker */,
                             strings{} /* returns a MagicType, handled by the type checker */,
@@ -89,6 +90,7 @@ namespace dev
             addVerifyBurnProofMethod();
             addVerifyTransferProofMethod();
             addPedersenHashMethod();
+            addVoteMethod();
             addRewardBalanceMethod();
             addIsSRCandidateMethod();
             addVoteCountMethod();
@@ -343,15 +345,43 @@ namespace dev
             ));
         }
 
-        void GlobalContext::addRewardBalanceMethod() {
-            // uint rewardBalance(address)
+        void GlobalContext::addVoteMethod() {
+            // bool vote(address[] memory addresses, unit256[] tronpowerlist)
             TypePointers parameterTypes;
-            parameterTypes.push_back(TypeProvider::address());
 
+            parameterTypes.push_back(TypeProvider::array(DataLocation::Memory, TypeProvider::address()));
+            parameterTypes.push_back(TypeProvider::array(DataLocation::Memory, TypeProvider::uint256()));
+
+            TypePointers returnParameterTypes;
+            returnParameterTypes.push_back(TypeProvider::boolean());
+            strings parameterNames;
+            parameterNames.push_back("srList");
+            parameterNames.push_back("tronpowerList");
+            strings returnParameterNames;
+            returnParameterNames.push_back("ok");
+
+            m_magicVariables.push_back(make_shared<MagicVariableDeclaration>("vote", TypeProvider::function(
+                    parameterTypes,
+                    returnParameterTypes,
+                    parameterNames,
+                    returnParameterNames,
+                    FunctionType::Kind::vote,
+                    false,
+                    StateMutability::Payable,
+                    nullptr,
+                    false,
+                    false,
+                    false,
+                    false)
+            ));
+        }
+
+        void GlobalContext::addRewardBalanceMethod() {
+            // uint rewardBalance()
+            TypePointers parameterTypes;
             TypePointers returnParameterTypes;
             returnParameterTypes.push_back(TypeProvider::uint256());
             strings parameterNames;
-            parameterNames.push_back("address");
             strings returnParameterNames;
             returnParameterNames.push_back("result");
 
@@ -400,13 +430,15 @@ namespace dev
         }
 
     void GlobalContext::addVoteCountMethod() {
-        // uint voteCount(address)
+        // uint voteCount(address, address)
         TypePointers parameterTypes;
+        parameterTypes.push_back(TypeProvider::address());
         parameterTypes.push_back(TypeProvider::address());
 
         TypePointers returnParameterTypes;
         returnParameterTypes.push_back(TypeProvider::uint256());
         strings parameterNames;
+        parameterNames.push_back("address");
         parameterNames.push_back("address");
         strings returnParameterNames;
         returnParameterNames.push_back("result");

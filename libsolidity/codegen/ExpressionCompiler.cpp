@@ -927,9 +927,9 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
                 {FunctionType::Kind::verifyTransferProof, 16777218},
                 {FunctionType::Kind::verifyBurnProof, 16777219},
                 {FunctionType::Kind::pedersenHash, 16777220},
-                {FunctionType::Kind::rewardBalance, 16777221},
-                {FunctionType::Kind::isSrCandidate, 16777222},
-                {FunctionType::Kind::voteCount, 16777223}
+                {FunctionType::Kind::rewardBalance, 2097153},
+                {FunctionType::Kind::isSrCandidate, 2097154},
+                {FunctionType::Kind::voteCount, 2097155}
 			};
 			m_context << contractAddresses.at(function.kind());
 			for (unsigned i = function.sizeOnStack(); i > 0; --i)
@@ -1232,6 +1232,38 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
             m_context << Instruction::NATIVEFREEZEEXPIRETIME;
             break;
         }
+        case FunctionType::Kind::vote:
+         {
+             solAssert(arguments.size() == 2, "");
+             //solAssert(!function.padArguments(), "");
+             // Optimization: If type is bytes or string, then do not encode,
+             // but directly compute vote on memory.
+             _functionCall.expression().accept(*this);
+             for(unsigned i = 0; i < arguments.size(); ++i) {
+                 TypePointer const& argType = arguments[i]->annotation().type;
+                 solAssert(argType, "");
+                 arguments[i]->accept(*this);
+                 if (*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::address())) {
+                     ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::address()));
+                     m_context << Instruction::SWAP1 << u256(0x20*30) << Instruction::ADD;
+                 } else if(*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::uint256())){
+                     ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::uint256()));
+                     m_context << Instruction::SWAP1 << u256(0x20*30) << Instruction::ADD;
+                 }
+             }
+             m_context << Instruction::NATIVEVOTE;
+             break;
+         }
+        case FunctionType::Kind::WithdrawReward:
+		{
+			_functionCall.expression().accept(*this);
+			for (unsigned i = arguments.size(); i > 0; --i)
+			{
+				acceptAndConvert(*arguments[i - 1], *function.parameterTypes()[i - 1]);
+			}
+			m_context << Instruction::NATIVEWITHDRAWREWARD;
+			break;
+		}
 		default:
 		    solAssert(false, "unsupported member function of Kind");
         }
@@ -1462,7 +1494,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 			                    AddressType(StateMutability::Payable),
 			                    true);
 		}
-		else if ((set<string>{"freeze", "unfreeze"}).count(member))
+		else if ((set<string>{"freeze", "unfreeze", "withdrawreward"}).count(member))
 		{
             solAssert(dynamic_cast<AddressType const&>(*_memberAccess.expression().annotation().type).stateMutability() == StateMutability::Payable, "");
             utils().convertType(
@@ -2188,6 +2220,9 @@ void ExpressionCompiler::appendExternalFunctionCall(
 	|| _functionType.kind() == FunctionType::Kind::verifyTransferProof
 	|| _functionType.kind() == FunctionType::Kind::verifyMintProof
 	|| _functionType.kind() == FunctionType::Kind::pedersenHash
+	|| _functionType.kind() == FunctionType::Kind::rewardBalance
+	|| _functionType.kind() == FunctionType::Kind::isSrCandidate
+	|| _functionType.kind() == FunctionType::Kind::voteCount
 	)
 		// This would be the only combination of padding and in-place encoding,
 		// but all parameters of ecrecover are value types anyway.

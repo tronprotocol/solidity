@@ -64,6 +64,7 @@ private:
     void addVerifyTransferProofMethod();
     void addVerifyMintProofMethod();
     void addPedersenHashMethod();
+    void addVoteMethod();
 	void addRewardBalanceMethod();
 	void addIsSRCandidateMethod();
 	void addVoteCountMethod();
