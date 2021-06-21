@@ -927,9 +927,9 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
                 {FunctionType::Kind::verifyTransferProof, 16777218},
                 {FunctionType::Kind::verifyBurnProof, 16777219},
                 {FunctionType::Kind::pedersenHash, 16777220},
-                {FunctionType::Kind::rewardBalance, 2097153},
-                {FunctionType::Kind::isSrCandidate, 2097154},
-                {FunctionType::Kind::voteCount, 2097155}
+                {FunctionType::Kind::rewardBalance, 33554433},
+                {FunctionType::Kind::isSrCandidate, 33554434},
+                {FunctionType::Kind::voteCount, 33554435}
 			};
 			m_context << contractAddresses.at(function.kind());
 			for (unsigned i = function.sizeOnStack(); i > 0; --i)
