@@ -1245,10 +1245,8 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
                  arguments[i]->accept(*this);
                  if (*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::address())) {
                      ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::address()));
-                     m_context << Instruction::SWAP1 << u256(0x20*30) << Instruction::ADD;
                  } else if(*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::uint256())){
                      ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::uint256()));
-                     m_context << Instruction::SWAP1 << u256(0x20*30) << Instruction::ADD;
                  }
              }
              m_context << Instruction::NATIVEVOTE;
