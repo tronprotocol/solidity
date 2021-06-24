@@ -367,7 +367,7 @@ namespace dev
                     returnParameterNames,
                     FunctionType::Kind::vote,
                     false,
-                    StateMutability::Payable,
+                    StateMutability::NonPayable,
                     nullptr,
                     false,
                     false,

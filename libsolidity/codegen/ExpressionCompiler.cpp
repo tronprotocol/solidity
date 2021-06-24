@@ -1250,6 +1250,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
                  }
              }
              m_context << Instruction::NATIVEVOTE;
+             m_context.appendConditionalRevert(true);
              break;
          }
         case FunctionType::Kind::WithdrawReward:
@@ -1260,6 +1261,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 				acceptAndConvert(*arguments[i - 1], *function.parameterTypes()[i - 1]);
 			}
 			m_context << Instruction::NATIVEWITHDRAWREWARD;
+            m_context.appendConditionalRevert(true);
 			break;
 		}
 		default:
