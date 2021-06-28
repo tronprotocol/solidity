@@ -1494,7 +1494,7 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 			                    AddressType(StateMutability::Payable),
 			                    true);
 		}
-		else if ((set<string>{"freeze", "unfreeze", "withdrawreward"}).count(member))
+		else if ((set<string>{"freeze", "unfreeze"}).count(member))
 		{
             solAssert(dynamic_cast<AddressType const&>(*_memberAccess.expression().annotation().type).stateMutability() == StateMutability::Payable, "");
             utils().convertType(
