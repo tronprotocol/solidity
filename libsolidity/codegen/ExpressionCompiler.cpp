@@ -1242,6 +1242,10 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
              for(unsigned i = 0; i < arguments.size(); ++i) {
                  TypePointer const& argType = arguments[i]->annotation().type;
                  solAssert(argType, "");
+                 if (*argType == *TypeProvider::array(DataLocation::CallData, TypeProvider::address()) ||
+                     *argType == *TypeProvider::array(DataLocation::CallData, TypeProvider::uint256())) {
+                     solAssert(false, "Data location must be 'memory' for parameter in 'vote' function");
+                 }
                  arguments[i]->accept(*this);
                  if (*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::address())) {
                      ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::address()));
