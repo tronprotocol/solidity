@@ -22,7 +22,7 @@
 #include <libyul/optimiser/Semantics.h>
 
 #include <libyul/Exceptions.h>
-#include <libyul/AsmData.h>
+#include <libyul/AST.h>
 #include <libyul/Dialect.h>
 #include <libyul/backends/evm/EVMDialect.h>
 
@@ -55,6 +55,16 @@ SideEffectsCollector::SideEffectsCollector(Dialect const& _dialect, Statement co
 SideEffectsCollector::SideEffectsCollector(
 	Dialect const& _dialect,
 	Block const& _ast,
+	map<YulString, SideEffects> const* _functionSideEffects
+):
+	SideEffectsCollector(_dialect, _functionSideEffects)
+{
+	operator()(_ast);
+}
+
+SideEffectsCollector::SideEffectsCollector(
+	Dialect const& _dialect,
+	ForLoop const& _ast,
 	map<YulString, SideEffects> const* _functionSideEffects
 ):
 	SideEffectsCollector(_dialect, _functionSideEffects)
@@ -106,8 +116,9 @@ map<YulString, SideEffects> SideEffectsPropagator::sideEffects(
 	for (auto const& function: _directCallGraph.functionsWithLoops + _directCallGraph.recursiveFunctions())
 	{
 		ret[function].movable = false;
-		ret[function].sideEffectFree = false;
-		ret[function].sideEffectFreeIfNoMSize = false;
+		ret[function].canBeRemoved = false;
+		ret[function].canBeRemovedIfNoMSize = false;
+		ret[function].cannotLoop = false;
 	}
 
 	for (auto const& call: _directCallGraph.functionCalls)

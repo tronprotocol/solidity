@@ -8,7 +8,8 @@ contract B is A {
     uint public y = f();
 }
 // ====
-// compileViaYul: true
+// compileViaYul: also
+// compileToEwasm: also
 // ----
 // constructor() ->
 // y() -> 42

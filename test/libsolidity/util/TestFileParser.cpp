@@ -34,11 +34,11 @@
 #include <stdexcept>
 
 using namespace solidity;
-using namespace solidity::langutil;
 using namespace solidity::frontend;
 using namespace solidity::frontend::test;
 using namespace std;
-using namespace soltest;
+
+using Token = soltest::Token;
 
 char TestFileParser::Scanner::peek() const noexcept
 {
@@ -82,12 +82,31 @@ vector<solidity::frontend::test::FunctionCall> TestFileParser::parseFunctionCall
 						expect(Token::Colon);
 						call.signature = m_scanner.currentLiteral();
 						expect(Token::Identifier);
-						call.isLibrary = true;
+						call.kind = FunctionCall::Kind::Library;
 						call.expectations.failure = false;
+					}
+					else if (accept(Token::Storage, true))
+					{
+						expect(Token::Colon);
+						call.expectations.failure = false;
+						call.expectations.result.push_back(Parameter());
+						// empty / non-empty is encoded as false / true
+						if (m_scanner.currentLiteral() == "empty")
+							call.expectations.result.back().rawBytes = bytes(1, uint8_t(false));
+						else if (m_scanner.currentLiteral() == "nonempty")
+							call.expectations.result.back().rawBytes = bytes(1, uint8_t(true));
+						else
+							throw TestParserError("Expected \"empty\" or \"nonempty\".");
+						call.kind = FunctionCall::Kind::Storage;
+						m_scanner.scanNextToken();
 					}
 					else
 					{
-						tie(call.signature, call.useCallWithoutSignature) = parseFunctionSignature();
+						bool lowLevelCall = false;
+						tie(call.signature, lowLevelCall) = parseFunctionSignature();
+						if (lowLevelCall)
+							call.kind = FunctionCall::Kind::LowLevel;
+
 						if (accept(Token::Comma, true))
 							call.value = parseFunctionCallValue();
 
@@ -124,8 +143,7 @@ vector<solidity::frontend::test::FunctionCall> TestFileParser::parseFunctionCall
 						call.expectations.comment = parseComment();
 
 						if (call.signature == "constructor()")
-							call.isConstructor = true;
-
+							call.kind = FunctionCall::Kind::Constructor;
 					}
 
 					calls.emplace_back(std::move(call));
@@ -140,7 +158,7 @@ vector<solidity::frontend::test::FunctionCall> TestFileParser::parseFunctionCall
 	return calls;
 }
 
-bool TestFileParser::accept(soltest::Token _token, bool const _expect)
+bool TestFileParser::accept(Token _token, bool const _expect)
 {
 	if (m_scanner.currentToken() != _token)
 		return false;
@@ -149,7 +167,7 @@ bool TestFileParser::accept(soltest::Token _token, bool const _expect)
 	return true;
 }
 
-bool TestFileParser::expect(soltest::Token _token, bool const _advance)
+bool TestFileParser::expect(Token _token, bool const _advance)
 {
 	if (m_scanner.currentToken() != _token || m_scanner.currentToken() == Token::Invalid)
 		throw TestParserError(
@@ -466,30 +484,31 @@ void TestFileParser::Scanner::readStream(istream& _stream)
 
 void TestFileParser::Scanner::scanNextToken()
 {
-	using namespace langutil;
-
 	// Make code coverage happy.
 	assert(formatToken(Token::NUM_TOKENS) == "");
 
-	auto detectKeyword = [](std::string const& _literal = "") -> TokenDesc {
-		if (_literal == "true") return TokenDesc{Token::Boolean, _literal};
-		if (_literal == "false") return TokenDesc{Token::Boolean, _literal};
-		if (_literal == "ether") return TokenDesc{Token::Ether, _literal};
-		if (_literal == "wei") return TokenDesc{Token::Wei, _literal};
-		if (_literal == "left") return TokenDesc{Token::Left, _literal};
-		if (_literal == "library") return TokenDesc{Token::Library, _literal};
-		if (_literal == "right") return TokenDesc{Token::Right, _literal};
-		if (_literal == "hex") return TokenDesc{Token::Hex, _literal};
-		if (_literal == "FAILURE") return TokenDesc{Token::Failure, _literal};
-		return TokenDesc{Token::Identifier, _literal};
+	auto detectKeyword = [](std::string const& _literal = "") -> std::pair<Token, std::string> {
+		if (_literal == "true") return {Token::Boolean, "true"};
+		if (_literal == "false") return {Token::Boolean, "false"};
+		if (_literal == "ether") return {Token::Ether, ""};
+		if (_literal == "wei") return {Token::Wei, ""};
+		if (_literal == "left") return {Token::Left, ""};
+		if (_literal == "library") return {Token::Library, ""};
+		if (_literal == "right") return {Token::Right, ""};
+		if (_literal == "hex") return {Token::Hex, ""};
+		if (_literal == "FAILURE") return {Token::Failure, ""};
+		if (_literal == "storage") return {Token::Storage, ""};
+		return {Token::Identifier, _literal};
 	};
 
-	auto selectToken = [this](Token _token, std::string const& _literal = "") -> TokenDesc {
+	auto selectToken = [this](Token _token, std::string const& _literal = "") {
 		advance();
-		return make_pair(_token, !_literal.empty() ? _literal : formatToken(_token));
+		m_currentToken = _token;
+		m_currentLiteral = _literal;
 	};
 
-	TokenDesc token = make_pair(Token::Unknown, "");
+	m_currentToken = Token::Unknown;
+	m_currentLiteral = "";
 	do
 	{
 		switch(current())
@@ -497,71 +516,73 @@ void TestFileParser::Scanner::scanNextToken()
 		case '/':
 			advance();
 			if (current() == '/')
-				token = selectToken(Token::Newline);
+				selectToken(Token::Newline);
 			else
-				token = selectToken(Token::Invalid);
+				selectToken(Token::Invalid);
 			break;
 		case '-':
 			if (peek() == '>')
 			{
 				advance();
-				token = selectToken(Token::Arrow);
+				selectToken(Token::Arrow);
 			}
 			else
-				token = selectToken(Token::Sub);
+				selectToken(Token::Sub);
 			break;
 		case ':':
-			token = selectToken(Token::Colon);
+			selectToken(Token::Colon);
 			break;
 		case '#':
-			token = selectToken(Token::Comment, scanComment());
+			selectToken(Token::Comment, scanComment());
 			break;
 		case ',':
-			token = selectToken(Token::Comma);
+			selectToken(Token::Comma);
 			break;
 		case '(':
-			token = selectToken(Token::LParen);
+			selectToken(Token::LParen);
 			break;
 		case ')':
-			token = selectToken(Token::RParen);
+			selectToken(Token::RParen);
 			break;
 		case '[':
-			token = selectToken(Token::LBrack);
+			selectToken(Token::LBrack);
 			break;
 		case ']':
-			token = selectToken(Token::RBrack);
+			selectToken(Token::RBrack);
 			break;
 		case '\"':
-			token = selectToken(Token::String, scanString());
+			selectToken(Token::String, scanString());
 			break;
 		default:
-			if (isIdentifierStart(current()))
+			if (langutil::isIdentifierStart(current()))
 			{
-				TokenDesc detectedToken = detectKeyword(scanIdentifierOrKeyword());
-				token = selectToken(detectedToken.first, detectedToken.second);
+				std::tie(m_currentToken, m_currentLiteral) = detectKeyword(scanIdentifierOrKeyword());
+				advance();
 			}
-			else if (isDecimalDigit(current()))
+			else if (langutil::isDecimalDigit(current()))
 			{
 				if (current() == '0' && peek() == 'x')
 				{
 					advance();
 					advance();
-					token = selectToken(Token::HexNumber, "0x" + scanHexNumber());
+					selectToken(Token::HexNumber, "0x" + scanHexNumber());
 				}
 				else
-					token = selectToken(Token::Number, scanDecimalNumber());
+					selectToken(Token::Number, scanDecimalNumber());
 			}
-			else if (isWhiteSpace(current()))
-				token = selectToken(Token::Whitespace);
+			else if (langutil::isWhiteSpace(current()))
+				selectToken(Token::Whitespace);
 			else if (isEndOfLine())
-				token = make_pair(Token::EOS, "EOS");
+			{
+				m_currentToken = Token::EOS;
+				m_currentLiteral = "";
+			}
 			else
 				throw TestParserError("Unexpected character: '" + string{current()} + "'");
 			break;
 		}
 	}
-	while (token.first == Token::Whitespace);
-	m_currentToken = token;
+	while (m_currentToken == Token::Whitespace);
 }
 
 string TestFileParser::Scanner::scanComment()
@@ -661,11 +682,12 @@ string TestFileParser::Scanner::scanString()
 	return str;
 }
 
+// TODO: use fromHex() from CommonData
 char TestFileParser::Scanner::scanHexPart()
 {
 	advance(); // skip 'x'
 
-	char value{};
+	int value{};
 	if (isdigit(current()))
 		value = current() - '0';
 	else if (tolower(current()) >= 'a' && tolower(current()) <= 'f')
@@ -675,7 +697,7 @@ char TestFileParser::Scanner::scanHexPart()
 
 	advance();
 	if (current() == '"')
-		return value;
+		return static_cast<char>(value);
 
 	value <<= 4;
 	if (isdigit(current()))
@@ -685,5 +707,5 @@ char TestFileParser::Scanner::scanHexPart()
 
 	advance();
 
-	return value;
+	return static_cast<char>(value);
 }

@@ -38,7 +38,7 @@ struct Object;
  *
  * Builtin functions are a subset of the wasm instructions.
  *
- * There is a builtin function `i32.drop` that takes an i32, while `drop` takes i64.
+ * There is a builtin function `i32.drop` that takes an i32, while `i64.drop` takes i64.
  *
  */
 struct WasmDialect: public Dialect
@@ -62,7 +62,7 @@ private:
 		std::vector<YulString> _params,
 		std::vector<YulString> _returns,
 		bool _movable = true,
-		std::vector<bool> _literalArguments = std::vector<bool>{}
+		std::vector<std::optional<LiteralKind>> _literalArguments = std::vector<std::optional<LiteralKind>>{}
 	);
 
 	std::map<YulString, BuiltinFunction> m_functions;

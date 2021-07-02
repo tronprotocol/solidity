@@ -51,9 +51,11 @@ AnalysisFramework::parseAnalyseAndReturnError(
 )
 {
 	compiler().reset();
+	// Do not insert license if it is already present.
+	bool insertLicense = _insertLicenseAndVersionPragma && _source.find("// SPDX-License-Identifier:") == string::npos;
 	compiler().setSources({{"",
-		_insertLicenseAndVersionPragma ?
-		"pragma solidity >=0.0;\n// SPDX-License-Identifier: GPL-3.0\n" + _source :
+		string{_insertLicenseAndVersionPragma ? "pragma solidity >=0.0;\n" : ""} +
+		string{insertLicense ? "// SPDX-License-Identifier: GPL-3.0\n" : ""} +
 		_source
 	}});
 	compiler().setEVMVersion(solidity::test::CommonOptions::get().evmVersion());
@@ -94,7 +96,22 @@ ErrorList AnalysisFramework::filterErrors(ErrorList const& _errorList, bool _inc
 				continue;
 		}
 
-		errors.emplace_back(currentError);
+		std::shared_ptr<Error const> newError = currentError;
+		for (auto const& messagePrefix: m_messagesToCut)
+			if (currentError->comment()->find(messagePrefix) == 0)
+			{
+				SourceLocation const* location = boost::get_error_info<errinfo_sourceLocation>(*currentError);
+				// sufficient for now, but in future we might clone the error completely, including the secondary location
+				newError = make_shared<Error>(
+					currentError->errorId(),
+					currentError->type(),
+					location ? *location : SourceLocation(),
+					messagePrefix + " ...."
+				);
+				break;
+			}
+
+		errors.emplace_back(newError);
 	}
 
 	return errors;

@@ -1,5 +1,5 @@
 pragma experimental SMTChecker;
-pragma experimental ABIEncoderV2;
+pragma abicoder               v2;
 
 contract C
 {
@@ -26,4 +26,4 @@ contract C
 	}
 }
 // ----
-// Warning 6328: (400-457): Assertion violation happens here
+// Warning 6328: (400-457): CHC: Assertion violation happens here.

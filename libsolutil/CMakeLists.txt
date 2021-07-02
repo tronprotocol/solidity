@@ -10,6 +10,7 @@ set(sources
 	Exceptions.cpp
 	Exceptions.h
 	FixedHash.h
+	FunctionSelector.h
 	IndentedWriter.cpp
 	IndentedWriter.h
 	InvertibleMap.h
@@ -20,8 +21,10 @@ set(sources
 	Keccak256.cpp
 	Keccak256.h
 	LazyInit.h
+	LEB128.h
 	picosha2.h
 	Result.h
+	SetOnce.h
 	StringUtils.cpp
 	StringUtils.h
 	SwarmHash.cpp

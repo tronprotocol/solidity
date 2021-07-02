@@ -35,5 +35,8 @@ contract InvalidTest {
       x++;
   }
 }
+// ====
+// compileViaYul: also
+// compileToEwasm: also
 // ----
 // run() -> FAILURE

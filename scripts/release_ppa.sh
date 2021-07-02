@@ -57,7 +57,7 @@ packagename=solc
 
 static_build_distribution=focal
 
-DISTRIBUTIONS="bionic eoan focal"
+DISTRIBUTIONS="focal groovy"
 
 if is_release
 then
@@ -113,7 +113,6 @@ wget -O ./solc/deps/downloads/jsoncpp-1.9.3.tar.gz https://github.com/open-sourc
 cd solc
 version=$($(dirname "$0")/get_version.sh)
 commithash=$(git rev-parse --short=8 HEAD)
-committimestamp=$(git show --format=%ci HEAD | head -n 1)
 commitdate=$(git show --format=%ci HEAD | head -n 1 | cut - -b1-10 | sed -e 's/-0?/./' | sed -e 's/-0?/./')
 
 echo "$commithash" > commit_hash.txt
@@ -158,7 +157,7 @@ Vcs-Git: git://github.com/ethereum/solidity.git
 Vcs-Browser: https://github.com/ethereum/solidity
 
 Package: solc
-Architecture: any-i386 any-amd64
+Architecture: any-amd64
 Multi-Arch: same
 Depends: \${shlibs:Depends}, \${misc:Depends}
 Conflicts: libethereum (<= 1.2.9)

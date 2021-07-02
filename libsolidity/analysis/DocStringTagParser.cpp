@@ -61,13 +61,13 @@ bool DocStringTagParser::visit(VariableDeclaration const& _variable)
 {
 	if (_variable.isStateVariable())
 	{
-		static set<string> const validPublicTags = set<string>{"dev", "notice", "return", "inheritdoc"};
-		static set<string> const validNonPublicTags = set<string>{"dev", "inheritdoc"};
 		if (_variable.isPublic())
-			parseDocStrings(_variable, _variable.annotation(), validPublicTags, "public state variables");
+			parseDocStrings(_variable, _variable.annotation(), {"dev", "notice", "return", "inheritdoc"}, "public state variables");
 		else
-			parseDocStrings(_variable, _variable.annotation(), validNonPublicTags, "non-public state variables");
+			parseDocStrings(_variable, _variable.annotation(), {"dev", "inheritdoc"}, "non-public state variables");
 	}
+	else if (_variable.isFileLevelVariable())
+		parseDocStrings(_variable, _variable.annotation(), {"dev"}, "file-level variables");
 	return false;
 }
 
@@ -127,10 +127,13 @@ void DocStringTagParser::handleCallable(
 )
 {
 	static set<string> const validEventTags = set<string>{"dev", "notice", "return", "param"};
+	static set<string> const validModifierTags = set<string>{"dev", "notice", "param", "inheritdoc"};
 	static set<string> const validTags = set<string>{"dev", "notice", "return", "param", "inheritdoc"};
 
 	if (dynamic_cast<EventDefinition const*>(&_callable))
 		parseDocStrings(_node, _annotation, validEventTags, "events");
+	else if (dynamic_cast<ModifierDefinition const*>(&_callable))
+		parseDocStrings(_node, _annotation, validModifierTags, "modifiers");
 	else
 		parseDocStrings(_node, _annotation, validTags, "functions");
 
@@ -165,12 +168,7 @@ void DocStringTagParser::parseDocStrings(
 			returnTagsVisited++;
 			if (auto const* varDecl = dynamic_cast<VariableDeclaration const*>(&_node))
 			{
-				if (!varDecl->isPublic())
-					m_errorReporter.docstringParsingError(
-						9440_error,
-						_node.documentation()->location(),
-						"Documentation tag \"@" + docTag.first + "\" is only allowed on public state-variables."
-					);
+				solAssert(varDecl->isPublic(), "@return is only allowed on public state-variables.");
 				if (returnTagsVisited > 1)
 					m_errorReporter.docstringParsingError(
 						5256_error,

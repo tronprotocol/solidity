@@ -10,6 +10,4 @@ contract C {
 	}
 }
 // ----
-// Warning 1218: (171-190): Error trying to invoke SMT solver.
-// Warning 1218: (194-213): Error trying to invoke SMT solver.
-// Warning 4661: (194-213): Assertion violation happens here
+// Warning 6328: (194-213): CHC: Assertion violation happens here.\nCounterexample:\n\nx = 2\np = 0\n\n\nTransaction trace:\nconstructor()\nf(2, 0)

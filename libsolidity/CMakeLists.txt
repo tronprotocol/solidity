@@ -30,6 +30,8 @@ set(sources
 	analysis/PostTypeChecker.h
 	analysis/ReferencesResolver.cpp
 	analysis/ReferencesResolver.h
+	analysis/Scoper.cpp
+	analysis/Scoper.h
 	analysis/StaticAnalyzer.cpp
 	analysis/StaticAnalyzer.h
 	analysis/SyntaxChecker.cpp
@@ -45,8 +47,6 @@ set(sources
 	ast/ASTAnnotations.h
 	ast/ASTEnums.h
 	ast/ASTForward.h
-	ast/AsmJsonImporter.cpp
-	ast/AsmJsonImporter.h
 	ast/ASTJsonConverter.cpp
 	ast/ASTJsonConverter.h
 	ast/ASTUtils.cpp
@@ -92,6 +92,8 @@ set(sources
 	codegen/ir/IRLValue.h
 	codegen/ir/IRVariable.cpp
 	codegen/ir/IRVariable.h
+	formal/ArraySlicePredicate.cpp
+	formal/ArraySlicePredicate.h
 	formal/BMC.cpp
 	formal/BMC.h
 	formal/CHC.cpp
@@ -100,6 +102,12 @@ set(sources
 	formal/EncodingContext.h
 	formal/ModelChecker.cpp
 	formal/ModelChecker.h
+	formal/Predicate.cpp
+	formal/Predicate.h
+	formal/PredicateInstance.cpp
+	formal/PredicateInstance.h
+	formal/PredicateSort.cpp
+	formal/PredicateSort.h
 	formal/SMTEncoder.cpp
 	formal/SMTEncoder.h
 	formal/SSAVariable.cpp
@@ -138,4 +146,3 @@ set(sources
 
 add_library(solidity ${sources})
 target_link_libraries(solidity PUBLIC yul evmasm langutil smtutil solutil Boost::boost)
-

@@ -27,7 +27,8 @@ using namespace solidity;
 using namespace solidity::util;
 using namespace solidity::smtutil;
 
-CVC4Interface::CVC4Interface():
+CVC4Interface::CVC4Interface(optional<unsigned> _queryTimeout):
+	SolverInterface(_queryTimeout),
 	m_solver(&m_context)
 {
 	reset();
@@ -38,7 +39,10 @@ void CVC4Interface::reset()
 	m_variables.clear();
 	m_solver.reset();
 	m_solver.setOption("produce-models", true);
-	m_solver.setResourceLimit(resourceLimit);
+	if (m_queryTimeout)
+		m_solver.setTimeLimit(*m_queryTimeout);
+	else
+		m_solver.setResourceLimit(resourceLimit);
 }
 
 void CVC4Interface::push()
@@ -188,12 +192,24 @@ CVC4::Expr CVC4Interface::toCVC4Expr(Expression const& _expr)
 			return m_context.mkExpr(CVC4::kind::INTS_DIVISION_TOTAL, arguments[0], arguments[1]);
 		else if (n == "mod")
 			return m_context.mkExpr(CVC4::kind::INTS_MODULUS, arguments[0], arguments[1]);
+		else if (n == "bvnot")
+			return m_context.mkExpr(CVC4::kind::BITVECTOR_NOT, arguments[0]);
 		else if (n == "bvand")
 			return m_context.mkExpr(CVC4::kind::BITVECTOR_AND, arguments[0], arguments[1]);
+		else if (n == "bvor")
+			return m_context.mkExpr(CVC4::kind::BITVECTOR_OR, arguments[0], arguments[1]);
+		else if (n == "bvxor")
+			return m_context.mkExpr(CVC4::kind::BITVECTOR_XOR, arguments[0], arguments[1]);
+		else if (n == "bvshl")
+			return m_context.mkExpr(CVC4::kind::BITVECTOR_SHL, arguments[0], arguments[1]);
+		else if (n == "bvlshr")
+			return m_context.mkExpr(CVC4::kind::BITVECTOR_LSHR, arguments[0], arguments[1]);
+		else if (n == "bvashr")
+			return m_context.mkExpr(CVC4::kind::BITVECTOR_ASHR, arguments[0], arguments[1]);
 		else if (n == "int2bv")
 		{
 			size_t size = std::stoul(_expr.arguments[1].name);
-			auto i2bvOp = m_context.mkConst(CVC4::IntToBitVector(size));
+			auto i2bvOp = m_context.mkConst(CVC4::IntToBitVector(static_cast<unsigned>(size)));
 			// CVC4 treats all BVs as unsigned, so we need to manually apply 2's complement if needed.
 			return m_context.mkExpr(
 				CVC4::kind::ITE,
@@ -283,6 +299,8 @@ CVC4::Type CVC4Interface::cvc4Sort(Sort const& _sort)
 		return m_context.booleanType();
 	case Kind::Int:
 		return m_context.integerType();
+	case Kind::BitVector:
+		return m_context.mkBitVectorType(dynamic_cast<BitVectorSort const&>(_sort).size);
 	case Kind::Function:
 	{
 		FunctionSort const& fSort = dynamic_cast<FunctionSort const&>(_sort);

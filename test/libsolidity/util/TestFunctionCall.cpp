@@ -30,6 +30,8 @@ using namespace solidity::util;
 using namespace solidity::frontend::test;
 using namespace std;
 
+using Token = soltest::Token;
+
 string TestFunctionCall::format(
 	ErrorReporter& _errorReporter,
 	string const& _linePrefix,
@@ -37,9 +39,6 @@ string TestFunctionCall::format(
 	bool const _highlight
 ) const
 {
-	using namespace soltest;
-	using Token = soltest::Token;
-
 	stringstream stream;
 
 	bool highlight = !matchesExpectation() && _highlight;
@@ -56,9 +55,23 @@ string TestFunctionCall::format(
 		string newline = formatToken(Token::Newline);
 		string failure = formatToken(Token::Failure);
 
-		if (m_call.isLibrary)
+		if (m_call.kind == FunctionCall::Kind::Library)
 		{
 			stream << _linePrefix << newline << ws << "library:" << ws << m_call.signature;
+			return;
+		}
+		else if (m_call.kind == FunctionCall::Kind::Storage)
+		{
+			stream << _linePrefix << newline << ws << "storage" << colon << ws;
+			soltestAssert(m_rawBytes.size() == 1, "");
+			soltestAssert(m_call.expectations.rawBytes().size() == 1, "");
+			bool isEmpty = _renderResult ? m_rawBytes.front() == 0 : m_call.expectations.rawBytes().front() == 0;
+			string output = isEmpty ? "empty" : "nonempty";
+			if (_renderResult && !matchesExpectation())
+				AnsiColorized(stream, highlight, {util::formatting::RED_BACKGROUND}) << output;
+			else
+				stream << output;
+
 			return;
 		}
 
@@ -159,7 +172,7 @@ string TestFunctionCall::format(
 					BytesUtils::formatRawBytes(output, abiParams.value(), _linePrefix) :
 					BytesUtils::formatRawBytes(
 						output,
-						ContractABIUtils::defaultParameters(ceil(output.size() / 32)),
+						ContractABIUtils::defaultParameters((output.size() + 31) / 32),
 						_linePrefix
 					);
 
@@ -248,7 +261,7 @@ string TestFunctionCall::formatBytesParameters(
 		}
 		else
 		{
-			ParameterList defaultParameters = ContractABIUtils::defaultParameters(ceil(_bytes.size() / 32));
+			ParameterList defaultParameters = ContractABIUtils::defaultParameters((_bytes.size() + 31) / 32);
 
 			ContractABIUtils::overwriteParameters(_errorReporter, defaultParameters, _parameters);
 			os << BytesUtils::formatBytesRange(_bytes, defaultParameters, _highlight);
@@ -265,8 +278,6 @@ string TestFunctionCall::formatFailure(
 	bool _highlight
 ) const
 {
-	using Token = soltest::Token;
-
 	stringstream os;
 
 	os << formatToken(Token::Failure);
@@ -300,7 +311,8 @@ string TestFunctionCall::formatRawParameters(
 		{
 			if (param.format.newline)
 				os << endl << _linePrefix << "// ";
-			os << param.rawString;
+			for (auto const c: param.rawString)
+				os << (c >= ' ' ? string(1, c) : "\\x" + toHex(static_cast<uint8_t>(c)));
 			if (&param != &_params.back())
 				os << ", ";
 		}

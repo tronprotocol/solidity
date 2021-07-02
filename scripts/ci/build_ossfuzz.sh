@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
-set -e
+set -ex
 
-ROOTDIR="$(dirname "$0")/../.."
+ROOTDIR="/root/project"
 BUILDDIR="${ROOTDIR}/build"
+mkdir -p "${BUILDDIR}" && mkdir -p "$BUILDDIR/deps"
 
-mkdir -p "${BUILDDIR}"
-cd "${BUILDDIR}"
+generate_protobuf_bindings()
+{
+  cd "${ROOTDIR}"/test/tools/ossfuzz
+  # Generate protobuf C++ bindings
+  for protoName in yul abiV2 sol;
+  do
+    protoc "${protoName}"Proto.proto --cpp_out .
+  done
+}
 
-protoc --proto_path=../test/tools/ossfuzz yulProto.proto --cpp_out=../test/tools/ossfuzz
-protoc --proto_path=../test/tools/ossfuzz abiV2Proto.proto --cpp_out=../test/tools/ossfuzz
-protoc --proto_path=../test/tools/ossfuzz solProto.proto --cpp_out=../test/tools/ossfuzz
-cmake .. -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}" -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/libfuzzer.cmake
+build_fuzzers()
+{
+  cd "${BUILDDIR}"
+  cmake .. -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}" \
+    -DCMAKE_TOOLCHAIN_FILE="${ROOTDIR}"/cmake/toolchains/libfuzzer.cmake
+  make ossfuzz ossfuzz_proto ossfuzz_abiv2 -j 4
+}
 
-make ossfuzz ossfuzz_proto ossfuzz_abiv2 -j 4
+generate_protobuf_bindings
+build_fuzzers

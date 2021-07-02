@@ -16,6 +16,9 @@ contract C {
     }
 }
 
+// ====
+// compileViaYul: also
+// compileToEwasm: also
 // ----
 // use(uint256): 3 -> 6
 // result_in_constructor() -> 4

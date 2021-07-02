@@ -22,6 +22,9 @@
 #include <libsmtutil/Z3CHCInterface.h>
 #endif
 
+#include <libsolidity/formal/ArraySlicePredicate.h>
+#include <libsolidity/formal/PredicateInstance.h>
+#include <libsolidity/formal/PredicateSort.h>
 #include <libsolidity/formal/SymbolicTypes.h>
 
 #include <libsolidity/ast/TypeProvider.h>
@@ -29,8 +32,11 @@
 #include <libsmtutil/CHCSmtLib2Interface.h>
 #include <libsolutil/Algorithms.h>
 
-#include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/reversed.hpp>
+
+#ifdef HAVE_Z3_DLOPEN
+#include <z3_version.h>
+#endif
 
 #include <queue>
 
@@ -40,74 +46,78 @@ using namespace solidity::util;
 using namespace solidity::langutil;
 using namespace solidity::smtutil;
 using namespace solidity::frontend;
+using namespace solidity::frontend::smt;
 
 CHC::CHC(
-	smt::EncodingContext& _context,
+	EncodingContext& _context,
 	ErrorReporter& _errorReporter,
-	map<util::h256, string> const& _smtlib2Responses,
-	ReadCallback::Callback const& _smtCallback,
-	[[maybe_unused]] smtutil::SMTSolverChoice _enabledSolvers
+	[[maybe_unused]] map<util::h256, string> const& _smtlib2Responses,
+	[[maybe_unused]] ReadCallback::Callback const& _smtCallback,
+	SMTSolverChoice _enabledSolvers,
+	optional<unsigned> _timeout
 ):
 	SMTEncoder(_context),
 	m_outerErrorReporter(_errorReporter),
-	m_enabledSolvers(_enabledSolvers)
+	m_enabledSolvers(_enabledSolvers),
+	m_queryTimeout(_timeout)
 {
+	bool usesZ3 = _enabledSolvers.z3;
 #ifdef HAVE_Z3
-	if (_enabledSolvers.z3)
-		m_interface = make_unique<smtutil::Z3CHCInterface>();
+	usesZ3 = usesZ3 && Z3Interface::available();
+#else
+	usesZ3 = false;
 #endif
-	if (!m_interface)
-		m_interface = make_unique<smtutil::CHCSmtLib2Interface>(_smtlib2Responses, _smtCallback);
+	if (!usesZ3)
+		m_interface = make_unique<CHCSmtLib2Interface>(_smtlib2Responses, _smtCallback, m_queryTimeout);
 }
 
 void CHC::analyze(SourceUnit const& _source)
 {
 	solAssert(_source.annotation().experimentalFeatures.count(ExperimentalFeature::SMTChecker), "");
 
-	bool usesZ3 = false;
-#ifdef HAVE_Z3
-	usesZ3 = m_enabledSolvers.z3;
-	if (usesZ3)
+	/// This is currently used to abort analysis of SourceUnits
+	/// containing file level functions or constants.
+	if (SMTEncoder::analyze(_source))
 	{
-		auto z3Interface = dynamic_cast<smtutil::Z3CHCInterface const*>(m_interface.get());
-		solAssert(z3Interface, "");
-		m_context.setSolver(z3Interface->z3Interface());
+		resetSourceAnalysis();
+
+		set<SourceUnit const*, EncodingContext::IdCompare> sources;
+		sources.insert(&_source);
+		for (auto const& source: _source.referencedSourceUnits(true))
+			sources.insert(source);
+		for (auto const* source: sources)
+			defineInterfacesAndSummaries(*source);
+		for (auto const* source: sources)
+			source->accept(*this);
+
+		checkVerificationTargets();
 	}
+
+	bool ranSolver = true;
+	if (auto const* smtLibInterface = dynamic_cast<CHCSmtLib2Interface const*>(m_interface.get()))
+		ranSolver = smtLibInterface->unhandledQueries().empty();
+	if (!ranSolver && !m_noSolverWarning)
+	{
+		m_noSolverWarning = true;
+		m_outerErrorReporter.warning(
+			3996_error,
+			SourceLocation(),
+#ifdef HAVE_Z3_DLOPEN
+			"CHC analysis was not possible since libz3.so." + to_string(Z3_MAJOR_VERSION) + "." + to_string(Z3_MINOR_VERSION) + " was not found."
+#else
+			"CHC analysis was not possible since no integrated z3 SMT solver was found."
 #endif
-	if (!usesZ3)
-	{
-		auto smtlib2Interface = dynamic_cast<smtutil::CHCSmtLib2Interface const*>(m_interface.get());
-		solAssert(smtlib2Interface, "");
-		m_context.setSolver(smtlib2Interface->smtlib2Interface());
+		);
 	}
-	m_context.clear();
-	m_context.setAssertionAccumulation(false);
-	m_variableUsage.setFunctionInlining(false);
+	else
+		m_outerErrorReporter.append(m_errorReporter.errors());
 
-	resetSourceAnalysis();
-
-	auto genesisSort = make_shared<smtutil::FunctionSort>(
-		vector<smtutil::SortPointer>(),
-		smtutil::SortProvider::boolSort
-	);
-	m_genesisPredicate = createSymbolicBlock(genesisSort, "genesis");
-	addRule(genesis(), "genesis");
-
-	set<SourceUnit const*, IdCompare> sources;
-	sources.insert(&_source);
-	for (auto const& source: _source.referencedSourceUnits(true))
-		sources.insert(source);
-	for (auto const* source: sources)
-		defineInterfacesAndSummaries(*source);
-	for (auto const* source: sources)
-		source->accept(*this);
-
-	checkVerificationTargets();
+	m_errorReporter.clear();
 }
 
 vector<string> CHC::unhandledQueries() const
 {
-	if (auto smtlib2 = dynamic_cast<smtutil::CHCSmtLib2Interface const*>(m_interface.get()))
+	if (auto smtlib2 = dynamic_cast<CHCSmtLib2Interface const*>(m_interface.get()))
 		return smtlib2->unhandledQueries();
 
 	return {};
@@ -116,21 +126,11 @@ vector<string> CHC::unhandledQueries() const
 bool CHC::visit(ContractDefinition const& _contract)
 {
 	resetContractAnalysis();
-
 	initContract(_contract);
-
-	m_stateVariables = stateVariablesIncludingInheritedAndPrivate(_contract);
-	m_stateSorts = stateSorts(_contract);
-
 	clearIndices(&_contract);
 
-	string suffix = _contract.name() + "_" + to_string(_contract.id());
-	m_errorPredicate = createSymbolicBlock(arity0FunctionSort(), "error_" + suffix);
-	m_constructorSummaryPredicate = createSymbolicBlock(constructorSort(), "summary_constructor_" + suffix);
-	m_symbolFunction[m_constructorSummaryPredicate->currentFunctionValue().name] = &_contract;
-	m_implicitConstructorPredicate = createSymbolicBlock(arity0FunctionSort(), "implicit_constructor_" + suffix);
-	auto stateExprs = currentStateVariables();
-	setCurrentBlock(*m_interfaces.at(m_currentContract), &stateExprs);
+	m_stateVariables = SMTEncoder::stateVariablesIncludingInheritedAndPrivate(_contract);
+	solAssert(m_currentContract, "");
 
 	SMTEncoder::visit(_contract);
 	return false;
@@ -138,24 +138,66 @@ bool CHC::visit(ContractDefinition const& _contract)
 
 void CHC::endVisit(ContractDefinition const& _contract)
 {
-	auto implicitConstructor = (*m_implicitConstructorPredicate)({});
-	connectBlocks(genesis(), implicitConstructor);
-	m_currentBlock = implicitConstructor;
-	m_context.addAssertion(m_error.currentValue() == 0);
-
 	if (auto constructor = _contract.constructor())
 		constructor->accept(*this);
-	else
-		inlineConstructorHierarchy(_contract);
 
-	connectBlocks(m_currentBlock, summary(_contract), m_error.currentValue() == 0);
+	defineContractInitializer(_contract);
 
-	clearIndices(m_currentContract, nullptr);
-	vector<smtutil::Expression> symbArgs = currentFunctionVariables(*m_currentContract);
-	setCurrentBlock(*m_constructorSummaryPredicate, &symbArgs);
+	auto const& entry = *createConstructorBlock(_contract, "implicit_constructor_entry");
 
-	addAssertVerificationTarget(m_currentContract, m_currentBlock, smtutil::Expression(true), m_error.currentValue());
-	connectBlocks(m_currentBlock, interface(), m_error.currentValue() == 0);
+	// In case constructors use uninitialized state variables,
+	// they need to be zeroed.
+	// This is not part of `initialConstraints` because it's only true here,
+	// at the beginning of the deployment routine.
+	smtutil::Expression zeroes(true);
+	for (auto var: stateVariablesIncludingInheritedAndPrivate(_contract))
+		zeroes = zeroes && currentValue(*var) == smt::zeroValue(var->type());
+	addRule(smtutil::Expression::implies(initialConstraints(_contract) && zeroes, predicate(entry)), entry.functor().name);
+	setCurrentBlock(entry);
+
+	solAssert(!m_errorDest, "");
+	m_errorDest = m_constructorSummaries.at(&_contract);
+	// We need to evaluate the base constructor calls (arguments) from derived -> base
+	auto baseArgs = baseArguments(_contract);
+	for (auto base: _contract.annotation().linearizedBaseContracts)
+	{
+		if (base != &_contract)
+		{
+			m_callGraph[&_contract].insert(base);
+
+			auto baseConstructor = base->constructor();
+			if (baseConstructor && baseArgs.count(base))
+			{
+				vector<ASTPointer<Expression>> const& args = baseArgs.at(base);
+				auto const& params = baseConstructor->parameters();
+				solAssert(params.size() == args.size(), "");
+				for (unsigned i = 0; i < params.size(); ++i)
+				{
+					args.at(i)->accept(*this);
+					if (params.at(i))
+					{
+						solAssert(m_context.knownVariable(*params.at(i)), "");
+						m_context.addAssertion(currentValue(*params.at(i)) == expr(*args.at(i), params.at(i)->type()));
+					}
+				}
+			}
+		}
+	}
+	m_errorDest = nullptr;
+	// Then call initializer_Base from base -> derived
+	for (auto base: _contract.annotation().linearizedBaseContracts | boost::adaptors::reversed)
+	{
+		errorFlag().increaseIndex();
+		m_context.addAssertion(smt::constructorCall(*m_contractInitializers.at(base), m_context));
+		connectBlocks(m_currentBlock, summary(_contract), errorFlag().currentValue() > 0);
+		m_context.addAssertion(errorFlag().currentValue() == 0);
+	}
+
+	connectBlocks(m_currentBlock, summary(_contract));
+
+	setCurrentBlock(*m_constructorSummaries.at(&_contract));
+	m_queryPlaceholders[&_contract].push_back({smtutil::Expression(true), errorFlag().currentValue(), m_currentBlock});
+	connectBlocks(m_currentBlock, interface(), errorFlag().currentValue() == 0);
 
 	SMTEncoder::endVisit(_contract);
 }
@@ -164,47 +206,35 @@ bool CHC::visit(FunctionDefinition const& _function)
 {
 	if (!_function.isImplemented())
 	{
-		connectBlocks(genesis(), summary(_function));
+		addRule(summary(_function), "summary_function_" + to_string(_function.id()));
 		return false;
 	}
 
-	// This is the case for base constructor inlining.
-	if (m_currentFunction)
-	{
-		solAssert(m_currentFunction->isConstructor(), "");
-		solAssert(_function.isConstructor(), "");
-		solAssert(_function.scope() != m_currentContract, "");
-		SMTEncoder::visit(_function);
-		return false;
-	}
-
+	// No inlining.
 	solAssert(!m_currentFunction, "Function inlining should not happen in CHC.");
 	m_currentFunction = &_function;
 
 	initFunction(_function);
 
-	auto functionEntryBlock = createBlock(m_currentFunction);
-	auto bodyBlock = createBlock(&m_currentFunction->body());
+	auto functionEntryBlock = createBlock(m_currentFunction, PredicateType::FunctionBlock);
+	auto bodyBlock = createBlock(&m_currentFunction->body(), PredicateType::FunctionBlock);
 
-	auto functionPred = predicate(*functionEntryBlock, currentFunctionVariables());
+	auto functionPred = predicate(*functionEntryBlock);
 	auto bodyPred = predicate(*bodyBlock);
 
-	if (_function.isConstructor())
-		connectBlocks(m_currentBlock, functionPred);
-	else
-		connectBlocks(genesis(), functionPred);
+	addRule(functionPred, functionPred.name);
 
-	m_context.addAssertion(m_error.currentValue() == 0);
-	for (auto const* var: m_stateVariables)
-		m_context.addAssertion(m_context.variable(*var)->valueAtIndex(0) == currentValue(*var));
-	for (auto const& var: _function.parameters())
-		m_context.addAssertion(m_context.variable(*var)->valueAtIndex(0) == currentValue(*var));
+	solAssert(m_currentContract, "");
+	m_context.addAssertion(initialConstraints(*m_currentContract, &_function));
 
 	connectBlocks(functionPred, bodyPred);
 
 	setCurrentBlock(*bodyBlock);
 
+	solAssert(!m_errorDest, "");
+	m_errorDest = m_summaries.at(m_currentContract).at(&_function);
 	SMTEncoder::visit(*m_currentFunction);
+	m_errorDest = nullptr;
 
 	return false;
 }
@@ -215,51 +245,28 @@ void CHC::endVisit(FunctionDefinition const& _function)
 		return;
 
 	solAssert(m_currentFunction && m_currentContract, "");
+	// No inlining.
+	solAssert(m_currentFunction == &_function, "");
 
-	// This is the case for base constructor inlining.
-	if (m_currentFunction != &_function)
+	connectBlocks(m_currentBlock, summary(_function));
+	setCurrentBlock(*m_summaries.at(m_currentContract).at(&_function));
+
+	// Query placeholders for constructors are not created here because
+	// of contracts without constructors.
+	// Instead, those are created in endVisit(ContractDefinition).
+	if (!_function.isConstructor())
 	{
-		solAssert(m_currentFunction && m_currentFunction->isConstructor(), "");
-		solAssert(_function.isConstructor(), "");
-		solAssert(_function.scope() != m_currentContract, "");
-	}
-	else
-	{
-		// We create an extra exit block for constructors that simply
-		// connects to the interface in case an explicit constructor
-		// exists in the hierarchy.
-		// It is not connected directly here, as normal functions are,
-		// because of the case where there are only implicit constructors.
-		// This is done in endVisit(ContractDefinition).
-		if (_function.isConstructor())
+		auto sum = summary(_function);
+		auto ifacePre = smt::interfacePre(*m_interfaces.at(m_currentContract), *m_currentContract, m_context);
+		if (_function.isPublic())
 		{
-			string suffix = m_currentContract->name() + "_" + to_string(m_currentContract->id());
-			auto constructorExit = createSymbolicBlock(constructorSort(), "constructor_exit_" + suffix);
-			connectBlocks(m_currentBlock, predicate(*constructorExit, currentFunctionVariables(*m_currentContract)));
-
-			clearIndices(m_currentContract, m_currentFunction);
-			auto stateExprs = currentFunctionVariables(*m_currentContract);
-			setCurrentBlock(*constructorExit, &stateExprs);
+			auto txConstraints = m_context.state().txConstraints(_function);
+			m_queryPlaceholders[&_function].push_back({txConstraints && sum, errorFlag().currentValue(), ifacePre});
+			connectBlocks(ifacePre, interface(), txConstraints && sum && errorFlag().currentValue() == 0);
 		}
-		else
-		{
-			auto assertionError = m_error.currentValue();
-			auto sum = summary(_function);
-			connectBlocks(m_currentBlock, sum);
-
-			auto iface = interface();
-
-			auto stateExprs = initialStateVariables();
-			setCurrentBlock(*m_interfaces.at(m_currentContract), &stateExprs);
-
-			if (_function.isPublic())
-			{
-				addAssertVerificationTarget(&_function, m_currentBlock, sum, assertionError);
-				connectBlocks(m_currentBlock, iface, sum && (assertionError == 0));
-			}
-		}
-		m_currentFunction = nullptr;
 	}
+
+	m_currentFunction = nullptr;
 
 	SMTEncoder::endVisit(_function);
 }
@@ -274,10 +281,10 @@ bool CHC::visit(IfStatement const& _if)
 	solAssert(m_currentFunction, "");
 	auto const& functionBody = m_currentFunction->body();
 
-	auto ifHeaderBlock = createBlock(&_if, "if_header_");
-	auto trueBlock = createBlock(&_if.trueStatement(), "if_true_");
-	auto falseBlock = _if.falseStatement() ? createBlock(_if.falseStatement(), "if_false_") : nullptr;
-	auto afterIfBlock = createBlock(&functionBody);
+	auto ifHeaderBlock = createBlock(&_if, PredicateType::FunctionBlock, "if_header_");
+	auto trueBlock = createBlock(&_if.trueStatement(), PredicateType::FunctionBlock, "if_true_");
+	auto falseBlock = _if.falseStatement() ? createBlock(_if.falseStatement(), PredicateType::FunctionBlock, "if_false_") : nullptr;
+	auto afterIfBlock = createBlock(&functionBody, PredicateType::FunctionBlock);
 
 	connectBlocks(m_currentBlock, predicate(*ifHeaderBlock));
 
@@ -321,14 +328,14 @@ bool CHC::visit(WhileStatement const& _while)
 	auto const& functionBody = m_currentFunction->body();
 
 	auto namePrefix = string(_while.isDoWhile() ? "do_" : "") + "while";
-	auto loopHeaderBlock = createBlock(&_while, namePrefix + "_header_");
-	auto loopBodyBlock = createBlock(&_while.body(), namePrefix + "_body_");
-	auto afterLoopBlock = createBlock(&functionBody);
+	auto loopHeaderBlock = createBlock(&_while, PredicateType::FunctionBlock, namePrefix + "_header_");
+	auto loopBodyBlock = createBlock(&_while.body(), PredicateType::FunctionBlock, namePrefix + "_body_");
+	auto afterLoopBlock = createBlock(&functionBody, PredicateType::FunctionBlock);
 
 	auto outerBreakDest = m_breakDest;
 	auto outerContinueDest = m_continueDest;
-	m_breakDest = afterLoopBlock.get();
-	m_continueDest = loopHeaderBlock.get();
+	m_breakDest = afterLoopBlock;
+	m_continueDest = loopHeaderBlock;
 
 	if (_while.isDoWhile())
 		_while.body().accept(*this);
@@ -370,16 +377,16 @@ bool CHC::visit(ForStatement const& _for)
 	solAssert(m_currentFunction, "");
 	auto const& functionBody = m_currentFunction->body();
 
-	auto loopHeaderBlock = createBlock(&_for, "for_header_");
-	auto loopBodyBlock = createBlock(&_for.body(), "for_body_");
-	auto afterLoopBlock = createBlock(&functionBody);
+	auto loopHeaderBlock = createBlock(&_for, PredicateType::FunctionBlock, "for_header_");
+	auto loopBodyBlock = createBlock(&_for.body(), PredicateType::FunctionBlock, "for_body_");
+	auto afterLoopBlock = createBlock(&functionBody, PredicateType::FunctionBlock);
 	auto postLoop = _for.loopExpression();
-	auto postLoopBlock = postLoop ? createBlock(postLoop, "for_post_") : nullptr;
+	auto postLoopBlock = postLoop ? createBlock(postLoop, PredicateType::FunctionBlock, "for_post_") : nullptr;
 
 	auto outerBreakDest = m_breakDest;
 	auto outerContinueDest = m_continueDest;
-	m_breakDest = afterLoopBlock.get();
-	m_continueDest = postLoop ? postLoopBlock.get() : loopHeaderBlock.get();
+	m_breakDest = afterLoopBlock;
+	m_continueDest = postLoop ? postLoopBlock : loopHeaderBlock;
 
 	if (auto init = _for.initializationExpression())
 		init->accept(*this);
@@ -425,9 +432,9 @@ bool CHC::visit(ForStatement const& _for)
 
 void CHC::endVisit(FunctionCall const& _funCall)
 {
-	solAssert(_funCall.annotation().kind != FunctionCallKind::Unset, "");
+	auto functionCallKind = *_funCall.annotation().kind;
 
-	if (_funCall.annotation().kind != FunctionCallKind::FunctionCall)
+	if (functionCallKind != FunctionCallKind::FunctionCall)
 	{
 		SMTEncoder::endVisit(_funCall);
 		return;
@@ -453,6 +460,9 @@ void CHC::endVisit(FunctionCall const& _funCall)
 	case FunctionType::Kind::BareCallCode:
 	case FunctionType::Kind::BareDelegateCall:
 	case FunctionType::Kind::Creation:
+		SMTEncoder::endVisit(_funCall);
+		unknownFunctionCall(_funCall);
+		break;
 	case FunctionType::Kind::KECCAK256:
 	case FunctionType::Kind::ECRecover:
 	case FunctionType::Kind::SHA256:
@@ -460,9 +470,7 @@ void CHC::endVisit(FunctionCall const& _funCall)
 	case FunctionType::Kind::BlockHash:
 	case FunctionType::Kind::AddMod:
 	case FunctionType::Kind::MulMod:
-		SMTEncoder::endVisit(_funCall);
-		unknownFunctionCall(_funCall);
-		break;
+		[[fallthrough]];
 	default:
 		SMTEncoder::endVisit(_funCall);
 		break;
@@ -475,7 +483,9 @@ void CHC::endVisit(Break const& _break)
 {
 	solAssert(m_breakDest, "");
 	connectBlocks(m_currentBlock, predicate(*m_breakDest));
-	auto breakGhost = createBlock(&_break, "break_ghost_");
+
+	// Add an unreachable ghost node to collect unreachable statements after a break.
+	auto breakGhost = createBlock(&_break, PredicateType::FunctionBlock, "break_ghost_");
 	m_currentBlock = predicate(*breakGhost);
 }
 
@@ -483,8 +493,66 @@ void CHC::endVisit(Continue const& _continue)
 {
 	solAssert(m_continueDest, "");
 	connectBlocks(m_currentBlock, predicate(*m_continueDest));
-	auto continueGhost = createBlock(&_continue, "continue_ghost_");
+
+	// Add an unreachable ghost node to collect unreachable statements after a continue.
+	auto continueGhost = createBlock(&_continue, PredicateType::FunctionBlock, "continue_ghost_");
 	m_currentBlock = predicate(*continueGhost);
+}
+
+void CHC::endVisit(IndexRangeAccess const& _range)
+{
+	createExpr(_range);
+
+	auto baseArray = dynamic_pointer_cast<SymbolicArrayVariable>(m_context.expression(_range.baseExpression()));
+	auto sliceArray = dynamic_pointer_cast<SymbolicArrayVariable>(m_context.expression(_range));
+	solAssert(baseArray && sliceArray, "");
+
+	auto const& sliceData = ArraySlicePredicate::create(sliceArray->sort(), m_context);
+	if (!sliceData.first)
+	{
+		for (auto pred: sliceData.second.predicates)
+			m_interface->registerRelation(pred->functor());
+		for (auto const& rule: sliceData.second.rules)
+			addRule(rule, "");
+	}
+
+	auto start = _range.startExpression() ? expr(*_range.startExpression()) : 0;
+	auto end = _range.endExpression() ? expr(*_range.endExpression()) : baseArray->length();
+	auto slicePred = (*sliceData.second.predicates.at(0))({
+		baseArray->elements(),
+		sliceArray->elements(),
+		start,
+		end
+	});
+
+	m_context.addAssertion(slicePred);
+	m_context.addAssertion(sliceArray->length() == end - start);
+}
+
+void CHC::endVisit(Return const& _return)
+{
+	SMTEncoder::endVisit(_return);
+
+	connectBlocks(m_currentBlock, predicate(*m_returnDests.back()));
+
+	// Add an unreachable ghost node to collect unreachable statements after a return.
+	auto returnGhost = createBlock(&_return, PredicateType::FunctionBlock, "return_ghost_");
+	m_currentBlock = predicate(*returnGhost);
+}
+
+void CHC::pushInlineFrame(CallableDeclaration const& _callable)
+{
+	m_returnDests.push_back(createBlock(&_callable, PredicateType::FunctionBlock, "return_"));
+}
+
+void CHC::popInlineFrame(CallableDeclaration const& _callable)
+{
+	solAssert(!m_returnDests.empty(), "");
+	auto const& ret = *m_returnDests.back();
+	solAssert(ret.programNode() == &_callable, "");
+	connectBlocks(m_currentBlock, predicate(ret));
+	setCurrentBlock(ret);
+	m_returnDests.pop_back();
 }
 
 void CHC::visitAssert(FunctionCall const& _funCall)
@@ -495,23 +563,17 @@ void CHC::visitAssert(FunctionCall const& _funCall)
 
 	solAssert(m_currentContract, "");
 	solAssert(m_currentFunction, "");
-	if (m_currentFunction->isConstructor())
-		m_functionAssertions[m_currentContract].insert(&_funCall);
-	else
-		m_functionAssertions[m_currentFunction].insert(&_funCall);
+	auto errorCondition = !m_context.expression(*args.front())->currentValue();
+	verificationTargetEncountered(&_funCall, VerificationTarget::Type::Assert, errorCondition);
+}
 
-	auto previousError = m_error.currentValue();
-	m_error.increaseIndex();
+void CHC::visitAddMulMod(FunctionCall const& _funCall)
+{
+	solAssert(_funCall.arguments().at(2), "");
 
-	connectBlocks(
-		m_currentBlock,
-		m_currentFunction->isConstructor() ? summary(*m_currentContract) : summary(*m_currentFunction),
-		currentPathConditions() && !m_context.expression(*args.front())->currentValue() && (
-			m_error.currentValue() == newErrorId(_funCall)
-		)
-	);
+	verificationTargetEncountered(&_funCall, VerificationTarget::Type::DivByZero, expr(*_funCall.arguments().at(2)) == 0);
 
-	m_context.addAssertion(m_error.currentValue() == previousError);
+	SMTEncoder::visitAddMulMod(_funCall);
 }
 
 void CHC::internalFunctionCall(FunctionCall const& _funCall)
@@ -533,23 +595,29 @@ void CHC::internalFunctionCall(FunctionCall const& _funCall)
 			m_context.addAssertion(interface(*contract));
 	}
 
-	auto previousError = m_error.currentValue();
-
 	m_context.addAssertion(predicate(_funCall));
 
+	solAssert(m_errorDest, "");
 	connectBlocks(
 		m_currentBlock,
-		(m_currentFunction && !m_currentFunction->isConstructor()) ? summary(*m_currentFunction) : summary(*m_currentContract),
-		(m_error.currentValue() > 0)
+		predicate(*m_errorDest),
+		errorFlag().currentValue() > 0
 	);
-	m_context.addAssertion(m_error.currentValue() == 0);
-	m_error.increaseIndex();
-	m_context.addAssertion(m_error.currentValue() == previousError);
+	m_context.addAssertion(errorFlag().currentValue() == 0);
 }
 
 void CHC::externalFunctionCall(FunctionCall const& _funCall)
 {
+	/// In external function calls we do not add a "predicate call"
+	/// because we do not trust their function body anyway,
+	/// so we just add the nondet_interface predicate.
+
 	solAssert(m_currentContract, "");
+	if (isTrustedExternalCall(&_funCall.expression()))
+	{
+		externalFunctionCallToTrustedCode(_funCall);
+		return;
+	}
 
 	FunctionType const& funType = dynamic_cast<FunctionType const&>(*_funCall.expression().annotation().type);
 	auto kind = funType.kind();
@@ -562,19 +630,61 @@ void CHC::externalFunctionCall(FunctionCall const& _funCall)
 	for (auto var: function->returnParameters())
 		m_context.variable(*var)->increaseIndex();
 
-	auto preCallState = currentStateVariables();
+	auto preCallState = vector<smtutil::Expression>{state().state()} + currentStateVariables();
 	bool usesStaticCall = kind == FunctionType::Kind::BareStaticCall ||
 		function->stateMutability() == StateMutability::Pure ||
 		function->stateMutability() == StateMutability::View;
 	if (!usesStaticCall)
+	{
+		state().newState();
 		for (auto const* var: m_stateVariables)
 			m_context.variable(*var)->increaseIndex();
+	}
 
-	auto nondet = (*m_nondetInterfaces.at(m_currentContract))(preCallState + currentStateVariables());
-	m_symbolFunction[nondet.name] = &_funCall;
+	auto postCallState = vector<smtutil::Expression>{state().state()} + currentStateVariables();
+	auto nondet = (*m_nondetInterfaces.at(m_currentContract))(preCallState + postCallState);
+	// TODO this could instead add the summary of the called function, where that summary
+	// basically has the nondet interface of this summary as a constraint.
 	m_context.addAssertion(nondet);
 
-	m_context.addAssertion(m_error.currentValue() == 0);
+	m_context.addAssertion(errorFlag().currentValue() == 0);
+}
+
+void CHC::externalFunctionCallToTrustedCode(FunctionCall const& _funCall)
+{
+	solAssert(m_currentContract, "");
+	FunctionType const& funType = dynamic_cast<FunctionType const&>(*_funCall.expression().annotation().type);
+	auto kind = funType.kind();
+	solAssert(kind == FunctionType::Kind::External || kind == FunctionType::Kind::BareStaticCall, "");
+
+	auto const* function = functionCallToDefinition(_funCall);
+	if (!function)
+		return;
+
+	// External call creates a new transaction.
+	auto originalTx = state().tx();
+	auto txOrigin = state().txMember("tx.origin");
+	state().newTx();
+	// set the transaction sender as this contract
+	m_context.addAssertion(state().txMember("msg.sender") == state().thisAddress());
+	// set the origin to be the current transaction origin
+	m_context.addAssertion(state().txMember("tx.origin") == txOrigin);
+
+	smtutil::Expression pred = predicate(_funCall);
+
+	auto txConstraints = m_context.state().txConstraints(*function);
+	m_context.addAssertion(pred && txConstraints);
+	// restore the original transaction data
+	state().newTx();
+	m_context.addAssertion(originalTx == state().tx());
+
+	solAssert(m_errorDest, "");
+	connectBlocks(
+		m_currentBlock,
+		predicate(*m_errorDest),
+		(errorFlag().currentValue() > 0)
+	);
+	m_context.addAssertion(errorFlag().currentValue() == 0);
 }
 
 void CHC::unknownFunctionCall(FunctionCall const&)
@@ -596,42 +706,102 @@ void CHC::makeArrayPopVerificationTarget(FunctionCall const& _arrayPop)
 
 	auto memberAccess = dynamic_cast<MemberAccess const*>(&_arrayPop.expression());
 	solAssert(memberAccess, "");
-	auto symbArray = dynamic_pointer_cast<smt::SymbolicArrayVariable>(m_context.expression(memberAccess->expression()));
+	auto symbArray = dynamic_pointer_cast<SymbolicArrayVariable>(m_context.expression(memberAccess->expression()));
 	solAssert(symbArray, "");
 
-	auto previousError = m_error.currentValue();
-	m_error.increaseIndex();
+	verificationTargetEncountered(&_arrayPop, VerificationTarget::Type::PopEmptyArray, symbArray->length() <= 0);
+}
 
-	addArrayPopVerificationTarget(&_arrayPop, m_error.currentValue());
-	connectBlocks(
-		m_currentBlock,
-		m_currentFunction->isConstructor() ? summary(*m_currentContract) : summary(*m_currentFunction),
-		currentPathConditions() && symbArray->length() <= 0 && m_error.currentValue() == newErrorId(_arrayPop)
-	);
+pair<smtutil::Expression, smtutil::Expression> CHC::arithmeticOperation(
+	Token _op,
+	smtutil::Expression const& _left,
+	smtutil::Expression const& _right,
+	TypePointer const& _commonType,
+	frontend::Expression const& _expression
+)
+{
+	if (_op == Token::Mod || _op == Token::Div)
+		verificationTargetEncountered(&_expression, VerificationTarget::Type::DivByZero, _right == 0);
 
-	m_context.addAssertion(m_error.currentValue() == previousError);
+	auto values = SMTEncoder::arithmeticOperation(_op, _left, _right, _commonType, _expression);
+
+	IntegerType const* intType = nullptr;
+	if (auto const* type = dynamic_cast<IntegerType const*>(_commonType))
+		intType = type;
+	else
+		intType = TypeProvider::uint256();
+
+	// Mod does not need underflow/overflow checks.
+	// Div only needs overflow check for signed types.
+	if (_op == Token::Mod || (_op == Token::Div && !intType->isSigned()))
+		return values;
+
+	if (_op == Token::Div)
+		verificationTargetEncountered(&_expression, VerificationTarget::Type::Overflow, values.second > intType->maxValue());
+	else if (intType->isSigned())
+	{
+		verificationTargetEncountered(&_expression, VerificationTarget::Type::Underflow, values.second < intType->minValue());
+		verificationTargetEncountered(&_expression, VerificationTarget::Type::Overflow, values.second > intType->maxValue());
+	}
+	else if (_op == Token::Sub)
+		verificationTargetEncountered(&_expression, VerificationTarget::Type::Underflow, values.second < intType->minValue());
+	else if (_op == Token::Add || _op == Token::Mul)
+		verificationTargetEncountered(&_expression, VerificationTarget::Type::Overflow, values.second > intType->maxValue());
+	else
+		solAssert(false, "");
+	return values;
 }
 
 void CHC::resetSourceAnalysis()
 {
-	m_verificationTargets.clear();
 	m_safeTargets.clear();
 	m_unsafeTargets.clear();
-	m_functionAssertions.clear();
-	m_errorIds.clear();
+	m_functionTargetIds.clear();
+	m_verificationTargets.clear();
+	m_queryPlaceholders.clear();
 	m_callGraph.clear();
 	m_summaries.clear();
-	m_symbolFunction.clear();
+	m_interfaces.clear();
+	m_nondetInterfaces.clear();
+	m_constructorSummaries.clear();
+	m_contractInitializers.clear();
+	Predicate::reset();
+	ArraySlicePredicate::reset();
+	m_blockCounter = 0;
+
+	bool usesZ3 = false;
+#ifdef HAVE_Z3
+	usesZ3 = m_enabledSolvers.z3 && Z3Interface::available();
+	if (usesZ3)
+	{
+		/// z3::fixedpoint does not have a reset mechanism, so we need to create another.
+		m_interface.reset(new Z3CHCInterface(m_queryTimeout));
+		auto z3Interface = dynamic_cast<Z3CHCInterface const*>(m_interface.get());
+		solAssert(z3Interface, "");
+		m_context.setSolver(z3Interface->z3Interface());
+	}
+#endif
+	if (!usesZ3)
+	{
+		auto smtlib2Interface = dynamic_cast<CHCSmtLib2Interface*>(m_interface.get());
+		smtlib2Interface->reset();
+		solAssert(smtlib2Interface, "");
+		m_context.setSolver(smtlib2Interface->smtlib2Interface());
+	}
+
+	m_context.clear();
+	m_context.resetUniqueId();
+	m_context.setAssertionAccumulation(false);
 }
 
 void CHC::resetContractAnalysis()
 {
-	m_stateSorts.clear();
 	m_stateVariables.clear();
 	m_unknownFunctionCallSeen = false;
 	m_breakDest = nullptr;
 	m_continueDest = nullptr;
-	m_error.resetIndex();
+	m_returnDests.clear();
+	errorFlag().resetIndex();
 }
 
 void CHC::eraseKnowledge()
@@ -651,173 +821,52 @@ void CHC::clearIndices(ContractDefinition const* _contract, FunctionDefinition c
 	{
 		for (auto const& var: _function->parameters() + _function->returnParameters())
 			m_context.variable(*var)->increaseIndex();
-		for (auto const& var: _function->localVariables())
+		for (auto const& var: localVariablesIncludingModifiers(*_function))
 			m_context.variable(*var)->increaseIndex();
 	}
+
+	state().newState();
 }
 
-void CHC::setCurrentBlock(
-	smt::SymbolicFunctionVariable const& _block,
-	vector<smtutil::Expression> const* _arguments
-)
+void CHC::setCurrentBlock(Predicate const& _block)
 {
 	if (m_context.solverStackHeigh() > 0)
 		m_context.popSolver();
 	solAssert(m_currentContract, "");
 	clearIndices(m_currentContract, m_currentFunction);
 	m_context.pushSolver();
-	if (_arguments)
-		m_currentBlock = predicate(_block, *_arguments);
-	else
-		m_currentBlock = predicate(_block);
+	m_currentBlock = predicate(_block);
 }
 
-set<frontend::Expression const*, CHC::IdCompare> CHC::transactionAssertions(ASTNode const* _txRoot)
+set<unsigned> CHC::transactionVerificationTargetsIds(ASTNode const* _txRoot)
 {
-	set<Expression const*, IdCompare> assertions;
+	set<unsigned> verificationTargetsIds;
 	solidity::util::BreadthFirstSearch<ASTNode const*>{{_txRoot}}.run([&](auto const* function, auto&& _addChild) {
-		assertions.insert(m_functionAssertions[function].begin(), m_functionAssertions[function].end());
+		verificationTargetsIds.insert(m_functionTargetIds[function].begin(), m_functionTargetIds[function].end());
 		for (auto const* called: m_callGraph[function])
 		_addChild(called);
 	});
-	return assertions;
+	return verificationTargetsIds;
 }
 
-vector<VariableDeclaration const*> CHC::stateVariablesIncludingInheritedAndPrivate(ContractDefinition const& _contract)
+SortPointer CHC::sort(FunctionDefinition const& _function)
 {
-	return fold(
-		_contract.annotation().linearizedBaseContracts,
-		vector<VariableDeclaration const*>{},
-		[](auto&& _acc, auto _contract) { return _acc + _contract->stateVariables(); }
-	);
+	return functionBodySort(_function, m_currentContract, state());
 }
 
-vector<VariableDeclaration const*> CHC::stateVariablesIncludingInheritedAndPrivate(FunctionDefinition const& _function)
-{
-	return stateVariablesIncludingInheritedAndPrivate(dynamic_cast<ContractDefinition const&>(*_function.scope()));
-}
-
-vector<smtutil::SortPointer> CHC::stateSorts(ContractDefinition const& _contract)
-{
-	return applyMap(
-		stateVariablesIncludingInheritedAndPrivate(_contract),
-		[](auto _var) { return smt::smtSortAbstractFunction(*_var->type()); }
-	);
-}
-
-smtutil::SortPointer CHC::constructorSort()
-{
-	solAssert(m_currentContract, "");
-	if (auto const* constructor = m_currentContract->constructor())
-		return sort(*constructor);
-
-	return make_shared<smtutil::FunctionSort>(
-		vector<smtutil::SortPointer>{smtutil::SortProvider::uintSort} + m_stateSorts,
-		smtutil::SortProvider::boolSort
-	);
-}
-
-smtutil::SortPointer CHC::interfaceSort()
-{
-	solAssert(m_currentContract, "");
-	return interfaceSort(*m_currentContract);
-}
-
-smtutil::SortPointer CHC::nondetInterfaceSort()
-{
-	solAssert(m_currentContract, "");
-	return nondetInterfaceSort(*m_currentContract);
-}
-
-smtutil::SortPointer CHC::interfaceSort(ContractDefinition const& _contract)
-{
-	return make_shared<smtutil::FunctionSort>(
-		stateSorts(_contract),
-		smtutil::SortProvider::boolSort
-	);
-}
-
-smtutil::SortPointer CHC::nondetInterfaceSort(ContractDefinition const& _contract)
-{
-	auto sorts = stateSorts(_contract);
-	return make_shared<smtutil::FunctionSort>(
-		sorts + sorts,
-		smtutil::SortProvider::boolSort
-	);
-}
-
-smtutil::SortPointer CHC::arity0FunctionSort()
-{
-	return make_shared<smtutil::FunctionSort>(
-		vector<smtutil::SortPointer>(),
-		smtutil::SortProvider::boolSort
-	);
-}
-
-/// A function in the symbolic CFG requires:
-/// - Index of failed assertion. 0 means no assertion failed.
-/// - 2 sets of state variables:
-///   - State variables at the beginning of the current function, immutable
-///   - Current state variables
-///    At the beginning of the function these must equal set 1
-/// - 2 sets of input variables:
-///   - Input variables at the beginning of the current function, immutable
-///   - Current input variables
-///    At the beginning of the function these must equal set 1
-/// - 1 set of output variables
-smtutil::SortPointer CHC::sort(FunctionDefinition const& _function)
-{
-	auto smtSort = [](auto _var) { return smt::smtSortAbstractFunction(*_var->type()); };
-	auto inputSorts = applyMap(_function.parameters(), smtSort);
-	auto outputSorts = applyMap(_function.returnParameters(), smtSort);
-	return make_shared<smtutil::FunctionSort>(
-		vector<smtutil::SortPointer>{smtutil::SortProvider::uintSort} + m_stateSorts + inputSorts + m_stateSorts + inputSorts + outputSorts,
-		smtutil::SortProvider::boolSort
-	);
-}
-
-smtutil::SortPointer CHC::sort(ASTNode const* _node)
+SortPointer CHC::sort(ASTNode const* _node)
 {
 	if (auto funDef = dynamic_cast<FunctionDefinition const*>(_node))
 		return sort(*funDef);
 
-	auto fSort = dynamic_pointer_cast<smtutil::FunctionSort>(sort(*m_currentFunction));
-	solAssert(fSort, "");
-
-	auto smtSort = [](auto _var) { return smt::smtSortAbstractFunction(*_var->type()); };
-	return make_shared<smtutil::FunctionSort>(
-		fSort->domain + applyMap(m_currentFunction->localVariables(), smtSort),
-		smtutil::SortProvider::boolSort
-	);
+	solAssert(m_currentFunction, "");
+	return functionBodySort(*m_currentFunction, m_currentContract, state());
 }
 
-smtutil::SortPointer CHC::summarySort(FunctionDefinition const& _function, ContractDefinition const& _contract)
+Predicate const* CHC::createSymbolicBlock(SortPointer _sort, string const& _name, PredicateType _predType, ASTNode const* _node)
 {
-	auto stateVariables = stateVariablesIncludingInheritedAndPrivate(_contract);
-	auto sorts = stateSorts(_contract);
-
-	auto smtSort = [](auto _var) { return smt::smtSortAbstractFunction(*_var->type()); };
-	auto inputSorts = applyMap(_function.parameters(), smtSort);
-	auto outputSorts = applyMap(_function.returnParameters(), smtSort);
-	return make_shared<smtutil::FunctionSort>(
-		vector<smtutil::SortPointer>{smtutil::SortProvider::uintSort} +
-			sorts +
-			inputSorts +
-			sorts +
-			inputSorts +
-			outputSorts,
-		smtutil::SortProvider::boolSort
-	);
-}
-
-unique_ptr<smt::SymbolicFunctionVariable> CHC::createSymbolicBlock(smtutil::SortPointer _sort, string const& _name)
-{
-	auto block = make_unique<smt::SymbolicFunctionVariable>(
-		_sort,
-		_name,
-		m_context
-	);
-	m_interface->registerRelation(block->currentFunctionValue());
+	auto const* block = Predicate::create(_sort, _name, _predType, m_context, _node);
+	m_interface->registerRelation(block->functor());
 	return block;
 }
 
@@ -825,30 +874,31 @@ void CHC::defineInterfacesAndSummaries(SourceUnit const& _source)
 {
 	for (auto const& node: _source.nodes())
 		if (auto const* contract = dynamic_cast<ContractDefinition const*>(node.get()))
+		{
+			string suffix = contract->name() + "_" + to_string(contract->id());
+			m_interfaces[contract] = createSymbolicBlock(interfaceSort(*contract, state()), "interface_" + suffix, PredicateType::Interface, contract);
+			m_nondetInterfaces[contract] = createSymbolicBlock(nondetInterfaceSort(*contract, state()), "nondet_interface_" + suffix, PredicateType::NondetInterface, contract);
+			m_constructorSummaries[contract] = createConstructorBlock(*contract, "summary_constructor");
+			m_contractInitializers[contract] = createConstructorBlock(*contract, "contract_initializer");
+
+			for (auto const* var: stateVariablesIncludingInheritedAndPrivate(*contract))
+				if (!m_context.knownVariable(*var))
+					createVariable(*var);
+
+			/// Base nondeterministic interface that allows
+			/// 0 steps to be taken, used as base for the inductive
+			/// rule for each function.
+			auto const& iface = *m_nondetInterfaces.at(contract);
+			addRule(smt::nondetInterface(iface, *contract, m_context, 0, 0), "base_nondet");
+
 			for (auto const* base: contract->annotation().linearizedBaseContracts)
-			{
-				string suffix = base->name() + "_" + to_string(base->id());
-				m_interfaces[base] = createSymbolicBlock(interfaceSort(*base), "interface_" + suffix);
-				m_nondetInterfaces[base] = createSymbolicBlock(nondetInterfaceSort(*base), "nondet_interface_" + suffix);
-
-				for (auto const* var: stateVariablesIncludingInheritedAndPrivate(*base))
-					if (!m_context.knownVariable(*var))
-						createVariable(*var);
-
-				/// Base nondeterministic interface that allows
-				/// 0 steps to be taken, used as base for the inductive
-				/// rule for each function.
-				auto const& iface = *m_nondetInterfaces.at(base);
-				auto state0 = stateVariablesAtIndex(0, *base);
-				addRule(iface(state0 + state0), "base_nondet");
-
 				for (auto const* function: base->definedFunctions())
 				{
 					for (auto var: function->parameters())
 						createVariable(*var);
 					for (auto var: function->returnParameters())
 						createVariable(*var);
-					for (auto const* var: function->localVariables())
+					for (auto const* var: localVariablesIncludingModifiers(*function))
 						createVariable(*var);
 
 					m_summaries[contract].emplace(function, createSummaryBlock(*function, *contract));
@@ -860,37 +910,68 @@ void CHC::defineInterfacesAndSummaries(SourceUnit const& _source)
 						!base->isInterface()
 					)
 					{
-						auto state1 = stateVariablesAtIndex(1, *base);
-						auto state2 = stateVariablesAtIndex(2, *base);
+						auto state1 = stateVariablesAtIndex(1, *contract);
+						auto state2 = stateVariablesAtIndex(2, *contract);
 
-						auto nondetPre = iface(state0 + state1);
-						auto nondetPost = iface(state0 + state2);
+						auto nondetPre = smt::nondetInterface(iface, *contract, m_context, 0, 1);
+						auto nondetPost = smt::nondetInterface(iface, *contract, m_context, 0, 2);
 
-						vector<smtutil::Expression> args{m_error.currentValue()};
+						vector<smtutil::Expression> args{errorFlag().currentValue(), state().thisAddress(), state().crypto(), state().tx(), state().state(1)};
 						args += state1 +
 							applyMap(function->parameters(), [this](auto _var) { return valueAtIndex(*_var, 0); }) +
+							vector<smtutil::Expression>{state().state(2)} +
 							state2 +
 							applyMap(function->parameters(), [this](auto _var) { return valueAtIndex(*_var, 1); }) +
 							applyMap(function->returnParameters(), [this](auto _var) { return valueAtIndex(*_var, 1); });
 
-						connectBlocks(nondetPre, nondetPost, (*m_summaries.at(base).at(function))(args));
+						connectBlocks(nondetPre, nondetPost, (*m_summaries.at(contract).at(function))(args));
 					}
-				}
 			}
+		}
+}
+
+void CHC::defineContractInitializer(ContractDefinition const& _contract)
+{
+	auto const& implicitConstructorPredicate = *createConstructorBlock(_contract, "contract_initializer_entry");
+
+	auto implicitFact = smt::constructor(implicitConstructorPredicate, m_context);
+	addRule(smtutil::Expression::implies(initialConstraints(_contract), implicitFact), implicitFact.name);
+	setCurrentBlock(implicitConstructorPredicate);
+
+	solAssert(!m_errorDest, "");
+	m_errorDest = m_contractInitializers.at(&_contract);
+	for (auto var: _contract.stateVariables())
+		if (var->value())
+		{
+			var->value()->accept(*this);
+			assignment(*var, *var->value());
+		}
+	m_errorDest = nullptr;
+
+	auto const& afterInit = *createConstructorBlock(_contract, "contract_initializer_after_init");
+	connectBlocks(m_currentBlock, predicate(afterInit));
+	setCurrentBlock(afterInit);
+
+	if (auto constructor = _contract.constructor())
+	{
+		errorFlag().increaseIndex();
+		m_context.addAssertion(smt::functionCall(*m_summaries.at(&_contract).at(constructor), &_contract, m_context));
+		connectBlocks(m_currentBlock, initializer(_contract), errorFlag().currentValue() > 0);
+		m_context.addAssertion(errorFlag().currentValue() == 0);
+	}
+
+	connectBlocks(m_currentBlock, initializer(_contract));
 }
 
 smtutil::Expression CHC::interface()
 {
-	auto paramExprs = applyMap(
-		m_stateVariables,
-		[this](auto _var) { return m_context.variable(*_var)->currentValue(); }
-	);
-	return (*m_interfaces.at(m_currentContract))(paramExprs);
+	solAssert(m_currentContract, "");
+	return interface(*m_currentContract);
 }
 
 smtutil::Expression CHC::interface(ContractDefinition const& _contract)
 {
-	return (*m_interfaces.at(&_contract))(stateVariablesAtIndex(0, _contract));
+	return ::interface(*m_interfaces.at(&_contract), _contract, m_context);
 }
 
 smtutil::Expression CHC::error()
@@ -900,32 +981,22 @@ smtutil::Expression CHC::error()
 
 smtutil::Expression CHC::error(unsigned _idx)
 {
-	return m_errorPredicate->functionValueAtIndex(_idx)({});
+	return m_errorPredicate->functor(_idx)({});
+}
+
+smtutil::Expression CHC::initializer(ContractDefinition const& _contract)
+{
+	return predicate(*m_contractInitializers.at(&_contract));
 }
 
 smtutil::Expression CHC::summary(ContractDefinition const& _contract)
 {
-	if (auto const* constructor = _contract.constructor())
-		return (*m_constructorSummaryPredicate)(
-			currentFunctionVariables(*constructor)
-		);
-
-	return (*m_constructorSummaryPredicate)(
-		vector<smtutil::Expression>{m_error.currentValue()} +
-		currentStateVariables()
-	);
+	return predicate(*m_constructorSummaries.at(&_contract));
 }
 
 smtutil::Expression CHC::summary(FunctionDefinition const& _function, ContractDefinition const& _contract)
 {
-	vector<smtutil::Expression> args{m_error.currentValue()};
-	auto contract = _function.annotation().contract;
-	args += contract->isLibrary() ? stateVariablesAtIndex(0, *contract) : initialStateVariables(_contract);
-	args += applyMap(_function.parameters(), [this](auto _var) { return valueAtIndex(*_var, 0); });
-	args += contract->isLibrary() ? stateVariablesAtIndex(1, *contract) : currentStateVariables(_contract);
-	args += applyMap(_function.parameters(), [this](auto _var) { return currentValue(*_var); });
-	args += applyMap(_function.returnParameters(), [this](auto _var) { return currentValue(*_var); });
-	return (*m_summaries.at(&_contract).at(&_function))(args);
+	return smt::function(*m_summaries.at(&_contract).at(&_function), &_contract, m_context);
 }
 
 smtutil::Expression CHC::summary(FunctionDefinition const& _function)
@@ -934,37 +1005,43 @@ smtutil::Expression CHC::summary(FunctionDefinition const& _function)
 	return summary(_function, *m_currentContract);
 }
 
-unique_ptr<smt::SymbolicFunctionVariable> CHC::createBlock(ASTNode const* _node, string const& _prefix)
+Predicate const* CHC::createBlock(ASTNode const* _node, PredicateType _predType, string const& _prefix)
 {
-	auto block = createSymbolicBlock(sort(_node),
-		"block_" +
-		uniquePrefix() +
-		"_" +
-		_prefix +
-		predicateName(_node));
+	auto block = createSymbolicBlock(
+		sort(_node),
+		"block_" + uniquePrefix() + "_" + _prefix + predicateName(_node),
+		_predType,
+		_node
+	);
 
 	solAssert(m_currentFunction, "");
-	m_symbolFunction[block->currentFunctionValue().name] = m_currentFunction;
 	return block;
 }
 
-unique_ptr<smt::SymbolicFunctionVariable> CHC::createSummaryBlock(FunctionDefinition const& _function, ContractDefinition const& _contract)
+Predicate const* CHC::createSummaryBlock(FunctionDefinition const& _function, ContractDefinition const& _contract)
 {
-	auto block = createSymbolicBlock(summarySort(_function, _contract),
-		"summary_" +
-		uniquePrefix() +
-		"_" +
-		predicateName(&_function, &_contract));
+	return createSymbolicBlock(
+		functionSort(_function, &_contract, state()),
+		"summary_" + uniquePrefix() + "_" + predicateName(&_function, &_contract),
+		PredicateType::FunctionSummary,
+		&_function
+	);
+}
 
-	m_symbolFunction[block->currentFunctionValue().name] = &_function;
-	return block;
+Predicate const* CHC::createConstructorBlock(ContractDefinition const& _contract, string const& _prefix)
+{
+	return createSymbolicBlock(
+		constructorSort(_contract, state()),
+		_prefix + "_" + contractSuffix(_contract) + "_" + uniquePrefix(),
+		PredicateType::ConstructorSummary,
+		&_contract
+	);
 }
 
 void CHC::createErrorBlock()
 {
-	solAssert(m_errorPredicate, "");
-	m_errorPredicate->increaseIndex();
-	m_interface->registerRelation(m_errorPredicate->currentFunctionValue());
+	m_errorPredicate = createSymbolicBlock(arity0FunctionSort(), "error_target_" + to_string(m_context.newUniqueId()), PredicateType::Error);
+	m_interface->registerRelation(m_errorPredicate->functor());
 }
 
 void CHC::connectBlocks(smtutil::Expression const& _from, smtutil::Expression const& _to, smtutil::Expression const& _constraints)
@@ -976,14 +1053,24 @@ void CHC::connectBlocks(smtutil::Expression const& _from, smtutil::Expression co
 	addRule(edge, _from.name + "_to_" + _to.name);
 }
 
+smtutil::Expression CHC::initialConstraints(ContractDefinition const& _contract, FunctionDefinition const* _function)
+{
+	smtutil::Expression conj = state().state() == state().state(0);
+	conj = conj && errorFlag().currentValue() == 0;
+	for (auto var: stateVariablesIncludingInheritedAndPrivate(_contract))
+		conj = conj && m_context.variable(*var)->valueAtIndex(0) == currentValue(*var);
+
+	FunctionDefinition const* function = _function ? _function : _contract.constructor();
+	if (function)
+		for (auto var: function->parameters())
+			conj = conj && m_context.variable(*var)->valueAtIndex(0) == currentValue(*var);
+
+	return conj;
+}
+
 vector<smtutil::Expression> CHC::initialStateVariables()
 {
 	return stateVariablesAtIndex(0);
-}
-
-vector<smtutil::Expression> CHC::initialStateVariables(ContractDefinition const& _contract)
-{
-	return stateVariablesAtIndex(0, _contract);
 }
 
 vector<smtutil::Expression> CHC::stateVariablesAtIndex(unsigned _index)
@@ -995,7 +1082,7 @@ vector<smtutil::Expression> CHC::stateVariablesAtIndex(unsigned _index)
 vector<smtutil::Expression> CHC::stateVariablesAtIndex(unsigned _index, ContractDefinition const& _contract)
 {
 	return applyMap(
-		stateVariablesIncludingInheritedAndPrivate(_contract),
+		SMTEncoder::stateVariablesIncludingInheritedAndPrivate(_contract),
 		[&](auto _var) { return valueAtIndex(*_var, _index); }
 	);
 }
@@ -1008,47 +1095,7 @@ vector<smtutil::Expression> CHC::currentStateVariables()
 
 vector<smtutil::Expression> CHC::currentStateVariables(ContractDefinition const& _contract)
 {
-	return applyMap(stateVariablesIncludingInheritedAndPrivate(_contract), [this](auto _var) { return currentValue(*_var); });
-}
-
-vector<smtutil::Expression> CHC::currentFunctionVariables()
-{
-	solAssert(m_currentFunction, "");
-	return currentFunctionVariables(*m_currentFunction);
-}
-
-vector<smtutil::Expression> CHC::currentFunctionVariables(FunctionDefinition const& _function)
-{
-	vector<smtutil::Expression> initInputExprs;
-	vector<smtutil::Expression> mutableInputExprs;
-	for (auto const& var: _function.parameters())
-	{
-		initInputExprs.push_back(m_context.variable(*var)->valueAtIndex(0));
-		mutableInputExprs.push_back(m_context.variable(*var)->currentValue());
-	}
-	auto returnExprs = applyMap(_function.returnParameters(), [this](auto _var) { return currentValue(*_var); });
-	return vector<smtutil::Expression>{m_error.currentValue()} +
-		initialStateVariables() +
-		initInputExprs +
-		currentStateVariables() +
-		mutableInputExprs +
-		returnExprs;
-}
-
-vector<smtutil::Expression> CHC::currentFunctionVariables(ContractDefinition const& _contract)
-{
-	if (auto const* constructor = _contract.constructor())
-		return currentFunctionVariables(*constructor);
-
-	return vector<smtutil::Expression>{m_error.currentValue()} + currentStateVariables();
-}
-
-vector<smtutil::Expression> CHC::currentBlockVariables()
-{
-	if (m_currentFunction)
-		return currentFunctionVariables() + applyMap(m_currentFunction->localVariables(), [this](auto _var) { return currentValue(*_var); });
-
-	return currentFunctionVariables();
+	return applyMap(SMTEncoder::stateVariablesIncludingInheritedAndPrivate(_contract), [this](auto _var) { return currentValue(*_var); });
 }
 
 string CHC::predicateName(ASTNode const* _node, ContractDefinition const* _contract)
@@ -1068,39 +1115,76 @@ string CHC::predicateName(ASTNode const* _node, ContractDefinition const* _contr
 	return prefix + "_" + to_string(_node->id()) + "_" + to_string(contract->id());
 }
 
-smtutil::Expression CHC::predicate(smt::SymbolicFunctionVariable const& _block)
+smtutil::Expression CHC::predicate(Predicate const& _block)
 {
-	return _block(currentBlockVariables());
-}
-
-smtutil::Expression CHC::predicate(
-	smt::SymbolicFunctionVariable const& _block,
-	vector<smtutil::Expression> const& _arguments
-)
-{
-	return _block(_arguments);
+	switch (_block.type())
+	{
+	case PredicateType::Interface:
+		solAssert(m_currentContract, "");
+		return ::interface(_block, *m_currentContract, m_context);
+	case PredicateType::ConstructorSummary:
+		return constructor(_block, m_context);
+	case PredicateType::FunctionSummary:
+		return smt::function(_block, m_currentContract, m_context);
+	case PredicateType::FunctionBlock:
+		solAssert(m_currentFunction, "");
+		return functionBlock(_block, *m_currentFunction, m_currentContract, m_context);
+	case PredicateType::Error:
+		return _block({});
+	case PredicateType::NondetInterface:
+		// Nondeterministic interface predicates are handled differently.
+		solAssert(false, "");
+	case PredicateType::Custom:
+		// Custom rules are handled separately.
+		solAssert(false, "");
+	}
+	solAssert(false, "");
 }
 
 smtutil::Expression CHC::predicate(FunctionCall const& _funCall)
 {
+	FunctionType const& funType = dynamic_cast<FunctionType const&>(*_funCall.expression().annotation().type);
+	auto kind = funType.kind();
+	solAssert(kind == FunctionType::Kind::Internal || kind == FunctionType::Kind::External || kind == FunctionType::Kind::BareStaticCall, "");
+
 	auto const* function = functionCallToDefinition(_funCall);
 	if (!function)
 		return smtutil::Expression(true);
 
-	m_error.increaseIndex();
-	vector<smtutil::Expression> args{m_error.currentValue()};
-	auto const* contract = function->annotation().contract;
-	FunctionType const& funType = dynamic_cast<FunctionType const&>(*_funCall.expression().annotation().type);
-	bool otherContract = contract->isLibrary() ||
-		funType.kind() == FunctionType::Kind::External ||
-		funType.kind() == FunctionType::Kind::BareStaticCall;
+	auto contractAddressValue = [this](FunctionCall const& _f) {
+		FunctionType const& funType = dynamic_cast<FunctionType const&>(*_f.expression().annotation().type);
+		if (funType.kind() == FunctionType::Kind::Internal)
+			return state().thisAddress();
+		if (MemberAccess const* callBase = dynamic_cast<MemberAccess const*>(&_f.expression()))
+			return expr(callBase->expression());
+		solAssert(false, "Unreachable!");
+	};
+	errorFlag().increaseIndex();
+	vector<smtutil::Expression> args{errorFlag().currentValue(), contractAddressValue(_funCall), state().crypto(), state().tx(), state().state()};
 
-	args += otherContract ? stateVariablesAtIndex(0, *contract) : currentStateVariables();
+	auto const* contract = function->annotation().contract;
+	auto const& hierarchy = m_currentContract->annotation().linearizedBaseContracts;
+	solAssert(kind != FunctionType::Kind::Internal || contract->isLibrary() || contains(hierarchy, contract), "");
+
+	/// If the call is to a library, we use that library as the called contract.
+	/// If the call is to a contract not in the inheritance hierarchy, we also use that as the called contract.
+	/// Otherwise, the call is to some contract in the inheritance hierarchy of the current contract.
+	/// In this case we use current contract as the called one since the interfaces/predicates are different.
+	auto const* calledContract = contains(hierarchy, contract) ?  m_currentContract : contract;
+	solAssert(calledContract, "");
+
+	bool usesStaticCall = function->stateMutability() == StateMutability::Pure || function->stateMutability() == StateMutability::View;
+
+	args += currentStateVariables(*calledContract);
 	args += symbolicArguments(_funCall);
-	if (!otherContract)
+	if (!calledContract->isLibrary() && !usesStaticCall)
+	{
+		state().newState();
 		for (auto const& var: m_stateVariables)
 			m_context.variable(*var)->increaseIndex();
-	args += otherContract ? stateVariablesAtIndex(1, *contract) : currentStateVariables();
+	}
+	args += vector<smtutil::Expression>{state().state()};
+	args += currentStateVariables(*calledContract);
 
 	for (auto var: function->parameters() + function->returnParameters())
 	{
@@ -1111,11 +1195,7 @@ smtutil::Expression CHC::predicate(FunctionCall const& _funCall)
 		args.push_back(currentValue(*var));
 	}
 
-	if (otherContract)
-		return (*m_summaries.at(contract).at(function))(args);
-
-	solAssert(m_currentContract, "");
-	return (*m_summaries.at(m_currentContract).at(function))(args);
+	return (*m_summaries.at(calledContract).at(function))(args);
 }
 
 void CHC::addRule(smtutil::Expression const& _rule, string const& _ruleName)
@@ -1123,14 +1203,14 @@ void CHC::addRule(smtutil::Expression const& _rule, string const& _ruleName)
 	m_interface->addRule(_rule, _ruleName);
 }
 
-pair<smtutil::CheckResult, CHCSolverInterface::CexGraph> CHC::query(smtutil::Expression const& _query, langutil::SourceLocation const& _location)
+pair<CheckResult, CHCSolverInterface::CexGraph> CHC::query(smtutil::Expression const& _query, langutil::SourceLocation const& _location)
 {
-	smtutil::CheckResult result;
+	CheckResult result;
 	CHCSolverInterface::CexGraph cex;
 	tie(result, cex) = m_interface->query(_query);
 	switch (result)
 	{
-	case smtutil::CheckResult::SATISFIABLE:
+	case CheckResult::SATISFIABLE:
 	{
 #ifdef HAVE_Z3
 		// Even though the problem is SAT, Spacer's pre processing makes counterexamples incomplete.
@@ -1139,146 +1219,197 @@ pair<smtutil::CheckResult, CHCSolverInterface::CexGraph> CHC::query(smtutil::Exp
 		solAssert(spacer, "");
 		spacer->setSpacerOptions(false);
 
-		smtutil::CheckResult resultNoOpt;
+		CheckResult resultNoOpt;
 		CHCSolverInterface::CexGraph cexNoOpt;
 		tie(resultNoOpt, cexNoOpt) = m_interface->query(_query);
 
-		if (resultNoOpt == smtutil::CheckResult::SATISFIABLE)
+		if (resultNoOpt == CheckResult::SATISFIABLE)
 			cex = move(cexNoOpt);
 
 		spacer->setSpacerOptions(true);
 #endif
 		break;
 	}
-	case smtutil::CheckResult::UNSATISFIABLE:
+	case CheckResult::UNSATISFIABLE:
 		break;
-	case smtutil::CheckResult::UNKNOWN:
+	case CheckResult::UNKNOWN:
 		break;
-	case smtutil::CheckResult::CONFLICTING:
-		m_outerErrorReporter.warning(1988_error, _location, "At least two SMT solvers provided conflicting answers. Results might not be sound.");
+	case CheckResult::CONFLICTING:
+		m_errorReporter.warning(1988_error, _location, "CHC: At least two SMT solvers provided conflicting answers. Results might not be sound.");
 		break;
-	case smtutil::CheckResult::ERROR:
-		m_outerErrorReporter.warning(1218_error, _location, "Error trying to invoke SMT solver.");
+	case CheckResult::ERROR:
+		m_errorReporter.warning(1218_error, _location, "CHC: Error trying to invoke SMT solver.");
 		break;
 	}
 	return {result, cex};
 }
 
-void CHC::addVerificationTarget(
-	ASTNode const* _scope,
+void CHC::verificationTargetEncountered(
+	ASTNode const* const _errorNode,
 	VerificationTarget::Type _type,
-	smtutil::Expression _from,
-	smtutil::Expression _constraints,
-	smtutil::Expression _errorId
+	smtutil::Expression const& _errorCondition
 )
 {
-	m_verificationTargets.emplace(_scope, CHCVerificationTarget{{_type, _from, _constraints}, _errorId});
-}
+	solAssert(m_currentContract || m_currentFunction, "");
+	SourceUnit const* source = m_currentContract ? sourceUnitContaining(*m_currentContract) : sourceUnitContaining(*m_currentFunction);
+	solAssert(source, "");
+	if (!source->annotation().experimentalFeatures.count(ExperimentalFeature::SMTChecker))
+		return;
 
-void CHC::addAssertVerificationTarget(ASTNode const* _scope, smtutil::Expression _from, smtutil::Expression _constraints, smtutil::Expression _errorId)
-{
-	addVerificationTarget(_scope, VerificationTarget::Type::Assert, _from, _constraints, _errorId);
-}
-
-void CHC::addArrayPopVerificationTarget(ASTNode const* _scope, smtutil::Expression _errorId)
-{
-	solAssert(m_currentContract, "");
-	solAssert(m_currentFunction, "");
-
-	if (m_currentFunction->isConstructor())
-		addVerificationTarget(_scope, VerificationTarget::Type::PopEmptyArray, summary(*m_currentContract), smtutil::Expression(true), _errorId);
+	bool scopeIsFunction = m_currentFunction && !m_currentFunction->isConstructor();
+	auto errorId = newErrorId();
+	solAssert(m_verificationTargets.count(errorId) == 0, "Error ID is not unique!");
+	m_verificationTargets.emplace(errorId, CHCVerificationTarget{{_type, _errorCondition, smtutil::Expression(true)}, errorId, _errorNode});
+	if (scopeIsFunction)
+		m_functionTargetIds[m_currentFunction].push_back(errorId);
 	else
-	{
-		auto iface = (*m_interfaces.at(m_currentContract))(initialStateVariables());
-		auto sum = summary(*m_currentFunction);
-		addVerificationTarget(_scope, VerificationTarget::Type::PopEmptyArray, iface, sum, _errorId);
-	}
+		m_functionTargetIds[m_currentContract].push_back(errorId);
+	auto previousError = errorFlag().currentValue();
+	errorFlag().increaseIndex();
+
+	// create an error edge to the summary
+	solAssert(m_errorDest, "");
+	connectBlocks(
+		m_currentBlock,
+		predicate(*m_errorDest),
+		_errorCondition && errorFlag().currentValue() == errorId
+	);
+
+	m_context.addAssertion(errorFlag().currentValue() == previousError);
 }
 
 void CHC::checkVerificationTargets()
 {
-	for (auto const& [scope, target]: m_verificationTargets)
+	// The verification conditions have been collected per function where they have been encountered (m_verificationTargets).
+	// Also, all possible contexts in which an external function can be called has been recorded (m_queryPlaceholders).
+	// Here we combine every context in which an external function can be called with all possible verification conditions
+	// in its call graph. Each such combination forms a unique verification target.
+	vector<CHCVerificationTarget> verificationTargets;
+	for (auto const& [function, placeholders]: m_queryPlaceholders)
 	{
-		if (target.type == VerificationTarget::Type::Assert)
-			checkAssertTarget(scope, target);
-		else
-		{
-			string satMsg;
-			string unknownMsg;
-			ErrorId errorReporterId;
-
-			if (target.type == VerificationTarget::Type::PopEmptyArray)
+		auto functionTargets = transactionVerificationTargetsIds(function);
+		for (auto const& placeholder: placeholders)
+			for (unsigned id: functionTargets)
 			{
-				solAssert(dynamic_cast<FunctionCall const*>(scope), "");
-				satMsg = "Empty array \"pop\" detected here";
-				unknownMsg = "Empty array \"pop\" might happen here.";
-				errorReporterId = 2529_error;
+				auto const& target = m_verificationTargets.at(id);
+				verificationTargets.push_back(CHCVerificationTarget{
+					{target.type, placeholder.fromPredicate, placeholder.constraints && placeholder.errorExpression == target.errorId},
+					target.errorId,
+					target.errorNode
+				});
 			}
-			else
-				solAssert(false, "");
-
-			auto it = m_errorIds.find(scope->id());
-			solAssert(it != m_errorIds.end(), "");
-			checkAndReportTarget(scope, target, it->second, errorReporterId, satMsg, unknownMsg);
-		}
 	}
-}
 
-void CHC::checkAssertTarget(ASTNode const* _scope, CHCVerificationTarget const& _target)
-{
-	solAssert(_target.type == VerificationTarget::Type::Assert, "");
-	auto assertions = transactionAssertions(_scope);
-	for (auto const* assertion: assertions)
+	set<unsigned> checkedErrorIds;
+	for (auto const& target: verificationTargets)
 	{
-		auto it = m_errorIds.find(assertion->id());
-		solAssert(it != m_errorIds.end(), "");
-		unsigned errorId = it->second;
+		string errorType;
+		ErrorId errorReporterId;
 
-		checkAndReportTarget(assertion, _target, errorId, 6328_error, "Assertion violation happens here");
+		if (target.type == VerificationTarget::Type::PopEmptyArray)
+		{
+			solAssert(dynamic_cast<FunctionCall const*>(target.errorNode), "");
+			errorType = "Empty array \"pop\"";
+			errorReporterId = 2529_error;
+		}
+		else if (
+			target.type == VerificationTarget::Type::Underflow ||
+			target.type == VerificationTarget::Type::Overflow
+		)
+		{
+			auto const* expr = dynamic_cast<Expression const*>(target.errorNode);
+			solAssert(expr, "");
+			auto const* intType = dynamic_cast<IntegerType const*>(expr->annotation().type);
+			if (!intType)
+				intType = TypeProvider::uint256();
+
+			if (target.type == VerificationTarget::Type::Underflow)
+			{
+				errorType = "Underflow (resulting value less than " + formatNumberReadable(intType->minValue()) + ")";
+				errorReporterId = 3944_error;
+			}
+			else if (target.type == VerificationTarget::Type::Overflow)
+			{
+				errorType = "Overflow (resulting value larger than " + formatNumberReadable(intType->maxValue()) + ")";
+				errorReporterId = 4984_error;
+			}
+		}
+		else if (target.type == VerificationTarget::Type::DivByZero)
+		{
+			errorType = "Division by zero";
+			errorReporterId = 4281_error;
+		}
+		else if (target.type == VerificationTarget::Type::Assert)
+		{
+			errorType = "Assertion violation";
+			errorReporterId = 6328_error;
+		}
+		else
+			solAssert(false, "");
+
+		checkAndReportTarget(target, errorReporterId, errorType + " happens here.", errorType + " might happen here.");
+		checkedErrorIds.insert(target.errorId);
 	}
+
+	// There can be targets in internal functions that are not reachable from the external interface.
+	// These are safe by definition and are not even checked by the CHC engine, but this information
+	// must still be reported safe by the BMC engine.
+	set<unsigned> allErrorIds;
+	for (auto const& entry: m_functionTargetIds)
+		for (unsigned id: entry.second)
+			allErrorIds.insert(id);
+
+	set<unsigned> unreachableErrorIds;
+	set_difference(
+		allErrorIds.begin(),
+		allErrorIds.end(),
+		checkedErrorIds.begin(),
+		checkedErrorIds.end(),
+		inserter(unreachableErrorIds, unreachableErrorIds.begin())
+	);
+	for (auto id: unreachableErrorIds)
+		m_safeTargets[m_verificationTargets.at(id).errorNode].insert(m_verificationTargets.at(id).type);
 }
 
 void CHC::checkAndReportTarget(
-	ASTNode const* _scope,
 	CHCVerificationTarget const& _target,
-	unsigned _errorId,
 	ErrorId _errorReporterId,
 	string _satMsg,
 	string _unknownMsg
 )
 {
-	if (m_unsafeTargets.count(_scope) && m_unsafeTargets.at(_scope).count(_target.type))
+	if (m_unsafeTargets.count(_target.errorNode) && m_unsafeTargets.at(_target.errorNode).count(_target.type))
 		return;
 
 	createErrorBlock();
-	connectBlocks(_target.value, error(), _target.constraints && (_target.errorId == _errorId));
-	auto const& [result, model] = query(error(), _scope->location());
-	if (result == smtutil::CheckResult::UNSATISFIABLE)
-		m_safeTargets[_scope].insert(_target.type);
-	else if (result == smtutil::CheckResult::SATISFIABLE)
+	connectBlocks(_target.value, error(), _target.constraints);
+	auto const& location = _target.errorNode->location();
+	auto const& [result, model] = query(error(), location);
+	if (result == CheckResult::UNSATISFIABLE)
+		m_safeTargets[_target.errorNode].insert(_target.type);
+	else if (result == CheckResult::SATISFIABLE)
 	{
 		solAssert(!_satMsg.empty(), "");
-		m_unsafeTargets[_scope].insert(_target.type);
+		m_unsafeTargets[_target.errorNode].insert(_target.type);
 		auto cex = generateCounterexample(model, error().name);
 		if (cex)
-			m_outerErrorReporter.warning(
+			m_errorReporter.warning(
 				_errorReporterId,
-				_scope->location(),
-				_satMsg,
-				SecondarySourceLocation().append(" for:\n" + *cex, SourceLocation{})
+				location,
+				"CHC: " + _satMsg + "\nCounterexample:\n" + *cex
 			);
 		else
-			m_outerErrorReporter.warning(
+			m_errorReporter.warning(
 				_errorReporterId,
-				_scope->location(),
-				_satMsg + "."
+				location,
+				"CHC: " + _satMsg
 			);
 	}
 	else if (!_unknownMsg.empty())
-		m_outerErrorReporter.warning(
+		m_errorReporter.warning(
 			_errorReporterId,
-			_scope->location(),
-			_unknownMsg
+			location,
+			"CHC: " + _unknownMsg
 		);
 }
 
@@ -1303,7 +1434,7 @@ optional<string> CHC::generateCounterexample(CHCSolverInterface::CexGraph const&
 {
 	optional<unsigned> rootId;
 	for (auto const& [id, node]: _graph.nodes)
-		if (node.first == _root)
+		if (node.name == _root)
 		{
 			rootId = id;
 			break;
@@ -1323,42 +1454,31 @@ optional<string> CHC::generateCounterexample(CHCSolverInterface::CexGraph const&
 		solAssert(edges.size() <= 2, "");
 
 		unsigned summaryId = edges.at(0);
-
 		optional<unsigned> interfaceId;
 		if (edges.size() == 2)
 		{
 			interfaceId = edges.at(1);
-			if (_graph.nodes.at(summaryId).first.rfind("summary", 0) != 0)
+			if (!Predicate::predicate(_graph.nodes.at(summaryId).name)->isSummary())
 				swap(summaryId, *interfaceId);
-			solAssert(_graph.nodes.at(*interfaceId).first.rfind("interface", 0) == 0, "");
+			auto interfacePredicate = Predicate::predicate(_graph.nodes.at(*interfaceId).name);
+			solAssert(interfacePredicate && interfacePredicate->isInterface(), "");
 		}
 		/// The children are unordered, so we need to check which is the summary and
 		/// which is the interface.
 
-		solAssert(_graph.nodes.at(summaryId).first.rfind("summary", 0) == 0, "");
+		Predicate const* summaryPredicate = Predicate::predicate(_graph.nodes.at(summaryId).name);
+		solAssert(summaryPredicate && summaryPredicate->isSummary(), "");
 		/// At this point property 2 from the function description is verified for this node.
+		vector<smtutil::Expression> summaryArgs = _graph.nodes.at(summaryId).arguments;
 
-		auto const& summaryNode = _graph.nodes.at(summaryId);
-		solAssert(m_symbolFunction.count(summaryNode.first), "");
-
-		FunctionDefinition const* calledFun = nullptr;
-		ContractDefinition const* calledContract = nullptr;
-		if (auto const* contract = dynamic_cast<ContractDefinition const*>(m_symbolFunction.at(summaryNode.first)))
-		{
-			if (auto const* constructor = contract->constructor())
-				calledFun = constructor;
-			else
-				calledContract = contract;
-		}
-		else if (auto const* fun = dynamic_cast<FunctionDefinition const*>(m_symbolFunction.at(summaryNode.first)))
-			calledFun = fun;
-		else
-			solAssert(false, "");
+		FunctionDefinition const* calledFun = summaryPredicate->programFunction();
+		ContractDefinition const* calledContract = summaryPredicate->programContract();
 
 		solAssert((calledFun && !calledContract) || (!calledFun && calledContract), "");
-		auto const& stateVars = calledFun ? stateVariablesIncludingInheritedAndPrivate(*calledFun) : stateVariablesIncludingInheritedAndPrivate(*calledContract);
-		/// calledContract != nullptr implies that the constructor of the analyzed contract is implicit and
-		/// therefore takes no parameters.
+		auto stateVars = summaryPredicate->stateVariables();
+		solAssert(stateVars.has_value(), "");
+		auto stateValues = summaryPredicate->summaryStateValues(summaryArgs);
+		solAssert(stateValues.size() == stateVars->size(), "");
 
 		/// This summary node is the end of a tx.
 		/// If it is the first summary node seen in this loop, it is the summary
@@ -1368,115 +1488,53 @@ optional<string> CHC::generateCounterexample(CHCSolverInterface::CexGraph const&
 		{
 			lastTxSeen = true;
 			/// Generate counterexample message local to the failed target.
-			localState = formatStateCounterexample(stateVars, calledFun, summaryNode.second) + "\n";
+			localState = formatVariableModel(*stateVars, stateValues, ", ") + "\n";
 			if (calledFun)
 			{
-				/// The signature of a summary predicate is: summary(error, preStateVars, preInputVars, postInputVars, outputVars).
+				auto inValues = summaryPredicate->summaryPostInputValues(summaryArgs);
 				auto const& inParams = calledFun->parameters();
-				unsigned initLocals = stateVars.size() * 2 + 1 + inParams.size();
-				/// In this loop we are interested in postInputVars.
-				for (unsigned i = initLocals; i < initLocals + inParams.size(); ++i)
-				{
-					auto param = inParams.at(i - initLocals);
-					if (param->type()->isValueType())
-						localState += param->name() + " = " + summaryNode.second.at(i) + "\n";
-				}
+				localState += formatVariableModel(inParams, inValues, "\n") + "\n";
+				auto outValues = summaryPredicate->summaryPostOutputValues(summaryArgs);
 				auto const& outParams = calledFun->returnParameters();
-				initLocals += inParams.size();
-				/// In this loop we are interested in outputVars.
-				for (unsigned i = initLocals; i < initLocals + outParams.size(); ++i)
-				{
-					auto param = outParams.at(i - initLocals);
-					if (param->type()->isValueType())
-						localState += param->name() + " = " + summaryNode.second.at(i) + "\n";
-				}
+				localState += formatVariableModel(outParams, outValues, "\n") + "\n";
 			}
 		}
 		else
+		{
+			auto modelMsg = formatVariableModel(*stateVars, stateValues, ", ");
 			/// We report the state after every tx in the trace except for the last, which is reported
 			/// first in the code above.
-			path.emplace_back("State: " + formatStateCounterexample(stateVars, calledFun, summaryNode.second));
+			if (!modelMsg.empty())
+				path.emplace_back("State: " + modelMsg);
+		}
 
-		string txCex = calledContract ? "constructor()" : formatFunctionCallCounterexample(stateVars, *calledFun, summaryNode.second);
+		string txCex = summaryPredicate->formatSummaryCall(summaryArgs);
 		path.emplace_back(txCex);
 
-		/// Recurse on the next interface node which represents the previous transaction
-		/// or stop.
-		if (interfaceId)
-			node = *interfaceId;
-		else
+		/// Stop when we reach the summary of the analyzed constructor.
+		if (summaryPredicate->type() == PredicateType::ConstructorSummary)
 			break;
+
+		/// Recurse on the next interface node which represents the previous transaction.
+		node = *interfaceId;
 	}
 
 	return localState + "\nTransaction trace:\n" + boost::algorithm::join(boost::adaptors::reverse(path), "\n");
 }
 
-string CHC::formatStateCounterexample(vector<VariableDeclaration const*> const& _stateVars, FunctionDefinition const* _function, vector<string> const& _summaryValues)
-{
-	/// The signature of a function summary predicate is: summary(error, preStateVars, preInputVars, postInputVars, outputVars).
-	/// The signature of an implicit constructor summary predicate is: summary(error, postStateVars).
-	/// Here we are interested in postStateVars.
-	vector<string>::const_iterator stateFirst;
-	vector<string>::const_iterator stateLast;
-	if (_function)
-	{
-		stateFirst = _summaryValues.begin() + 1 + static_cast<int>(_stateVars.size()) + static_cast<int>(_function->parameters().size());
-		stateLast = stateFirst + static_cast<int>(_stateVars.size());
-	}
-	else
-	{
-		stateFirst = _summaryValues.begin() + 1;
-		stateLast = stateFirst + static_cast<int>(_stateVars.size());
-	}
-
-	solAssert(stateFirst >= _summaryValues.begin() && stateFirst <= _summaryValues.end(), "");
-	solAssert(stateLast >= _summaryValues.begin() && stateLast <= _summaryValues.end(), "");
-	vector<string> stateArgs(stateFirst, stateLast);
-	solAssert(stateArgs.size() == _stateVars.size(), "");
-
-	vector<string> stateCex;
-	for (unsigned i = 0; i < stateArgs.size(); ++i)
-	{
-		auto var = _stateVars.at(i);
-		if (var->type()->isValueType())
-			stateCex.emplace_back(var->name() + " = " + stateArgs.at(i));
-	}
-
-	return boost::algorithm::join(stateCex, ", ");
-}
-
-string CHC::formatFunctionCallCounterexample(vector<VariableDeclaration const*> const& _stateVars, FunctionDefinition const& _function, vector<string> const& _summaryValues)
-{
-	/// The signature of a function summary predicate is: summary(error, preStateVars, preInputVars, postInputVars, outputVars).
-	/// Here we are interested in preInputVars.
-	vector<string>::const_iterator first = _summaryValues.begin() + static_cast<int>(_stateVars.size()) + 1;
-	vector<string>::const_iterator last = first + static_cast<int>(_function.parameters().size());
-	solAssert(first >= _summaryValues.begin() && first <= _summaryValues.end(), "");
-	solAssert(last >= _summaryValues.begin() && last <= _summaryValues.end(), "");
-	vector<string> functionArgsCex(first, last);
-	vector<string> functionArgs;
-
-	auto const& params = _function.parameters();
-	solAssert(params.size() == functionArgsCex.size(), "");
-	for (unsigned i = 0; i < params.size(); ++i)
-		if (params[i]->type()->isValueType())
-			functionArgs.emplace_back(functionArgsCex[i]);
-		else
-			functionArgs.emplace_back(params[i]->name());
-
-	string fName = _function.isConstructor() ? "constructor" :
-		_function.isFallback() ? "fallback" :
-		_function.isReceive() ? "receive" :
-		_function.name();
-	return fName + "(" + boost::algorithm::join(functionArgs, ", ") + ")";
-}
-
-string CHC::cex2dot(smtutil::CHCSolverInterface::CexGraph const& _cex)
+string CHC::cex2dot(CHCSolverInterface::CexGraph const& _cex)
 {
 	string dot = "digraph {\n";
 
 	auto pred = [&](CHCSolverInterface::CexNode const& _node) {
-		return "\"" + _node.first + "(" + boost::algorithm::join(_node.second, ", ") + ")\"";
+		vector<string> args = applyMap(
+			_node.arguments,
+			[&](auto const& arg) {
+				solAssert(arg.arguments.empty(), "");
+				return arg.name;
+			}
+		);
+		return "\"" + _node.name + "(" + boost::algorithm::join(args, ", ") + ")\"";
 	};
 
 	for (auto const& [u, vs]: _cex.edges)
@@ -1492,13 +1550,27 @@ string CHC::uniquePrefix()
 	return to_string(m_blockCounter++);
 }
 
-unsigned CHC::newErrorId(frontend::Expression const& _expr)
+string CHC::contractSuffix(ContractDefinition const& _contract)
+{
+	return _contract.name() + "_" + to_string(_contract.id());
+}
+
+unsigned CHC::newErrorId()
 {
 	unsigned errorId = m_context.newUniqueId();
 	// We need to make sure the error id is not zero,
 	// because error id zero actually means no error in the CHC encoding.
 	if (errorId == 0)
 		errorId = m_context.newUniqueId();
-	m_errorIds.emplace(_expr.id(), errorId);
 	return errorId;
+}
+
+SymbolicState& CHC::state()
+{
+	return m_context.state();
+}
+
+SymbolicIntVariable& CHC::errorFlag()
+{
+	return state().errorFlag();
 }

@@ -16,12 +16,12 @@ contract C
 		// Should not fail since knowledge is erased only for mapping (uint => uint).
 		assert(severalMaps8[0][0] == 42);
 		// Should fail since map == severalMaps3d[0][0] is possible.
-		assert(severalMaps3d[0][0][0] == 42);
+		// Removed because current Spacer seg faults in cex generation.
+		//assert(severalMaps3d[0][0][0] == 42);
 	}
 	function g(uint x) public {
 		f(severalMaps[x]);
 	}
 }
 // ----
-// Warning 6328: (425-456): Assertion violation happens here
-// Warning 6328: (639-675): Assertion violation happens here
+// Warning 6328: (425-456): CHC: Assertion violation happens here.\nCounterexample:\n\nx = 38\n\n\nTransaction trace:\nconstructor()\ng(38)

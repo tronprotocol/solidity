@@ -30,9 +30,11 @@
 #include <libsolidity/parsing/Parser.h>
 #include <libsolidity/analysis/DeclarationTypeChecker.h>
 #include <libsolidity/analysis/NameAndTypeResolver.h>
+#include <libsolidity/analysis/Scoper.h>
 #include <libsolidity/codegen/Compiler.h>
 #include <libsolidity/ast/AST.h>
 #include <libsolidity/analysis/TypeChecker.h>
+#include <libsolidity/analysis/SyntaxChecker.h>
 #include <liblangutil/ErrorReporter.h>
 
 #include <boost/test/unit_test.hpp>
@@ -59,6 +61,8 @@ evmasm::AssemblyItems compileContract(std::shared_ptr<CharStream> _sourceCode)
 	BOOST_REQUIRE_NO_THROW(sourceUnit = parser.parse(make_shared<Scanner>(_sourceCode)));
 	BOOST_CHECK(!!sourceUnit);
 
+	Scoper::assignScopes(*sourceUnit);
+	BOOST_REQUIRE(SyntaxChecker(errorReporter, false).checkSyntax(*sourceUnit));
 	GlobalContext globalContext;
 	NameAndTypeResolver resolver(globalContext, solidity::test::CommonOptions::get().evmVersion(), errorReporter);
 	DeclarationTypeChecker declarationTypeChecker(errorReporter, solidity::test::CommonOptions::get().evmVersion());
@@ -87,7 +91,7 @@ evmasm::AssemblyItems compileContract(std::shared_ptr<CharStream> _sourceCode)
 			);
 			compiler.compileContract(*contract, map<ContractDefinition const*, shared_ptr<Compiler const>>{}, bytes());
 
-			return compiler.runtimeAssemblyItems();
+			return compiler.runtimeAssembly().items();
 		}
 	BOOST_FAIL("No contract found in source.");
 	return AssemblyItems();

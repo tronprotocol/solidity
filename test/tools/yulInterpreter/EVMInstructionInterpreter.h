@@ -21,7 +21,7 @@
 
 #pragma once
 
-#include <libyul/AsmDataForward.h>
+#include <libyul/ASTForward.h>
 
 #include <libsolutil/CommonData.h>
 
@@ -71,7 +71,11 @@ public:
 	/// Evaluate instruction
 	u256 eval(evmasm::Instruction _instruction, std::vector<u256> const& _arguments);
 	/// Evaluate builtin function
-	u256 evalBuiltin(BuiltinFunctionForEVM const& _fun, std::vector<u256> const& _arguments);
+	u256 evalBuiltin(
+		BuiltinFunctionForEVM const& _fun,
+		std::vector<Expression> const& _arguments,
+		std::vector<u256> const& _evaluatedArguments
+	);
 
 private:
 	/// Checks if the memory access is not too large for the interpreter and adjusts

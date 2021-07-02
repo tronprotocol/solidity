@@ -25,6 +25,7 @@
 
 #include <libsolidity/ast/ASTAnnotations.h>
 #include <libsolidity/ast/ASTVisitor.h>
+#include <libsolidity/interface/CompilerStack.h>
 #include <liblangutil/Exceptions.h>
 
 #include <json/json.h>
@@ -51,14 +52,16 @@ class ASTJsonConverter: public ASTConstVisitor
 public:
 	/// Create a converter to JSON for the given abstract syntax tree.
 	/// @a _legacy if true, use legacy format
+	/// @a _stackState state of the compiler stack to avoid outputting incomplete data
 	/// @a _sourceIndices is used to abbreviate source names in source locations.
 	explicit ASTJsonConverter(
 		bool _legacy,
+		CompilerStack::State _stackState,
 		std::map<std::string, unsigned> _sourceIndices = std::map<std::string, unsigned>()
 	);
 	/// Output the json representation of the AST to _stream.
 	void print(std::ostream& _stream, ASTNode const& _node);
-	Json::Value&& toJson(ASTNode const& _node);
+	Json::Value toJson(ASTNode const& _node);
 	template <class T>
 	Json::Value toJson(std::vector<ASTPointer<T>> const& _nodes)
 	{
@@ -153,14 +156,14 @@ private:
 	static std::string literalTokenKind(Token _token);
 	static std::string type(Expression const& _expression);
 	static std::string type(VariableDeclaration const& _varDecl);
-	static int nodeId(ASTNode const& _node)
+	static int64_t nodeId(ASTNode const& _node)
 	{
 		return _node.id();
 	}
 	template<class Container>
 	static Json::Value getContainerIds(Container const& _container, bool _order = false)
 	{
-		std::vector<int> tmp;
+		std::vector<int64_t> tmp;
 
 		for (auto const& element: _container)
 		{
@@ -171,7 +174,7 @@ private:
 			std::sort(tmp.begin(), tmp.end());
 		Json::Value json(Json::arrayValue);
 
-		for (int val: tmp)
+		for (int64_t val: tmp)
 			json.append(val);
 
 		return json;
@@ -189,6 +192,7 @@ private:
 	}
 
 	bool m_legacy = false; ///< if true, use legacy format
+	CompilerStack::State m_stackState = CompilerStack::State::Empty; ///< Used to only access information that already exists
 	bool m_inEvent = false; ///< whether we are currently inside an event or not
 	Json::Value m_currentValue;
 	std::map<std::string, unsigned> m_sourceIndices;

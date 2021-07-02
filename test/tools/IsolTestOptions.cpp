@@ -35,6 +35,9 @@ namespace po = boost::program_options;
 namespace solidity::test
 {
 
+namespace
+{
+
 auto const description = R"(isoltest, tool for interactively managing test contracts.
 Usage: isoltest [Options]
 Interactively validates test contracts.
@@ -49,6 +52,8 @@ std::string editorPath()
 		return "/usr/bin/editor";
 
 	return std::string{};
+}
+
 }
 
 IsolTestOptions::IsolTestOptions(std::string* _editor):
@@ -77,7 +82,7 @@ bool IsolTestOptions::parse(int _argc, char const* const* _argv)
 
 void IsolTestOptions::validate() const
 {
-	static std::string filterString{"[a-zA-Z1-9_/*]*"};
+	static std::string filterString{"[a-zA-Z0-9_/*]*"};
 	static std::regex filterExpression{filterString};
 	assertThrow(
 		regex_match(testFilter, filterExpression),

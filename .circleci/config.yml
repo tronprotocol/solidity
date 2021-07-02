@@ -7,25 +7,25 @@
 #     - ems: Emscripten
 version: 2.1
 parameters:
-  ubuntu-1804-docker-image:
-    type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu1804-2
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:9ab317e583c395e50884ba82e9f99811c374344cea4c550725be8ec836e07acc"
   ubuntu-2004-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004-2
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:cbfa42d8ecbe94391ba8837e218869242666de7a0da6ccac065a856c85b6a6a0"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004-4
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:aca1372dcc5edadd3db13ff1aa6807727d79e08082a48eb7cc05444c1b516ace"
   ubuntu-2004-clang-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004.clang-2
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:7a4d5271b5552139d9f2caefc50d42f401bf74132cf8f253e199e11c80ab42de"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004.clang-4
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:0954edfb48a7efa6922b4d6adf536a2fc483ca34ad62f95ec54c33a616a66974"
   ubuntu-1604-clang-ossfuzz-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu1604.clang.ossfuzz-2
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:efaabb3c143f64171be596932c62013bcfd7f73b1fbcb832025a34dd2b6e6922"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu1604.clang.ossfuzz-6
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:990ed3aaac3fcb87ca9b63a021a91ed89dfd165b341aa7b5c6457cdbe132dfb3"
   emscripten-docker-image:
     type: string
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:d557d015918c3cf68b0d22839bab41013f0757b651a7fef21595f89721dbebcc"
+    # solbuildpackpusher/solidity-buildpack-deps:emscripten-2
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:23dad3b34deae8107c8551804ef299f6a89c23ed506e8118fac151e2bdc9018c"
+
+orbs:
+  win: circleci/windows@2.2.0
 
 defaults:
 
@@ -64,6 +64,10 @@ defaults:
       path: build/solc/solc
       destination: solc
 
+  # windows artifacts
+  - artifact_solc_windows: &artifact_solc_windows
+      path: upload/
+
   # compiled tool executable target
   - artifacts_tools: &artifacts_tools
       path: build/tools/solidity-upgrade
@@ -82,8 +86,11 @@ defaults:
       root: build
       paths:
         - test/tools/ossfuzz/abiv2_proto_ossfuzz
+        - test/tools/ossfuzz/abiv2_isabelle_ossfuzz
         - test/tools/ossfuzz/const_opt_ossfuzz
+        - test/tools/ossfuzz/solc_noopt_mutator_ossfuzz
         - test/tools/ossfuzz/solc_noopt_ossfuzz
+        - test/tools/ossfuzz/solc_opt_mutator_ossfuzz
         - test/tools/ossfuzz/solc_opt_ossfuzz
         - test/tools/ossfuzz/strictasm_assembly_ossfuzz
         - test/tools/ossfuzz/strictasm_diff_ossfuzz
@@ -107,14 +114,17 @@ defaults:
 
   - run_soltest: &run_soltest
       name: soltest
+      no_output_timeout: 30m
       command: ./.circleci/soltest.sh
 
   - run_soltest_all: &run_soltest_all
       name: soltest_all
+      no_output_timeout: 30m
       command: ./.circleci/soltest_all.sh
 
   - run_cmdline_tests: &run_cmdline_tests
       name: command line tests
+      no_output_timeout: 30m
       command: ./test/cmdlineTests.sh
 
   - run_docs_pragma_min_version: &run_docs_pragma_min_version
@@ -163,7 +173,6 @@ defaults:
           at: build
       - run:
           <<: *run_soltest
-          no_output_timeout: 30m
       - store_test_results: *store_test_results
       - store_artifacts: *artifacts_test_results
 
@@ -175,7 +184,6 @@ defaults:
           at: build
       - run:
           <<: *run_soltest
-          no_output_timeout: 30m
       - store_test_results: *store_test_results
       - store_artifacts: *artifacts_test_results
 
@@ -207,6 +215,11 @@ defaults:
       requires:
         - b_ubu_release
 
+  - workflow_archlinux: &workflow_archlinux
+      <<: *workflow_trigger_on_tags
+      requires:
+        - b_archlinux
+
   - workflow_ubuntu2004_codecov: &workflow_ubuntu2004_codecov
       <<: *workflow_trigger_on_tags
       requires:
@@ -236,6 +249,16 @@ defaults:
       <<: *workflow_trigger_on_tags
       requires:
         - b_ubu_ossfuzz
+
+  - workflow_win: &workflow_win
+      <<: *workflow_trigger_on_tags
+      requires:
+        - b_win
+
+  - workflow_win_release: &workflow_win_release
+      <<: *workflow_trigger_on_tags
+      requires:
+        - b_win_release
 
   # --------------------------------------------------------------------------
   # Notification Templates
@@ -309,6 +332,9 @@ jobs:
       - run:
           name: checking shell scripts
           command: ./scripts/chk_shellscripts/chk_shellscripts.sh
+      - run:
+          name: Check for broken symlinks
+          command: ./scripts/check_symlinks.sh
 
   chk_errorcodes:
     docker:
@@ -321,7 +347,7 @@ jobs:
 
   chk_pylint:
     docker:
-      - image: buildpack-deps:eoan
+      - image: buildpack-deps:focal
     steps:
       - checkout
       - run:
@@ -337,7 +363,7 @@ jobs:
 
   chk_antlr_grammar:
     docker:
-      - image: buildpack-deps:eoan
+      - image: buildpack-deps:focal
     steps:
       - checkout
       - run:
@@ -410,6 +436,7 @@ jobs:
       CC: clang
       CXX: clang++
       CMAKE_OPTIONS: -DSANITIZE=address
+      MAKEFLAGS: -j 3
     steps:
       - checkout
       - run: *run_build
@@ -433,28 +460,31 @@ jobs:
     <<: *build_ubuntu2004
     environment:
       FORCE_RELEASE: ON
+      MAKEFLAGS: -j 10
 
-  b_ubu18: &build_ubuntu1804
-    docker:
-      - image: << pipeline.parameters.ubuntu-1804-docker-image >>
+  b_ubu_static:
+    <<: *build_ubuntu2004
     environment:
-      CMAKE_OPTIONS: -DCMAKE_CXX_FLAGS=-O2
-      CMAKE_BUILD_TYPE: RelWithDebugInfo
+      MAKEFLAGS: -j 10
+      CMAKE_OPTIONS: -DCMAKE_BUILD_TYPE=Release -DUSE_Z3_DLOPEN=ON -DUSE_CVC4=OFF -DSOLC_STATIC_STDLIBS=ON
     steps:
       - checkout
       - run: *run_build
+      - run:
+          name: strip binary
+          command: strip build/solc/solc
       - store_artifacts: *artifacts_solc
-      - persist_to_workspace: *artifacts_executables
 
   b_ubu_codecov:
     <<: *build_ubuntu2004
     environment:
       COVERAGE: ON
       CMAKE_BUILD_TYPE: Debug
+      MAKEFLAGS: -j 10
     steps:
       - checkout
       - run: *run_build
-      - persist_to_workspace: *artifacts_build_dir
+      - persist_to_workspace: *artifacts_executables
 
   t_ubu_codecov:
     <<: *test_ubuntu2004
@@ -483,7 +513,8 @@ jobs:
     <<: *build_ubuntu2004
     environment:
       CMAKE_BUILD_TYPE: Debug
-      CMAKE_OPTIONS: -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/cxx20.cmake -DUSE_CVC4=OFF
+      CMAKE_OPTIONS: -DCMAKE_CXX_STANDARD=20 -DUSE_CVC4=OFF
+      MAKEFLAGS: -j 10
     steps:
       - checkout
       - run: *run_build
@@ -495,7 +526,7 @@ jobs:
       CC: clang
       CXX: clang++
       TERM: xterm
-      CMAKE_OPTIONS: -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/libfuzzer.cmake
+      MAKEFLAGS: -j 3
     steps:
       - checkout
       - run: *setup_prerelease_commit_hash
@@ -524,6 +555,7 @@ jobs:
       - image: archlinux/base
     environment:
       TERM: xterm
+      MAKEFLAGS: -j 3
     steps:
       - run:
           name: Install build dependencies
@@ -540,16 +572,19 @@ jobs:
     environment:
       TERM: xterm
       CMAKE_BUILD_TYPE: Release
+      MAKEFLAGS: -j 5
     steps:
       - checkout
       - restore_cache:
           keys:
-            - dependencies-osx-{{ .Branch }}-{{ checksum ".circleci/config.yml" }}-{{ checksum ".circleci/osx_install_dependencies.sh" }}
+            - dependencies-osx-{{ checksum ".circleci/osx_install_dependencies.sh" }}
+      # DO NOT EDIT between here and save_cache, but rather edit ./circleci/osx_install_dependencies.sh
+      # WARNING! If you do edit anything here instead, remember to invalidate the cache manually.
       - run:
           name: Install build dependencies
           command: ./.circleci/osx_install_dependencies.sh
       - save_cache:
-          key: dependencies-osx-{{ .Branch }}-{{ checksum ".circleci/config.yml" }}-{{ checksum ".circleci/osx_install_dependencies.sh" }}
+          key: dependencies-osx-{{ checksum ".circleci/osx_install_dependencies.sh" }}
           paths:
             - /usr/local/bin
             - /usr/local/sbin
@@ -560,7 +595,12 @@ jobs:
       - run: *run_build
       - store_artifacts: *artifacts_solc
       - store_artifacts: *artifacts_tools
-      - persist_to_workspace: *artifacts_build_dir
+      - persist_to_workspace:
+          root: .
+          paths:
+            - build/solc/solc
+            - build/test/soltest
+            - build/test/tools/solfuzzer
 
   t_osx_soltest:
     macos:
@@ -573,9 +613,9 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - dependencies-osx-{{ .Branch }}-{{ checksum ".circleci/config.yml" }}-{{ checksum ".circleci/osx_install_dependencies.sh" }}
+            - dependencies-osx-{{ checksum ".circleci/osx_install_dependencies.sh" }}
       - attach_workspace:
-          at: build
+          at: .
       - run: *run_soltest
       - store_test_results: *store_test_results
       - store_artifacts: *artifacts_test_results
@@ -589,9 +629,9 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - dependencies-osx-{{ .Branch }}-{{ checksum ".circleci/config.yml" }}-{{ checksum ".circleci/osx_install_dependencies.sh" }}
+            - dependencies-osx-{{ checksum ".circleci/osx_install_dependencies.sh" }}
       - attach_workspace:
-          at: build
+          at: .
       - run: *run_cmdline_tests
       - store_artifacts: *artifacts_test_results
 
@@ -607,7 +647,7 @@ jobs:
       - run:
           name: Build
           command: |
-            scripts/travis-emscripten/build_emscripten.sh
+            scripts/ci/build_emscripten.sh
       - store_artifacts:
           path: emscripten_build/libsolc/soljson.js
           destination: soljson.js
@@ -625,6 +665,7 @@ jobs:
     <<: *build_ubuntu2004
     environment:
       CMAKE_OPTIONS: -DSANITIZE=address
+      MAKEFLAGS: -j 10
       CMAKE_BUILD_TYPE: Release
     steps:
       - checkout
@@ -647,6 +688,25 @@ jobs:
 
   t_ubu_soltest: &t_ubu_soltest
     <<: *test_ubuntu2004
+
+  t_archlinux_soltest: &t_archlinux_soltest
+      docker:
+        - image: archlinux/base
+      environment:
+        EVM: constantinople
+        OPTIMIZE: 0
+        TERM: xterm
+      steps:
+        - run:
+            name: Install runtime dependencies
+            command: |
+              pacman --noconfirm -Syu --noprogressbar --needed base-devel boost cmake z3 cvc4 git openssh tar
+        - checkout
+        - attach_workspace:
+            at: build
+        - run: *run_soltest
+        - store_test_results: *store_test_results
+        - store_artifacts: *artifacts_test_results
 
   t_ubu_soltest_enforce_yul: &t_ubu_soltest_enforce_yul
     docker:
@@ -701,7 +761,6 @@ jobs:
           at: build
       - run:
           <<: *run_cmdline_tests
-          no_output_timeout: 30m
       - store_test_results: *store_test_results
       - store_artifacts: *artifacts_test_results
 
@@ -737,111 +796,179 @@ jobs:
             apt-get install -qqy --no-install-recommends nodejs npm cvc4
       - run:
           name: Test solcjs
+          no_output_timeout: 30m
           command: |
             node --version
             npm --version
             test/externalTests/solc-js/solc-js.sh /tmp/workspace/soljson.js $(cat /tmp/workspace/version.txt)
 
-  t_ems_compile_ext_gnosis:
+  t_ems_ext:
+    parameters:
+      project:
+        type: string
+      compile_only:
+        type: integer
+        default: 0
+      nodejs_version:
+        type: integer
+        default: 14
+      gitter_notify:
+        type: boolean
+        default: no
     docker:
-      - image: circleci/node:10
+      - image: circleci/node:<<parameters.nodejs_version>>
     environment:
       TERM: xterm
+      COMPILE_ONLY: <<parameters.compile_only>>
     steps:
       - checkout
       - attach_workspace:
           at: /tmp/workspace
       - run:
-          name: External GnosisSafe compilation
+          name: Install dependencies
           command: |
-            export COMPILE_ONLY=1
-            test/externalTests/gnosis.sh /tmp/workspace/soljson.js || test/externalTests/gnosis.sh /tmp/workspace/soljson.js
-
-  t_ems_test_ext_gnosis:
-    docker:
-      - image: circleci/node:10
-    environment:
-      TERM: xterm
-    steps:
-      - checkout
-      - attach_workspace:
-          at: /tmp/workspace
-      - run:
-          name: External GnosisSafe tests
-          command: |
-            test/externalTests/gnosis.sh /tmp/workspace/soljson.js || test/externalTests/gnosis.sh /tmp/workspace/soljson.js
-      - run: *gitter_notify_failure
-      - run: *gitter_notify_success
-
-  t_ems_compile_ext_zeppelin:
-    docker:
-      - image: circleci/node:10
-    environment:
-      TERM: xterm
-    steps:
-      - checkout
-      - attach_workspace:
-          at: /tmp/workspace
-      - run:
-          name: External Zeppelin compilation
-          command: |
-            export COMPILE_ONLY=1
-            test/externalTests/zeppelin.sh /tmp/workspace/soljson.js || test/externalTests/zeppelin.sh /tmp/workspace/soljson.js
-
-  t_ems_test_ext_zeppelin:
-    docker:
-      - image: circleci/node:10
-    environment:
-      TERM: xterm
-    steps:
-      - checkout
-      - attach_workspace:
-          at: /tmp/workspace
-      - run:
-          name: External Zeppelin tests
-          command: |
-            test/externalTests/zeppelin.sh /tmp/workspace/soljson.js || test/externalTests/zeppelin.sh /tmp/workspace/soljson.js
-      - run: *gitter_notify_failure
-      - run: *gitter_notify_success
-
-  t_ems_compile_ext_colony:
-    docker:
-      - image: circleci/node:10
-    environment:
-      TERM: xterm
-    steps:
-      - checkout
-      - attach_workspace:
-          at: /tmp/workspace
-      - run:
-          name: Install test dependencies
-          command: |
+            # lsof is used by Colony in its stop-blockchain-client.sh script
             sudo apt-get -qy install lsof
       - run:
-          name: External ColonyNetworks compilation
+          name: External <<parameters.project>> tests
           command: |
-            export COMPILE_ONLY=1
-            test/externalTests/colony.sh /tmp/workspace/soljson.js || test/externalTests/colony.sh /tmp/workspace/soljson.js
+            test/externalTests/<<parameters.project>>.sh /tmp/workspace/soljson.js
+      - when:
+          condition: <<parameters.gitter_notify>>
+          steps:
+            - run: *gitter_notify_failure
+            - run: *gitter_notify_success
 
-  t_ems_test_ext_colony:
+  b_win: &b_win
+    executor:
+      name: win/default
+      shell: powershell.exe
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - dependencies-win-{{ checksum "scripts/install_deps.ps1" }}
+      # DO NOT EDIT between here and save_cache, but rather edit .\scripts\install_deps.ps1
+      # WARNING! If you do edit anything here instead, remember to invalidate the cache manually.
+      - run:
+          name: "Installing dependencies"
+          command: .\scripts\install_deps.ps1
+      - save_cache:
+          key: dependencies-win-{{ checksum "scripts/install_deps.ps1" }}
+          paths:
+            - .\deps
+      - run:
+          name: "Building solidity"
+          command: .circleci/build_win.ps1
+      - run:
+          name: "Run solc.exe to make sure build was successful."
+          command: .\build\solc\Release\solc.exe --version
+      - store_artifacts: *artifact_solc_windows
+      - persist_to_workspace:
+          root: build
+          paths:
+            - .\solc\*\solc.exe
+            - .\test\*\soltest.exe
+
+  b_win_release:
+    <<: *b_win
+    environment:
+      FORCE_RELEASE: ON
+
+  t_win: &t_win
+    executor:
+      name: win/default
+      shell: powershell.exe
+    steps:
+      - checkout
+      - attach_workspace:
+          at: build
+      - run:
+          name: "Install evmone"
+          command: scripts/install_evmone.ps1
+      - run:
+          name: "Run soltest"
+          command: .circleci/soltest.ps1
+      - store_test_results: *store_test_results
+      - store_artifacts: *artifacts_test_results
+
+  t_win_release:
+    <<: *t_win
+
+  b_bytecode_ubu:
     docker:
-      - image: circleci/node:10
+      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    steps:
+      - checkout
+      - attach_workspace:
+          at: build
+      - run: scripts/bytecodecompare/storebytecode.sh && cp -v report.txt bytecode-report-ubuntu.txt
+      - store_artifacts:
+          path: report.txt
+      - persist_to_workspace:
+          root: .
+          paths:
+            - bytecode-report-ubuntu.txt
+
+  b_bytecode_osx:
+    macos:
+      xcode: "11.0.0"
     environment:
       TERM: xterm
     steps:
       - checkout
       - attach_workspace:
-          at: /tmp/workspace
-      - run:
-          name: Install test dependencies
-          command: |
-            sudo apt-get -qy install lsof
-      - run:
-          name: External ColonyNetworks tests
-          command: |
-            test/externalTests/colony.sh /tmp/workspace/soljson.js || test/externalTests/colony.sh /tmp/workspace/soljson.js
-      - run: *gitter_notify_failure
-      - run: *gitter_notify_success
+          at: .
+      - run: scripts/bytecodecompare/storebytecode.sh && cp -v report.txt bytecode-report-osx.txt
+      - store_artifacts:
+          path: report.txt
+      - persist_to_workspace:
+          root: .
+          paths:
+            - bytecode-report-osx.txt
+
+  b_bytecode_win:
+    executor:
+      name: win/default
+      shell: cmd.exe
+    steps:
+      - checkout
+      - attach_workspace:
+          at: build
+      - run: python scripts\isolate_tests.py test\
+      - run: python scripts\bytecodecompare\prepare_report.py build\solc\Release\solc.exe
+      - run: cp report.txt bytecode-report-windows.txt
+      - store_artifacts:
+          path: report.txt
+      - persist_to_workspace:
+          root: .
+          paths:
+            - bytecode-report-windows.txt
+
+  b_bytecode_ems:
+    docker:
+      - image: circleci/node:14
+    environment:
+      SOLC_EMSCRIPTEN: "On"
+    steps:
+      - checkout
+      - attach_workspace:
+          at: emscripten_build/libsolc
+      - run: scripts/bytecodecompare/storebytecode.sh && cp -v report.txt bytecode-report-emscripten.txt
+      - store_artifacts:
+          path: report.txt
+      - persist_to_workspace:
+          root: .
+          paths:
+            - bytecode-report-emscripten.txt
+
+  t_bytecode_compare:
+    docker:
+      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    steps:
+      - attach_workspace:
+          at: .
+      - run: diff --report-identical-files --from-file bytecode-report-emscripten.txt bytecode-report-ubuntu.txt bytecode-report-osx.txt bytecode-report-windows.txt
 
 workflows:
   version: 2
@@ -861,7 +988,6 @@ workflows:
 
       # build-only
       - b_docs: *workflow_trigger_on_tags
-      - b_archlinux: *workflow_trigger_on_tags
       - b_ubu_cxx20: *workflow_trigger_on_tags
       - b_ubu_ossfuzz: *workflow_trigger_on_tags
 
@@ -870,9 +996,15 @@ workflows:
       - t_osx_cli: *workflow_osx
       - t_osx_soltest: *workflow_osx
 
+      # ArchLinux build and tests
+      - b_archlinux: *workflow_trigger_on_tags
+      - t_archlinux_soltest: *workflow_archlinux
+
+      # Static build
+      - b_ubu_static: *workflow_trigger_on_tags
+
       # Ubuntu build and tests
       - b_ubu: *workflow_trigger_on_tags
-      - b_ubu18: *workflow_trigger_on_tags
       - t_ubu_cli: *workflow_ubuntu2004
       - t_ubu_soltest: *workflow_ubuntu2004
       - t_ubu_soltest_enforce_yul: *workflow_ubuntu2004
@@ -884,19 +1016,88 @@ workflows:
       - t_ubu_release_cli: *workflow_ubuntu2004_release
       - t_ubu_release_soltest: *workflow_ubuntu2004_release
 
-      # ASan build and tests
-      - b_ubu_asan: *workflow_trigger_on_tags
-      - b_ubu_asan_clang: *workflow_trigger_on_tags
-      - t_ubu_asan_constantinople: *workflow_ubuntu2004_asan
-      - t_ubu_asan_constantinople_clang: *workflow_ubuntu2004_asan_clang
-      - t_ubu_asan_cli: *workflow_ubuntu2004_asan
-
-      # Emscripten build and selected tests
+      # Emscripten build and tests that take 15 minutes or less
       - b_ems: *workflow_trigger_on_tags
       - t_ems_solcjs: *workflow_emscripten
-      - t_ems_compile_ext_colony: *workflow_emscripten
-      - t_ems_compile_ext_gnosis: *workflow_emscripten
-      - t_ems_compile_ext_zeppelin: *workflow_emscripten
+
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_compile_ext_colony
+          project: colony
+          compile_only: 1
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_compile_ext_gnosis
+          project: gnosis
+          compile_only: 1
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_compile_ext_gnosis_v2
+          project: gnosis-v2
+          compile_only: 1
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_compile_ext_zeppelin
+          project: zeppelin
+          compile_only: 1
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_compile_ext_ens
+          project: ens
+          compile_only: 1
+          # NOTE: One of the dependencies (fsevents) fails to build its native extension on node.js 12+.
+          nodejs_version: 10
+
+      # FIXME: Gnosis tests are pretty flaky right now. They often fail on CircleCI due to random ProviderError
+      # and there are also other less frequent problems. See https://github.com/gnosis/safe-contracts/issues/216.
+      #- t_ems_ext:
+      #    <<: *workflow_emscripten
+      #    name: t_ems_test_ext_gnosis
+      #    project: gnosis
+      #    # NOTE: Tests do not start on node.js 14 ("ganache-cli exited early with code 1").
+      #    nodejs_version: 12
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_test_ext_gnosis_v2
+          project: gnosis-v2
+          # NOTE: Tests do not start on node.js 14 ("ganache-cli exited early with code 1").
+          nodejs_version: 12
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_test_ext_zeppelin
+          project: zeppelin
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_test_ext_ens
+          project: ens
+          # NOTE: One of the dependencies (fsevents) fails to build its native extension on node.js 12+.
+          nodejs_version: 10
+
+      # Windows build and tests
+      - b_win: *workflow_trigger_on_tags
+      - b_win_release: *workflow_trigger_on_tags
+      - t_win: *workflow_win
+      - t_win_release: *workflow_win_release
+
+      # Bytecode comparison:
+      - b_bytecode_ubu:
+          requires:
+            - b_ubu
+      - b_bytecode_win:
+          requires:
+            - b_win
+      - b_bytecode_osx:
+          requires:
+            - b_osx
+      - b_bytecode_ems:
+          requires:
+            - b_ems
+      - t_bytecode_compare:
+          requires:
+            - b_bytecode_ubu
+            - b_bytecode_win
+            - b_bytecode_osx
+            - b_bytecode_ems
 
   nightly:
 
@@ -917,3 +1118,18 @@ workflows:
       # Code Coverage enabled build and tests
       - b_ubu_codecov: *workflow_trigger_on_tags
       - t_ubu_codecov: *workflow_ubuntu2004_codecov
+
+      # ASan build and tests
+      - b_ubu_asan: *workflow_trigger_on_tags
+      - b_ubu_asan_clang: *workflow_trigger_on_tags
+      - t_ubu_asan_constantinople: *workflow_ubuntu2004_asan
+      - t_ubu_asan_constantinople_clang: *workflow_ubuntu2004_asan_clang
+      - t_ubu_asan_cli: *workflow_ubuntu2004_asan
+
+      # Emscripten build and tests that take more than 15 minutes to execute
+      - b_ems: *workflow_trigger_on_tags
+      - t_ems_ext:
+          <<: *workflow_emscripten
+          name: t_ems_test_ext_colony
+          project: colony
+          gitter_notify: yes

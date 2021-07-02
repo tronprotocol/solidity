@@ -38,11 +38,13 @@ using namespace solidity::frontend;
 using namespace solidity::smtutil;
 
 SMTLib2Interface::SMTLib2Interface(
-	map<h256, string> const& _queryResponses,
-	ReadCallback::Callback _smtCallback
+	map<h256, string> _queryResponses,
+	ReadCallback::Callback _smtCallback,
+	optional<unsigned> _queryTimeout
 ):
-	m_queryResponses(_queryResponses),
-	m_smtCallback(std::move(_smtCallback))
+	SolverInterface(_queryTimeout),
+	m_queryResponses(move(_queryResponses)),
+	m_smtCallback(move(_smtCallback))
 {
 	reset();
 }
@@ -54,6 +56,8 @@ void SMTLib2Interface::reset()
 	m_variables.clear();
 	m_userSorts.clear();
 	write("(set-option :produce-models true)");
+	if (m_queryTimeout)
+		write("(set-option :timeout " + to_string(*m_queryTimeout) + ")");
 	write("(set-logic ALL)");
 }
 
@@ -215,6 +219,8 @@ string SMTLib2Interface::toSmtLibSort(Sort const& _sort)
 		return "Int";
 	case Kind::Bool:
 		return "Bool";
+	case Kind::BitVector:
+		return "(_ BitVec " + to_string(dynamic_cast<BitVectorSort const&>(_sort).size) + ")";
 	case Kind::Array:
 	{
 		auto const& arraySort = dynamic_cast<ArraySort const&>(_sort);

@@ -5,7 +5,7 @@
 #
 # The documentation for solidity is hosted at:
 #
-#     https://solidity.readthedocs.org
+#     https://docs.soliditylang.org
 #
 # ------------------------------------------------------------------------------
 # This file is part of solidity.
@@ -35,5 +35,5 @@ else
 fi
 
 docker run -v $(pwd):/root/project -w /root/project \
-    solbuildpackpusher/solidity-buildpack-deps@sha256:d557d015918c3cf68b0d22839bab41013f0757b651a7fef21595f89721dbebcc \
-    ./scripts/travis-emscripten/build_emscripten.sh $BUILD_DIR
+    solbuildpackpusher/solidity-buildpack-deps@sha256:23dad3b34deae8107c8551804ef299f6a89c23ed506e8118fac151e2bdc9018c\
+    ./scripts/ci/build_emscripten.sh $BUILD_DIR

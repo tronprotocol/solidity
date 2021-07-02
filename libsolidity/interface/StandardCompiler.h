@@ -60,6 +60,7 @@ private:
 		std::string language;
 		Json::Value errors;
 		bool parserErrorRecovery = false;
+		CompilerStack::State stopAfter = CompilerStack::State::CompilationSuccessful;
 		std::map<std::string, std::string> sources;
 		std::map<util::h256, std::string> smtLib2Responses;
 		langutil::EVMVersion evmVersion;
@@ -70,6 +71,8 @@ private:
 		bool metadataLiteralSources = false;
 		CompilerStack::MetadataHash metadataHash = CompilerStack::MetadataHash::IPFS;
 		Json::Value outputSelection;
+		ModelCheckerSettings modelCheckerSettings = ModelCheckerSettings{};
+		bool viaIR = false;
 	};
 
 	/// Parses the input json (and potentially invokes the read callback) and either returns
