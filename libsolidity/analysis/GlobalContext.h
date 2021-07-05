@@ -68,6 +68,8 @@ private:
 	void addRewardBalanceMethod();
 	void addIsSRCandidateMethod();
 	void addVoteCountMethod();
+	void addTotalVoteCountMethod();
+	void addTotalReceivedVoteCountMethod();
 };
 
 }
