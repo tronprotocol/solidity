@@ -2910,6 +2910,7 @@ string FunctionType::richIdentifier() const
 	case Kind::Freeze: id += "freeze"; break;
 	case Kind::Unfreeze: id += "unfreeze"; break;
 	case Kind::FreezeExpireTime: id += "freezeExpireTime"; break;
+	case Kind::vote: id += "vote"; break;
 	}
 	id += "_" + stateMutabilityToString(m_stateMutability);
 	id += identifierList(m_parameterTypes) + "returns" + identifierList(m_returnParameterTypes);

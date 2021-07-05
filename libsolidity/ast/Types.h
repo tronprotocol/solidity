@@ -1157,6 +1157,7 @@ public:
         Freeze,//< CALL to freeze balance
 		Unfreeze,//< CALL to unfreeze balance
         FreezeExpireTime,// < CALL to freeze expire time
+		vote,///< CALL to vote witness
 		Event, ///< syntactic sugar for LOG*
 		SetGas, ///< modify the default gas value for the function call
 		SetValue, ///< modify the default value transfer for the function call

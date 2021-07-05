@@ -101,6 +101,8 @@ int magicVariableToID(std::string const& _name)
 		return -36;
 	else if (_name == "freezeExpireTime")
 		return -37;
+	else if (_name == "vote")
+		return -38;
 	else
 		solAssert(false, "Unknown magic variable: \"" + _name + "\".");
 }
@@ -242,6 +244,7 @@ GlobalContext::GlobalContext(): m_magicVariables{constructMagicVariables()}
 	addVerifyBurnProofMethod();
 	addVerifyTransferProofMethod();
 	addPedersenHashMethod();
+	addVoteMethod();
 }
 
 void GlobalContext::addVerifyMintProofMethod() {
@@ -490,6 +493,37 @@ void GlobalContext::addValidateMultiSignMethod() {
 			false,
 			false,
 			false)
+	));
+}
+
+void GlobalContext::addVoteMethod() {
+	// bool vote(address[] memory addresses, unit256[] tronpowerlist)
+	TypePointers parameterTypes;
+
+	parameterTypes.push_back(TypeProvider::array(DataLocation::Memory, TypeProvider::address()));
+	parameterTypes.push_back(TypeProvider::array(DataLocation::Memory, TypeProvider::uint256()));
+
+	TypePointers returnParameterTypes;
+	returnParameterTypes.push_back(TypeProvider::boolean());
+	strings parameterNames;
+	parameterNames.push_back("srList");
+	parameterNames.push_back("tronpowerList");
+	strings returnParameterNames;
+	returnParameterNames.push_back("ok");
+
+	m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("vote"), "vote", TypeProvider::function(
+		parameterTypes,
+		returnParameterTypes,
+		parameterNames,
+		returnParameterNames,
+		FunctionType::Kind::vote,
+		false,
+		StateMutability::Payable,
+		nullptr,
+		false,
+		false,
+		false,
+		false)
 	));
 }
 

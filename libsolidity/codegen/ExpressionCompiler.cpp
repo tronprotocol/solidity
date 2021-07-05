@@ -1367,6 +1367,18 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
             m_context << Instruction::NATIVEFREEZEEXPIRETIME;
             break;
         }
+		case FunctionType::Kind::vote:
+		{
+			_functionCall.expression().accept(*this);
+			for (unsigned i = 0; i < arguments.size(); ++i)
+			{
+				acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
+			}
+			m_context << Instruction::NATIVEUNFREEZE;
+			m_context << Instruction::DUP1 << Instruction::ISZERO;
+			m_context.appendConditionalRevert(true);
+			break;
+		}
 		default:
 		    solAssert(false, "unsupported member function of Kind");
         }
