@@ -1238,24 +1238,10 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
         }
         case FunctionType::Kind::vote:
          {
-             solAssert(arguments.size() == 2, "");
-             //solAssert(!function.padArguments(), "");
-             // Optimization: If type is bytes or string, then do not encode,
-             // but directly compute vote on memory.
              _functionCall.expression().accept(*this);
-             for(unsigned i = 0; i < arguments.size(); ++i) {
-                 TypePointer const& argType = arguments[i]->annotation().type;
-                 solAssert(argType, "");
-                 if (*argType == *TypeProvider::array(DataLocation::CallData, TypeProvider::address()) ||
-                     *argType == *TypeProvider::array(DataLocation::CallData, TypeProvider::uint256())) {
-                     solAssert(false, "Data location must be 'memory' for parameter in 'vote' function");
-                 }
-                 arguments[i]->accept(*this);
-                 if (*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::address())) {
-                     ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::address()));
-                 } else if(*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::uint256())){
-                     ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::uint256()));
-                 }
+             for (unsigned i = 0; i < arguments.size(); ++i)
+             {
+                 acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
              }
              m_context << Instruction::NATIVEVOTE;
              m_context << Instruction::DUP1 << Instruction::ISZERO;
