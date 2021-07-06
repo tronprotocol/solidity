@@ -1242,6 +1242,14 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
              for (unsigned i = 0; i < arguments.size(); ++i)
              {
                  acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
+                 TypePointer const& argType = arguments[i]->annotation().type;
+                 solAssert(argType, "");
+                 arguments[i]->accept(*this);
+                 if (*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::address())) {
+                     ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::address()));
+                 } else if(*argType == *TypeProvider::array(DataLocation::Memory, TypeProvider::uint256())){
+                     ArrayUtils(m_context).retrieveLength(*TypeProvider::array(DataLocation::Memory, TypeProvider::uint256()));
+				 }
              }
              m_context << Instruction::NATIVEVOTE;
              m_context << Instruction::DUP1 << Instruction::ISZERO;
