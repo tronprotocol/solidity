@@ -652,7 +652,7 @@ TypeResult IntegerType::binaryOperatorResult(Token _operator, Type const* _other
 	{
 		// Shifts are not symmetric with respect to the type
 		if (isTrcToken())
-			return TypePointer();
+			return nullptr;
 		if (isValidShiftAndAmountType(_operator, *_other))
 			return this;
 		else
