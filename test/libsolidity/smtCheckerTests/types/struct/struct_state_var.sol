@@ -1,16 +1,19 @@
-pragma experimental SMTChecker;
-
 contract C {
 	struct S {
 		uint x;
 		uint[] a;
 	}
 	S s;
+	function p() public { s.a.push(); }
 	function f(uint _x) public {
+		require(s.a.length >= 2);
 		s.x = _x;
 		s.a[0] = _x;
 		assert(s.a[1] == s.a[0]);
 	}
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (148-172): CHC: Assertion violation happens here.\nCounterexample:\ns = {x: 7720, a: []}\n_x = 7720\n\n\nTransaction trace:\nconstructor()\nState: s = {x: 0, a: []}\nf(7720)
+// Warning 6328: (180-204): CHC: Assertion violation happens here.

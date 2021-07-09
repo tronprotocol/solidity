@@ -229,6 +229,7 @@ Each one contains a ``list.json`` file listing the available binaries. For examp
       "build": "commit.3f05b770",
       "longVersion": "0.7.4+commit.3f05b770",
       "keccak256": "0x300330ecd127756b824aa13e843cb1f43c473cb22eaf3750d5fb9c99279af8c3",
+      "sha256": "0x2b55ed5fec4d9625b6c7b3ab1abd2b7fb7dd2a9c68543bf0323db2c7e2d55af2",
       "urls": [
         "bzzr://16c5f09109c793db99fe35f037c6092b061bd39260ee7a677c8a97f18c955ab1",
         "dweb:/ipfs/QmTLs5MuLEWXQkths41HiACoXDiH8zxyqBHGFDRSzVE5CS"
@@ -250,6 +251,8 @@ This means that:
   ``0x300330ecd127756b824aa13e843cb1f43c473cb22eaf3750d5fb9c99279af8c3``.  The hash can be computed
   on the command line using ``keccak256sum`` utility provided by `sha3sum`_ or `keccak256() function
   from ethereumjs-util`_ in JavaScript.
+- You can also verify the integrity of the binary by comparing its sha256 hash to
+  ``0x2b55ed5fec4d9625b6c7b3ab1abd2b7fb7dd2a9c68543bf0323db2c7e2d55af2``.
 
 .. warning::
 
@@ -330,7 +333,7 @@ The following are dependencies for all builds of Solidity:
 
     Starting from 0.5.10 linking against Boost 1.70+ should work without manual intervention.
 
-Minimum compiler versions
+Minimum Compiler Versions
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The following C++ compilers and their minimum versions can build the Solidity codebase:
@@ -474,10 +477,10 @@ And for Windows:
 
     mkdir build
     cd build
-    cmake -G "Visual Studio 16 2019 Win64" ..
+    cmake -G "Visual Studio 16 2019" ..
 
-In case you want to use the version of boost installed by ``./scripts/install_deps.ps1``, you will
-additionally need to pass ``-DBoost_DIR="..\deps\boost\lib\cmake\Boost-*"`` and ``-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded``
+In case you want to use the version of boost installed by ``scripts\install_deps.ps1``, you will
+additionally need to pass ``-DBoost_DIR="deps\boost\lib\cmake\Boost-*"`` and ``-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded``
 as arguments to the call to ``cmake``.
 
 This should result in the creation of **solidity.sln** in that build directory.
@@ -547,10 +550,10 @@ of the current nightly build, but without the ``prerelease`` specifier.
 
 Example:
 
-0. the 0.4.0 release is made
-1. nightly build has a version of 0.4.1 from now on
-2. non-breaking changes are introduced - no change in version
-3. a breaking change is introduced - version is bumped to 0.5.0
-4. the 0.5.0 release is made
+0. The 0.4.0 release is made.
+1. The nightly build has a version of 0.4.1 from now on.
+2. Non-breaking changes are introduced --> no change in version.
+3. A breaking change is introduced --> version is bumped to 0.5.0.
+4. The 0.5.0 release is made.
 
 This behaviour works well with the  :ref:`version pragma <version_pragma>`.

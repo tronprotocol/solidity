@@ -1,4 +1,3 @@
-pragma experimental SMTChecker;
 contract Simp {
 	function f3() public pure returns (bytes1) {
 		bytes memory y = "def";
@@ -7,5 +6,8 @@ contract Simp {
 		return y[0];
 	}
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (172-203): CHC: Assertion violation happens here.\nCounterexample:\n\n\n = 0\n\nTransaction trace:\nconstructor()\nf3()
+// Warning 6328: (140-171): CHC: Assertion violation happens here.

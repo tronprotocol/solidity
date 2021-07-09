@@ -70,7 +70,7 @@ or are general-use utility functions.
 Block and Transaction Properties
 --------------------------------
 
-- ``blockhash(uint blockNumber) returns (bytes32)``: hash of the given block - only works for 256 most recent, excluding current, blocks
+- ``blockhash(uint blockNumber) returns (bytes32)``: hash of the given block when ``blocknumber`` is one of the 256 most recent blocks; otherwise returns zero
 - ``block.chainid`` (``uint``): current chain id
 - ``block.coinbase`` (``address payable``): current block miner's address
 - ``block.difficulty`` (``uint``): current block difficulty
@@ -79,11 +79,11 @@ Block and Transaction Properties
 - ``block.timestamp`` (``uint``): current block timestamp as seconds since unix epoch
 - ``gasleft() returns (uint256)``: remaining gas
 - ``msg.data`` (``bytes calldata``): complete calldata
-- ``msg.sender`` (``address payable``): sender of the message (current call)
+- ``msg.sender`` (``address``): sender of the message (current call)
 - ``msg.sig`` (``bytes4``): first four bytes of the calldata (i.e. function identifier)
 - ``msg.value`` (``uint``): number of sun sent with the message
 - ``tx.gasprice`` (``uint``): gas price of the transaction
-- ``tx.origin`` (``address payable``): sender of the transaction (full call chain)
+- ``tx.origin`` (``address``): sender of the transaction (full call chain)
 
 .. note::
     The values of all members of ``msg``, including ``msg.sender`` and
@@ -137,6 +137,13 @@ ABI Encoding and Decoding Functions
 
 See the documentation about the :ref:`ABI <ABI>` and the
 :ref:`tightly packed encoding <abi_packed_mode>` for details about the encoding.
+
+.. index:: bytes members
+
+Members of bytes
+----------------
+
+- ``bytes.concat(...) returns (bytes memory)``: :ref:`Concatenates variable number of bytes and bytes1, ..., bytes32 arguments to one byte array<bytes-concat>`
 
 .. index:: assert, revert, require
 
@@ -256,6 +263,16 @@ For more information, see the section on :ref:`address`.
     (this can always be forced by the caller) and it also fails if the recipient runs out of gas. So in order
     to make safe Trx transfers, always check the return value of ``send``, use ``transfer`` or even better:
     Use a pattern where the recipient withdraws the money.
+
+.. warning::
+    Due to the fact that the EVM considers a call to a non-existing contract to always succeed,
+    Solidity includes an extra check using the ``extcodesize`` opcode when performing external calls.
+    This ensures that the contract that is about to be called either actually exists (it contains code)
+    or an exception is raised.
+
+    The low-level calls which operate on addresses rather than contract instances (i.e. ``.call()``,
+    ``.delegatecall()``, ``.staticcall()``, ``.send()`` and ``.transfer()``) **do not** include this
+    check, which makes them cheaper in terms of gas but also less safe.
 
 .. note::
    Prior to version 0.5.0, Solidity allowed address members to be accessed by a contract instance, for example ``this.balance``.

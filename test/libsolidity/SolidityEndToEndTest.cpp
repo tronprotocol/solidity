@@ -35,8 +35,9 @@
 #include <libsolutil/Keccak256.h>
 #include <libsolutil/ErrorCodes.h>
 
-#include <boost/range/adaptor/transformed.hpp>
 #include <boost/test/unit_test.hpp>
+
+#include <range/v3/view/transform.hpp>
 
 #include <functional>
 #include <numeric>
@@ -1381,6 +1382,8 @@ BOOST_AUTO_TEST_CASE(internal_constructor)
 			constructor() {}
 		}
 	)";
+	// via yul disabled because it will throw an error instead of
+	// returning empty bytecode.
 	BOOST_CHECK(compileAndRunWithoutCheck({{"", sourceCode}}, 0, "C").empty());
 }
 
@@ -1411,686 +1414,6 @@ BOOST_AUTO_TEST_CASE(default_fallback_throws)
 		compileAndRun(sourceCode);
 		ABI_CHECK(callContractFunction("f()"), encodeArgs(0));
 	}
-}
-
-BOOST_AUTO_TEST_CASE(event)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit(address indexed _from, bytes32 indexed _id, uint _value);
-			function deposit(bytes32 _id, bool _manually) public payable {
-				if (_manually) {
-					bytes32 s = 0x19dacbf83c5de6658e14cbf7bcae5c15eca2eedecf1c66fbca928e4d351bea0f;
-					uint value = msg.value;
-					address sender = msg.sender;
-					assembly {
-						mstore(0, value)
-						log3(0, 0x20, s, sender, _id)
-					}
-				} else {
-					emit Deposit(msg.sender, _id, msg.value);
-				}
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		u256 value(18);
-		u256 id(0x1234);
-		for (bool manually: {true, false})
-		{
-			callContractFunctionWithValue("deposit(bytes32,bool)", value, id, manually);
-			BOOST_REQUIRE_EQUAL(numLogs(), 1);
-			BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-			BOOST_CHECK_EQUAL(h256(logData(0)), h256(u256(value)));
-			BOOST_REQUIRE_EQUAL(numLogTopics(0), 3);
-			BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,bytes32,uint256)")));
-			BOOST_CHECK_EQUAL(logTopic(0, 1), h256(m_sender, h256::AlignRight));
-			BOOST_CHECK_EQUAL(logTopic(0, 2), h256(id));
-		}
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_emit)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit(address indexed _from, bytes32 indexed _id, uint _value);
-			function deposit(bytes32 _id) public payable {
-				emit Deposit(msg.sender, _id, msg.value);
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		u256 value(18);
-		u256 id(0x1234);
-		callContractFunctionWithValue("deposit(bytes32)", value, id);
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK_EQUAL(h256(logData(0)), h256(u256(value)));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 3);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,bytes32,uint256)")));
-		BOOST_CHECK_EQUAL(logTopic(0, 1), h256(m_sender, h256::AlignRight));
-		BOOST_CHECK_EQUAL(logTopic(0, 2), h256(id));
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_constructor)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit(address indexed _from, bytes32 indexed _id, uint _value);
-			constructor() {
-				emit Deposit(msg.sender, bytes32("abc"), 7);
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK_EQUAL(h256(logData(0)), h256(u256(7)));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 3);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,bytes32,uint256)")));
-		BOOST_CHECK_EQUAL(logTopic(0, 1), h256(m_sender, h256::AlignRight));
-		BOOST_CHECK_EQUAL(logTopic(0, 2), h256(string{"abc"}, h256::FromBinary, h256::AlignLeft));
-	)
-}
-
-
-BOOST_AUTO_TEST_CASE(event_no_arguments)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit();
-			function deposit() public {
-				emit Deposit();
-			}
-		}
-	)";
-
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		callContractFunction("deposit()");
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0).empty());
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit()")));
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_access_through_base_name_emit)
-{
-	char const* sourceCode = R"(
-		contract A {
-			event x();
-		}
-		contract B is A {
-			function f() public returns (uint) {
-				emit A.x();
-				return 1;
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		callContractFunction("f()");
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0).empty());
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("x()")));
-	);
-}
-
-BOOST_AUTO_TEST_CASE(events_with_same_name)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit();
-			event Deposit(address _addr);
-			event Deposit(address _addr, uint _amount);
-			event Deposit(address _addr, bool _flag);
-			function deposit() public returns (uint) {
-				emit Deposit();
-				return 1;
-			}
-			function deposit(address _addr) public returns (uint) {
-				emit Deposit(_addr);
-				return 2;
-			}
-			function deposit(address _addr, uint _amount) public returns (uint) {
-				emit Deposit(_addr, _amount);
-				return 3;
-			}
-			function deposit(address _addr, bool _flag) public returns (uint) {
-				emit Deposit(_addr, _flag);
-				return 4;
-			}
-		}
-	)";
-	h160 const c_loggedAddress = m_contractAddress;
-
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		ABI_CHECK(callContractFunction("deposit()"), encodeArgs(u256(1)));
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0).empty());
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit()")));
-
-		ABI_CHECK(callContractFunction("deposit(address)", c_loggedAddress), encodeArgs(u256(2)));
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		ABI_CHECK(logData(0), encodeArgs(c_loggedAddress));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address)")));
-
-		ABI_CHECK(callContractFunction("deposit(address,uint256)", c_loggedAddress, u256(100)), encodeArgs(u256(3)));
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		ABI_CHECK(logData(0), encodeArgs(c_loggedAddress, 100));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,uint256)")));
-
-		ABI_CHECK(callContractFunction("deposit(address,bool)", c_loggedAddress, false), encodeArgs(u256(4)));
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		ABI_CHECK(logData(0), encodeArgs(c_loggedAddress, false));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,bool)")));
-	)
-}
-
-BOOST_AUTO_TEST_CASE(events_with_same_name_inherited_emit)
-{
-	char const* sourceCode = R"(
-		contract A {
-			event Deposit();
-		}
-
-		contract B {
-			event Deposit(address _addr);
-		}
-
-		contract ClientReceipt is A, B {
-			event Deposit(address _addr, uint _amount);
-			function deposit() public returns (uint) {
-				emit Deposit();
-				return 1;
-			}
-			function deposit(address _addr) public returns (uint) {
-				emit Deposit(_addr);
-				return 1;
-			}
-			function deposit(address _addr, uint _amount) public returns (uint) {
-				emit Deposit(_addr, _amount);
-				return 1;
-			}
-		}
-	)";
-	h160 const c_loggedAddress = m_contractAddress;
-
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		ABI_CHECK(callContractFunction("deposit()"), encodeArgs(u256(1)));
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0).empty());
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit()")));
-
-		ABI_CHECK(callContractFunction("deposit(address)", c_loggedAddress), encodeArgs(u256(1)));
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0) == encodeArgs(c_loggedAddress));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address)")));
-
-		ABI_CHECK(callContractFunction("deposit(address,uint256)", c_loggedAddress, u256(100)), encodeArgs(u256(1)));
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		ABI_CHECK(logData(0), encodeArgs(c_loggedAddress, 100));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,uint256)")));
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_anonymous)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit() anonymous;
-			function deposit() public {
-				emit Deposit();
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		callContractFunction("deposit()");
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 0);
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_anonymous_with_topics)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit(address indexed _from, bytes32 indexed _id, uint indexed _value, uint indexed _value2, bytes32 data) anonymous;
-			function deposit(bytes32 _id) public payable {
-				emit Deposit(msg.sender, _id, msg.value, 2, "abc");
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		u256 value(18);
-		u256 id(0x1234);
-		callContractFunctionWithValue("deposit(bytes32)", value, id);
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0) == encodeArgs("abc"));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 4);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), h256(m_sender, h256::AlignRight));
-		BOOST_CHECK_EQUAL(logTopic(0, 1), h256(id));
-		BOOST_CHECK_EQUAL(logTopic(0, 2), h256(value));
-		BOOST_CHECK_EQUAL(logTopic(0, 3), h256(2));
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_lots_of_data)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit(address _from, bytes32 _id, uint _value, bool _flag);
-			function deposit(bytes32 _id) public payable {
-				emit Deposit(msg.sender, _id, msg.value, true);
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		u256 value(18);
-		u256 id(0x1234);
-		callContractFunctionWithValue("deposit(bytes32)", value, id);
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0) == encodeArgs(m_sender, id, value, true));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,bytes32,uint256,bool)")));
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_really_lots_of_data)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			event Deposit(uint fixeda, bytes dynx, uint fixedb);
-			function deposit() public {
-				emit Deposit(10, msg.data, 15);
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	callContractFunction("deposit()");
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK_EQUAL(toHex(logData(0)), toHex(encodeArgs(10, 0x60, 15, 4, asString(FixedHash<4>(util::keccak256("deposit()")).asBytes()))));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(uint256,bytes,uint256)")));
-}
-
-BOOST_AUTO_TEST_CASE(event_really_lots_of_data_from_storage)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			bytes x;
-			event Deposit(uint fixeda, bytes dynx, uint fixedb);
-			function deposit() public {
-				x.push("A");
-				x.push("B");
-				x.push("C");
-				emit Deposit(10, x, 15);
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	callContractFunction("deposit()");
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK_EQUAL(toHex(logData(0)), toHex(encodeArgs(10, 0x60, 15, 3, string("ABC"))));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(uint256,bytes,uint256)")));
-}
-
-BOOST_AUTO_TEST_CASE(event_really_really_lots_of_data_from_storage)
-{
-	char const* sourceCode = R"(
-		contract ClientReceipt {
-			bytes x;
-			event Deposit(uint fixeda, bytes dynx, uint fixedb);
-			function deposit() public {
-				x = new bytes(31);
-				x[0] = "A";
-				x[1] = "B";
-				x[2] = "C";
-				x[30] = "Z";
-				emit Deposit(10, x, 15);
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	callContractFunction("deposit()");
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK(logData(0) == encodeArgs(10, 0x60, 15, 31, string("ABC") + string(27, 0) + "Z"));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(uint256,bytes,uint256)")));
-}
-
-BOOST_AUTO_TEST_CASE(event_struct_memory_v2)
-{
-	char const* sourceCode = R"(
-		pragma abicoder v2;
-		contract C {
-			struct S { uint a; }
-			event E(S);
-			function createEvent(uint x) public {
-				emit E(S(x));
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	u256 x(42);
-	callContractFunction("createEvent(uint256)", x);
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK(logData(0) == encodeArgs(x));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint256))")));
-}
-
-BOOST_AUTO_TEST_CASE(event_struct_storage_v2)
-{
-	char const* sourceCode = R"(
-		pragma abicoder v2;
-		contract C {
-			struct S { uint a; }
-			event E(S);
-			S s;
-			function createEvent(uint x) public {
-				s.a = x;
-				emit E(s);
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	u256 x(42);
-	callContractFunction("createEvent(uint256)", x);
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK(logData(0) == encodeArgs(x));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint256))")));
-}
-
-BOOST_AUTO_TEST_CASE(event_dynamic_array_memory)
-{
-	char const* sourceCode = R"(
-		contract C {
-			event E(uint[]);
-			function createEvent(uint x) public {
-				uint[] memory arr = new uint[](3);
-				arr[0] = x;
-				arr[1] = x + 1;
-				arr[2] = x + 2;
-				emit E(arr);
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	u256 x(42);
-	callContractFunction("createEvent(uint256)", x);
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK(logData(0) == encodeArgs(0x20, 3, x, x + 1, x + 2));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(uint256[])")));
-}
-
-BOOST_AUTO_TEST_CASE(event_dynamic_array_memory_v2)
-{
-	char const* sourceCode = R"(
-		pragma abicoder v2;
-		contract C {
-			event E(uint[]);
-			function createEvent(uint x) public {
-				uint[] memory arr = new uint[](3);
-				arr[0] = x;
-				arr[1] = x + 1;
-				arr[2] = x + 2;
-				emit E(arr);
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	u256 x(42);
-	callContractFunction("createEvent(uint256)", x);
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK(logData(0) == encodeArgs(0x20, 3, x, x + 1, x + 2));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(uint256[])")));
-}
-
-BOOST_AUTO_TEST_CASE(event_dynamic_nested_array_memory_v2)
-{
-	char const* sourceCode = R"(
-		pragma abicoder v2;
-		contract C {
-			event E(uint[][]);
-			function createEvent(uint x) public {
-				uint[][] memory arr = new uint[][](2);
-				arr[0] = new uint[](2);
-				arr[1] = new uint[](2);
-				arr[0][0] = x;
-				arr[0][1] = x + 1;
-				arr[1][0] = x + 2;
-				arr[1][1] = x + 3;
-				emit E(arr);
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	u256 x(42);
-	callContractFunction("createEvent(uint256)", x);
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK(logData(0) == encodeArgs(0x20, 2, 0x40, 0xa0, 2, x, x + 1, 2, x + 2, x + 3));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(uint256[][])")));
-}
-
-BOOST_AUTO_TEST_CASE(event_dynamic_array_storage)
-{
-	char const* sourceCode = R"(
-		contract C {
-			event E(uint[]);
-			uint[] arr;
-			function createEvent(uint x) public {
-				while (arr.length < 3)
-					arr.push();
-				arr[0] = x;
-				arr[1] = x + 1;
-				arr[2] = x + 2;
-				emit E(arr);
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		u256 x(42);
-		callContractFunction("createEvent(uint256)", x);
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0) == encodeArgs(0x20, 3, x, x + 1, x + 2));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(uint256[])")));
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_dynamic_array_storage_v2)
-{
-	char const* sourceCode = R"(
-		pragma abicoder v2;
-		contract C {
-			event E(uint[]);
-			uint[] arr;
-			function createEvent(uint x) public {
-				while (arr.length < 3)
-					arr.push();
-				arr[0] = x;
-				arr[1] = x + 1;
-				arr[2] = x + 2;
-				emit E(arr);
-			}
-		}
-	)";
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		u256 x(42);
-		callContractFunction("createEvent(uint256)", x);
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0) == encodeArgs(0x20, 3, x, x + 1, x + 2));
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(uint256[])")));
-	)
-}
-
-BOOST_AUTO_TEST_CASE(event_dynamic_nested_array_storage_v2)
-{
-	char const* sourceCode = R"(
-		pragma abicoder v2;
-		contract C {
-			event E(uint[][]);
-			uint[][] arr;
-			function createEvent(uint x) public {
-				arr.push(new uint[](2));
-				arr.push(new uint[](2));
-				arr[0][0] = x;
-				arr[0][1] = x + 1;
-				arr[1][0] = x + 2;
-				arr[1][1] = x + 3;
-				emit E(arr);
-			}
-		}
-	)";
-	/// TODO enable again after push(..) via yul is implemented for nested arrays.
-	/// ALSO_VIA_YUL()
-	compileAndRun(sourceCode);
-	u256 x(42);
-	callContractFunction("createEvent(uint256)", x);
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_CHECK(logData(0) == encodeArgs(0x20, 2, 0x40, 0xa0, 2, x, x + 1, 2, x + 2, x + 3));
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 1);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(uint256[][])")));
-}
-
-BOOST_AUTO_TEST_CASE(event_indexed_string)
-{
-	char const* sourceCode = R"(
-		contract C {
-			string x;
-			uint[4] y;
-			event E(string indexed r, uint[4] indexed t);
-			function deposit() public {
-				for (uint i = 0; i < 90; i++)
-					bytes(x).push(0);
-				for (uint8 i = 0; i < 90; i++)
-					bytes(x)[i] = bytes1(i);
-				y[0] = 4;
-				y[1] = 5;
-				y[2] = 6;
-				y[3] = 7;
-				emit E(x, y);
-			}
-		}
-	)";
-	compileAndRun(sourceCode);
-	callContractFunction("deposit()");
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	string dynx(90, 0);
-	std::iota(dynx.begin(), dynx.end(), 0);
-	BOOST_CHECK(logData(0) == bytes());
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 3);
-	BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(dynx));
-	BOOST_CHECK_EQUAL(logTopic(0, 2), util::keccak256(
-		encodeArgs(u256(4), u256(5), u256(6), u256(7))
-	));
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(string,uint256[4])")));
-}
-
-BOOST_AUTO_TEST_CASE(event_indexed_function)
-{
-	char const* sourceCode = R"(
-		contract C {
-			event Test(function() external indexed);
-			function f() public {
-				emit Test(this.f);
-			}
-		}
-	)";
-
-	ALSO_VIA_YUL(
-		DISABLE_EWASM_TESTRUN()
-
-		compileAndRun(sourceCode);
-		callContractFunction("f()");
-		BOOST_REQUIRE_EQUAL(numLogs(), 1);
-		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-		BOOST_CHECK(logData(0) == bytes());
-		BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
-
-		bytes functionHash = util::keccak256("f()").asBytes();
-		bytes address = m_contractAddress.asBytes();
-		bytes selector = bytes(functionHash.cbegin(), functionHash.cbegin() + 4);
-		bytes padding = bytes(8, 0);
-		bytes functionABI = address + selector + padding;
-
-		BOOST_CHECK_EQUAL(logTopic(0, 1).hex(), util::toHex(functionABI));
-		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Test(function)")));
-	)
 }
 
 BOOST_AUTO_TEST_CASE(empty_name_input_parameter_with_named_one)
@@ -2239,10 +1562,13 @@ BOOST_AUTO_TEST_CASE(library_call_in_homestead)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs());
-	ABI_CHECK(callContractFunction("sender()"), encodeArgs(m_sender));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs());
+		ABI_CHECK(callContractFunction("sender()"), encodeArgs(m_sender));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(library_call_protection)
@@ -2266,16 +1592,19 @@ BOOST_AUTO_TEST_CASE(library_call_protection)
 			function pu() public pure returns (uint) { return Lib.pu(); }
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	ABI_CHECK(callContractFunction("np(Lib.S storage)", 0), encodeArgs());
-	ABI_CHECK(callContractFunction("v(Lib.S storage)", 0), encodeArgs(m_sender));
-	ABI_CHECK(callContractFunction("pu()"), encodeArgs(2));
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("s()"), encodeArgs(0));
-	ABI_CHECK(callContractFunction("np()"), encodeArgs(m_sender));
-	ABI_CHECK(callContractFunction("s()"), encodeArgs(3));
-	ABI_CHECK(callContractFunction("v()"), encodeArgs(m_sender));
-	ABI_CHECK(callContractFunction("pu()"), encodeArgs(2));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		ABI_CHECK(callContractFunction("np(Lib.S storage)", 0), encodeArgs());
+		ABI_CHECK(callContractFunction("v(Lib.S storage)", 0), encodeArgs(m_sender));
+		ABI_CHECK(callContractFunction("pu()"), encodeArgs(2));
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("s()"), encodeArgs(0));
+		ABI_CHECK(callContractFunction("np()"), encodeArgs(m_sender));
+		ABI_CHECK(callContractFunction("s()"), encodeArgs(3));
+		ABI_CHECK(callContractFunction("v()"), encodeArgs(m_sender));
+		ABI_CHECK(callContractFunction("pu()"), encodeArgs(2));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(library_staticcall_delegatecall)
@@ -2311,11 +1640,14 @@ BOOST_AUTO_TEST_CASE(bytes_from_calldata_to_memory)
 			}
 		}
 	)";
-	compileAndRun(sourceCode);
-	bytes calldata1 = FixedHash<4>(util::keccak256("f()")).asBytes() + bytes(61, 0x22) + bytes(12, 0x12);
-	sendMessage(calldata1, false);
-	BOOST_CHECK(m_transactionSuccessful);
-	BOOST_CHECK(m_output == encodeArgs(util::keccak256(bytes{'a', 'b', 'c'} + calldata1)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN();
+		compileAndRun(sourceCode);
+		bytes calldata1 = FixedHash<4>(util::keccak256("f()")).asBytes() + bytes(61, 0x22) + bytes(12, 0x12);
+		sendMessage(calldata1, false);
+		BOOST_CHECK(m_transactionSuccessful);
+		BOOST_CHECK(m_output == encodeArgs(util::keccak256(bytes{'a', 'b', 'c'} + calldata1)));
+	);
 }
 
 BOOST_AUTO_TEST_CASE(call_forward_bytes)
@@ -2336,15 +1668,18 @@ BOOST_AUTO_TEST_CASE(call_forward_bytes)
 			bytes savedData;
 		}
 	)";
-	compileAndRun(sourceCode, 0, "sender");
-	ABI_CHECK(callContractFunction("recv(uint256)", 7), bytes());
-	ABI_CHECK(callContractFunction("val()"), encodeArgs(0));
-	ABI_CHECK(callContractFunction("forward()"), encodeArgs(true));
-	ABI_CHECK(callContractFunction("val()"), encodeArgs(8));
-	ABI_CHECK(callContractFunction("clear()"), encodeArgs(true));
-	ABI_CHECK(callContractFunction("val()"), encodeArgs(8));
-	ABI_CHECK(callContractFunction("forward()"), encodeArgs(true));
-	ABI_CHECK(callContractFunction("val()"), encodeArgs(0x80));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN();
+		compileAndRun(sourceCode, 0, "sender");
+		ABI_CHECK(callContractFunction("recv(uint256)", 7), bytes());
+		ABI_CHECK(callContractFunction("val()"), encodeArgs(0));
+		ABI_CHECK(callContractFunction("forward()"), encodeArgs(true));
+		ABI_CHECK(callContractFunction("val()"), encodeArgs(8));
+		ABI_CHECK(callContractFunction("clear()"), encodeArgs(true));
+		ABI_CHECK(callContractFunction("val()"), encodeArgs(8));
+		ABI_CHECK(callContractFunction("forward()"), encodeArgs(true));
+		ABI_CHECK(callContractFunction("val()"), encodeArgs(0x80));
+	);
 }
 
 BOOST_AUTO_TEST_CASE(call_forward_bytes_length)
@@ -2377,18 +1712,21 @@ BOOST_AUTO_TEST_CASE(call_forward_bytes_length)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "sender");
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN();
+		compileAndRun(sourceCode, 0, "sender");
 
-	// No additional data, just function selector
-	ABI_CHECK(callContractFunction("viaCalldata()"), encodeArgs(4));
-	ABI_CHECK(callContractFunction("viaMemory()"), encodeArgs(4));
-	ABI_CHECK(callContractFunction("viaStorage()"), encodeArgs(4));
+		// No additional data, just function selector
+		ABI_CHECK(callContractFunction("viaCalldata()"), encodeArgs(4));
+		ABI_CHECK(callContractFunction("viaMemory()"), encodeArgs(4));
+		ABI_CHECK(callContractFunction("viaStorage()"), encodeArgs(4));
 
-	// Some additional unpadded data
-	bytes unpadded = asBytes(string("abc"));
-	ABI_CHECK(callContractFunctionNoEncoding("viaCalldata()", unpadded), encodeArgs(7));
-	ABI_CHECK(callContractFunctionNoEncoding("viaMemory()", unpadded), encodeArgs(7));
-	ABI_CHECK(callContractFunctionNoEncoding("viaStorage()", unpadded), encodeArgs(7));
+		// Some additional unpadded data
+		bytes unpadded = asBytes(string("abc"));
+		ABI_CHECK(callContractFunctionNoEncoding("viaCalldata()", unpadded), encodeArgs(7));
+		ABI_CHECK(callContractFunctionNoEncoding("viaMemory()", unpadded), encodeArgs(7));
+		ABI_CHECK(callContractFunctionNoEncoding("viaStorage()", unpadded), encodeArgs(7));
+	);
 }
 
 BOOST_AUTO_TEST_CASE(copying_bytes_multiassign)
@@ -2413,15 +1751,18 @@ BOOST_AUTO_TEST_CASE(copying_bytes_multiassign)
 			bytes savedData2;
 		}
 	)";
-	compileAndRun(sourceCode, 0, "sender");
-	ABI_CHECK(callContractFunction("recv(uint256)", 7), bytes());
-	ABI_CHECK(callContractFunction("val()"), encodeArgs(0));
-	ABI_CHECK(callContractFunction("forward(bool)", true), encodeArgs(true));
-	ABI_CHECK(callContractFunction("val()"), encodeArgs(8));
-	ABI_CHECK(callContractFunction("forward(bool)", false), encodeArgs(true));
-	ABI_CHECK(callContractFunction("val()"), encodeArgs(16));
-	ABI_CHECK(callContractFunction("forward(bool)", true), encodeArgs(true));
-	ABI_CHECK(callContractFunction("val()"), encodeArgs(0x80));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "sender");
+		ABI_CHECK(callContractFunction("recv(uint256)", 7), bytes());
+		ABI_CHECK(callContractFunction("val()"), encodeArgs(0));
+		ABI_CHECK(callContractFunction("forward(bool)", true), encodeArgs(true));
+		ABI_CHECK(callContractFunction("val()"), encodeArgs(8));
+		ABI_CHECK(callContractFunction("forward(bool)", false), encodeArgs(true));
+		ABI_CHECK(callContractFunction("val()"), encodeArgs(16));
+		ABI_CHECK(callContractFunction("forward(bool)", true), encodeArgs(true));
+		ABI_CHECK(callContractFunction("val()"), encodeArgs(0x80));
+	);
 }
 
 BOOST_AUTO_TEST_CASE(copy_from_calldata_removes_bytes_data)
@@ -2537,17 +1878,20 @@ BOOST_AUTO_TEST_CASE(struct_referencing)
 			function a2() public pure returns (uint) { L.S memory s; return L.a(s); }
 		}
 	)";
-	compileAndRun(sourceCode, 0, "L");
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(0, 3));
-	ABI_CHECK(callContractFunction("g()"), encodeArgs(4));
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{ {"L", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(1));
-	ABI_CHECK(callContractFunction("g()"), encodeArgs(2));
-	ABI_CHECK(callContractFunction("h()"), encodeArgs(0, 5));
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(0, 3));
-	ABI_CHECK(callContractFunction("y()"), encodeArgs(4));
-	ABI_CHECK(callContractFunction("a1()"), encodeArgs(1));
-	ABI_CHECK(callContractFunction("a2()"), encodeArgs(2));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "L");
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(0, 3));
+		ABI_CHECK(callContractFunction("g()"), encodeArgs(4));
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{ {"L", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(1));
+		ABI_CHECK(callContractFunction("g()"), encodeArgs(2));
+		ABI_CHECK(callContractFunction("h()"), encodeArgs(0, 5));
+		ABI_CHECK(callContractFunction("x()"), encodeArgs(0, 3));
+		ABI_CHECK(callContractFunction("y()"), encodeArgs(4));
+		ABI_CHECK(callContractFunction("a1()"), encodeArgs(1));
+		ABI_CHECK(callContractFunction("a2()"), encodeArgs(2));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(enum_referencing)
@@ -2583,15 +1927,18 @@ BOOST_AUTO_TEST_CASE(enum_referencing)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "L");
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(1));
-	ABI_CHECK(callContractFunction("g()"), encodeArgs(3));
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"L", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(3));
-	ABI_CHECK(callContractFunction("g()"), encodeArgs(3));
-	ABI_CHECK(callContractFunction("h()"), encodeArgs(1));
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(1));
-	ABI_CHECK(callContractFunction("y()"), encodeArgs(3));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "L");
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(1));
+		ABI_CHECK(callContractFunction("g()"), encodeArgs(3));
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"L", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(3));
+		ABI_CHECK(callContractFunction("g()"), encodeArgs(3));
+		ABI_CHECK(callContractFunction("h()"), encodeArgs(1));
+		ABI_CHECK(callContractFunction("x()"), encodeArgs(1));
+		ABI_CHECK(callContractFunction("y()"), encodeArgs(3));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(bytes_in_arguments)
@@ -3117,11 +2464,11 @@ BOOST_AUTO_TEST_CASE(calldata_array_dynamic_three_dimensional)
 		bytes encoding = encodeArray(
 			outerDynamicallySized,
 			middleDynamicallySized || innerDynamicallySized,
-			data | boost::adaptors::transformed([&](auto const& _middleData) {
+			data | ranges::views::transform([&](auto const& _middleData) {
 				return encodeArray(
 					middleDynamicallySized,
 					innerDynamicallySized,
-					_middleData | boost::adaptors::transformed([&](auto const& _values) {
+					_middleData | ranges::views::transform([&](auto const& _values) {
 						return encodeArray(innerDynamicallySized, false, _values);
 					})
 				);
@@ -3413,9 +2760,12 @@ BOOST_AUTO_TEST_CASE(library_call)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f(uint256)", u256(33)), encodeArgs(u256(33) * 9));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f(uint256)", u256(33)), encodeArgs(u256(33) * 9));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(library_function_external)
@@ -3428,9 +2778,12 @@ BOOST_AUTO_TEST_CASE(library_function_external)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f(bytes)", u256(0x20), u256(5), "abcde"), encodeArgs("c"));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f(bytes)", u256(0x20), u256(5), "abcde"), encodeArgs("c"));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(library_stray_values)
@@ -3445,9 +2798,12 @@ BOOST_AUTO_TEST_CASE(library_stray_values)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f(uint256)", u256(33)), encodeArgs(u256(42)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f(uint256)", u256(33)), encodeArgs(u256(42)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(internal_types_in_library)
@@ -3475,9 +2831,12 @@ BOOST_AUTO_TEST_CASE(internal_types_in_library)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(4), u256(17)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(4), u256(17)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(mapping_arguments_in_library)
@@ -3506,22 +2865,25 @@ BOOST_AUTO_TEST_CASE(mapping_arguments_in_library)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(1), u256(42)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(2), u256(84)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(21), u256(7)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get(uint256)", u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get(uint256)", u256(1)), encodeArgs(u256(42)));
-	ABI_CHECK(callContractFunction("get(uint256)", u256(2)), encodeArgs(u256(84)));
-	ABI_CHECK(callContractFunction("get(uint256)", u256(21)), encodeArgs(u256(7)));
-	ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(1), u256(21)), encodeArgs(u256(42)));
-	ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(2), u256(42)), encodeArgs(u256(84)));
-	ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(21), u256(14)), encodeArgs(u256(7)));
-	ABI_CHECK(callContractFunction("get(uint256)", u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get(uint256)", u256(1)), encodeArgs(u256(21)));
-	ABI_CHECK(callContractFunction("get(uint256)", u256(2)), encodeArgs(u256(42)));
-	ABI_CHECK(callContractFunction("get(uint256)", u256(21)), encodeArgs(u256(14)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(1), u256(42)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(2), u256(84)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(21), u256(7)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get(uint256)", u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get(uint256)", u256(1)), encodeArgs(u256(42)));
+		ABI_CHECK(callContractFunction("get(uint256)", u256(2)), encodeArgs(u256(84)));
+		ABI_CHECK(callContractFunction("get(uint256)", u256(21)), encodeArgs(u256(7)));
+		ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(1), u256(21)), encodeArgs(u256(42)));
+		ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(2), u256(42)), encodeArgs(u256(84)));
+		ABI_CHECK(callContractFunction("set(uint256,uint256)", u256(21), u256(14)), encodeArgs(u256(7)));
+		ABI_CHECK(callContractFunction("get(uint256)", u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get(uint256)", u256(1)), encodeArgs(u256(21)));
+		ABI_CHECK(callContractFunction("get(uint256)", u256(2)), encodeArgs(u256(42)));
+		ABI_CHECK(callContractFunction("get(uint256)", u256(21)), encodeArgs(u256(14)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(mapping_returns_in_library)
@@ -3554,52 +2916,55 @@ BOOST_AUTO_TEST_CASE(mapping_returns_in_library)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(1), u256(42)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(2), u256(84)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(21), u256(7)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(1), u256(10)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(2), u256(11)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(21), u256(12)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(1)), encodeArgs(u256(42)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(2)), encodeArgs(u256(84)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(21)), encodeArgs(u256(7)));
-	ABI_CHECK(callContractFunction("get_a(uint256)", u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get_a(uint256)", u256(1)), encodeArgs(u256(42)));
-	ABI_CHECK(callContractFunction("get_a(uint256)", u256(2)), encodeArgs(u256(84)));
-	ABI_CHECK(callContractFunction("get_a(uint256)", u256(21)), encodeArgs(u256(7)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(1)), encodeArgs(u256(10)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(2)), encodeArgs(u256(11)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(21)), encodeArgs(u256(12)));
-	ABI_CHECK(callContractFunction("get_b(uint256)", u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get_b(uint256)", u256(1)), encodeArgs(u256(10)));
-	ABI_CHECK(callContractFunction("get_b(uint256)", u256(2)), encodeArgs(u256(11)));
-	ABI_CHECK(callContractFunction("get_b(uint256)", u256(21)), encodeArgs(u256(12)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(1), u256(21)), encodeArgs(u256(42)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(2), u256(42)), encodeArgs(u256(84)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(21), u256(14)), encodeArgs(u256(7)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(1), u256(30)), encodeArgs(u256(10)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(2), u256(31)), encodeArgs(u256(11)));
-	ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(21), u256(32)), encodeArgs(u256(12)));
-	ABI_CHECK(callContractFunction("get_a(uint256)", u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get_a(uint256)", u256(1)), encodeArgs(u256(21)));
-	ABI_CHECK(callContractFunction("get_a(uint256)", u256(2)), encodeArgs(u256(42)));
-	ABI_CHECK(callContractFunction("get_a(uint256)", u256(21)), encodeArgs(u256(14)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(1)), encodeArgs(u256(21)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(2)), encodeArgs(u256(42)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(21)), encodeArgs(u256(14)));
-	ABI_CHECK(callContractFunction("get_b(uint256)", u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get_b(uint256)", u256(1)), encodeArgs(u256(30)));
-	ABI_CHECK(callContractFunction("get_b(uint256)", u256(2)), encodeArgs(u256(31)));
-	ABI_CHECK(callContractFunction("get_b(uint256)", u256(21)), encodeArgs(u256(32)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(0)), encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(1)), encodeArgs(u256(30)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(2)), encodeArgs(u256(31)));
-	ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(21)), encodeArgs(u256(32)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(1), u256(42)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(2), u256(84)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(21), u256(7)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(1), u256(10)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(2), u256(11)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(21), u256(12)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(1)), encodeArgs(u256(42)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(2)), encodeArgs(u256(84)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(21)), encodeArgs(u256(7)));
+		ABI_CHECK(callContractFunction("get_a(uint256)", u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get_a(uint256)", u256(1)), encodeArgs(u256(42)));
+		ABI_CHECK(callContractFunction("get_a(uint256)", u256(2)), encodeArgs(u256(84)));
+		ABI_CHECK(callContractFunction("get_a(uint256)", u256(21)), encodeArgs(u256(7)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(1)), encodeArgs(u256(10)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(2)), encodeArgs(u256(11)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(21)), encodeArgs(u256(12)));
+		ABI_CHECK(callContractFunction("get_b(uint256)", u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get_b(uint256)", u256(1)), encodeArgs(u256(10)));
+		ABI_CHECK(callContractFunction("get_b(uint256)", u256(2)), encodeArgs(u256(11)));
+		ABI_CHECK(callContractFunction("get_b(uint256)", u256(21)), encodeArgs(u256(12)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(1), u256(21)), encodeArgs(u256(42)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(2), u256(42)), encodeArgs(u256(84)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", true, u256(21), u256(14)), encodeArgs(u256(7)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(1), u256(30)), encodeArgs(u256(10)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(2), u256(31)), encodeArgs(u256(11)));
+		ABI_CHECK(callContractFunction("set(bool,uint256,uint256)", false, u256(21), u256(32)), encodeArgs(u256(12)));
+		ABI_CHECK(callContractFunction("get_a(uint256)", u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get_a(uint256)", u256(1)), encodeArgs(u256(21)));
+		ABI_CHECK(callContractFunction("get_a(uint256)", u256(2)), encodeArgs(u256(42)));
+		ABI_CHECK(callContractFunction("get_a(uint256)", u256(21)), encodeArgs(u256(14)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(1)), encodeArgs(u256(21)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(2)), encodeArgs(u256(42)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", true, u256(21)), encodeArgs(u256(14)));
+		ABI_CHECK(callContractFunction("get_b(uint256)", u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get_b(uint256)", u256(1)), encodeArgs(u256(30)));
+		ABI_CHECK(callContractFunction("get_b(uint256)", u256(2)), encodeArgs(u256(31)));
+		ABI_CHECK(callContractFunction("get_b(uint256)", u256(21)), encodeArgs(u256(32)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(0)), encodeArgs(u256(0)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(1)), encodeArgs(u256(30)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(2)), encodeArgs(u256(31)));
+		ABI_CHECK(callContractFunction("get(bool,uint256)", false, u256(21)), encodeArgs(u256(32)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(mapping_returns_in_library_named)
@@ -3630,10 +2995,13 @@ BOOST_AUTO_TEST_CASE(mapping_returns_in_library_named)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(0), u256(42), u256(0), u256(0), u256(21), u256(84)));
-	ABI_CHECK(callContractFunction("g()"), encodeArgs(u256(0), u256(42), u256(0), u256(0), u256(21), u256(17)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(0), u256(42), u256(0), u256(0), u256(21), u256(84)));
+		ABI_CHECK(callContractFunction("g()"), encodeArgs(u256(0), u256(42), u256(0), u256(0), u256(21), u256(17)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(using_library_mappings_public)
@@ -3658,9 +3026,12 @@ BOOST_AUTO_TEST_CASE(using_library_mappings_public)
 				}
 			}
 		)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(1), u256(0), u256(42), u256(23), u256(0), u256(99)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(1), u256(0), u256(42), u256(23), u256(0), u256(99)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(using_library_mappings_external)
@@ -3719,9 +3090,12 @@ BOOST_AUTO_TEST_CASE(using_library_mappings_return)
 				}
 			}
 		)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(1), u256(0), u256(42), u256(23), u256(0), u256(99)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(1), u256(0), u256(42), u256(23), u256(0), u256(99)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(using_library_structs)
@@ -3747,9 +3121,12 @@ BOOST_AUTO_TEST_CASE(using_library_structs)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "Lib");
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(7), u256(8)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "Lib");
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"Lib", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(7), u256(8)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(short_strings)
@@ -3860,14 +3237,17 @@ BOOST_AUTO_TEST_CASE(short_strings)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "A");
-	ABI_CHECK(callContractFunction("data1()"), encodeDyn(string("123")));
-	ABI_CHECK(callContractFunction("lengthChange()"), encodeArgs(u256(0)));
-	BOOST_CHECK(storageEmpty(m_contractAddress));
-	ABI_CHECK(callContractFunction("deleteElements()"), encodeArgs(u256(0)));
-	BOOST_CHECK(storageEmpty(m_contractAddress));
-	ABI_CHECK(callContractFunction("copy()"), encodeArgs(u256(0)));
-	BOOST_CHECK(storageEmpty(m_contractAddress));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "A");
+		ABI_CHECK(callContractFunction("data1()"), encodeDyn(string("123")));
+		ABI_CHECK(callContractFunction("lengthChange()"), encodeArgs(u256(0)));
+		BOOST_CHECK(storageEmpty(m_contractAddress));
+		ABI_CHECK(callContractFunction("deleteElements()"), encodeArgs(u256(0)));
+		BOOST_CHECK(storageEmpty(m_contractAddress));
+		ABI_CHECK(callContractFunction("copy()"), encodeArgs(u256(0)));
+		BOOST_CHECK(storageEmpty(m_contractAddress));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(calldata_offset)
@@ -3901,17 +3281,20 @@ BOOST_AUTO_TEST_CASE(reject_ether_sent_to_library)
 			receive () external payable {}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "lib");
-	Address libraryAddress = m_contractAddress;
-	compileAndRun(sourceCode, 10, "c");
-	BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 10);
-	BOOST_CHECK_EQUAL(balanceAt(libraryAddress), 0);
-	ABI_CHECK(callContractFunction("f(address)", encodeArgs(libraryAddress)), encodeArgs(false));
-	BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 10);
-	BOOST_CHECK_EQUAL(balanceAt(libraryAddress), 0);
-	ABI_CHECK(callContractFunction("f(address)", encodeArgs(m_contractAddress)), encodeArgs(true));
-	BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 10);
-	BOOST_CHECK_EQUAL(balanceAt(libraryAddress), 0);
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "lib");
+		Address libraryAddress = m_contractAddress;
+		compileAndRun(sourceCode, 10, "c");
+		BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 10);
+		BOOST_CHECK_EQUAL(balanceAt(libraryAddress), 0);
+		ABI_CHECK(callContractFunction("f(address)", encodeArgs(libraryAddress)), encodeArgs(false));
+		BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 10);
+		BOOST_CHECK_EQUAL(balanceAt(libraryAddress), 0);
+		ABI_CHECK(callContractFunction("f(address)", encodeArgs(m_contractAddress)), encodeArgs(true));
+		BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 10);
+		BOOST_CHECK_EQUAL(balanceAt(libraryAddress), 0);
+	)
 }
 
 BOOST_AUTO_TEST_CASE(create_memory_array_allocation_size)
@@ -3941,22 +3324,6 @@ BOOST_AUTO_TEST_CASE(create_memory_array_allocation_size)
 	}
 }
 
-BOOST_AUTO_TEST_CASE(using_for_function_on_int)
-{
-	char const* sourceCode = R"(
-		library D { function double(uint self) public returns (uint) { return 2*self; } }
-		contract C {
-			using D for uint;
-			function f(uint a) public returns (uint) {
-				return a.double();
-			}
-		}
-	)";
-	compileAndRun(sourceCode, 0, "D");
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f(uint256)", u256(9)), encodeArgs(u256(2 * 9)));
-}
-
 BOOST_AUTO_TEST_CASE(using_for_function_on_struct)
 {
 	char const* sourceCode = R"(
@@ -3970,10 +3337,13 @@ BOOST_AUTO_TEST_CASE(using_for_function_on_struct)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "D");
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f(uint256)", u256(7)), encodeArgs(u256(3 * 7)));
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(3 * 7)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "D");
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f(uint256)", u256(7)), encodeArgs(u256(3 * 7)));
+		ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(3 * 7)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(using_for_overload)
@@ -3993,10 +3363,13 @@ BOOST_AUTO_TEST_CASE(using_for_overload)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "D");
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f(uint256)", u256(7)), encodeArgs(u256(6 * 7)));
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(6 * 7)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "D");
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f(uint256)", u256(7)), encodeArgs(u256(6 * 7)));
+		ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(6 * 7)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(using_for_by_name)
@@ -4012,10 +3385,13 @@ BOOST_AUTO_TEST_CASE(using_for_by_name)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "D");
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f(uint256)", u256(7)), encodeArgs(u256(6 * 7)));
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(6 * 7)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "D");
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f(uint256)", u256(7)), encodeArgs(u256(6 * 7)));
+		ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(6 * 7)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(bound_function_in_function)
@@ -4032,9 +3408,12 @@ BOOST_AUTO_TEST_CASE(bound_function_in_function)
 			function t() public pure returns (uint)  { return 7; }
 		}
 	)";
-	compileAndRun(sourceCode, 0, "L");
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"L", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(7)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "L");
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"L", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(7)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(bound_function_in_var)
@@ -4050,10 +3429,13 @@ BOOST_AUTO_TEST_CASE(bound_function_in_var)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "D");
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f(uint256)", u256(7)), encodeArgs(u256(6 * 7)));
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(6 * 7)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "D");
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f(uint256)", u256(7)), encodeArgs(u256(6 * 7)));
+		ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(6 * 7)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(bound_function_to_string)
@@ -4073,10 +3455,13 @@ BOOST_AUTO_TEST_CASE(bound_function_to_string)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "D");
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
-	ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(3)));
-	ABI_CHECK(callContractFunction("g()"), encodeArgs(u256(3)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "D");
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"D", m_contractAddress}});
+		ABI_CHECK(callContractFunction("f()"), encodeArgs(u256(3)));
+		ABI_CHECK(callContractFunction("g()"), encodeArgs(u256(3)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(inline_long_string_return)
@@ -4108,34 +3493,6 @@ BOOST_AUTO_TEST_CASE(index_access_with_type_conversion)
 	// neither of the two should throw due to out-of-bounds access
 	BOOST_CHECK(callContractFunction("f(uint256)", u256(0x01)).size() == 256 * 32);
 	BOOST_CHECK(callContractFunction("f(uint256)", u256(0x101)).size() == 256 * 32);
-}
-
-BOOST_AUTO_TEST_CASE(failed_create)
-{
-	char const* sourceCode = R"(
-		contract D { constructor() payable {} }
-		contract C {
-			uint public x;
-			constructor() payable {}
-			function f(uint amount) public returns (D) {
-				x++;
-				return (new D){value: amount}();
-			}
-			function stack(uint depth) public returns (address) {
-				if (depth < 1024)
-					return this.stack(depth - 1);
-				else
-					return address(f(0));
-			}
-		}
-	)";
-	compileAndRun(sourceCode, 20, "C");
-	BOOST_CHECK(callContractFunction("f(uint256)", 20) != encodeArgs(u256(0)));
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(1)));
-	ABI_CHECK(callContractFunction("f(uint256)", 20), encodeArgs());
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(1)));
-	ABI_CHECK(callContractFunction("stack(uint256)", 1023), encodeArgs());
-	ABI_CHECK(callContractFunction("x()"), encodeArgs(u256(1)));
 }
 
 BOOST_AUTO_TEST_CASE(correctly_initialize_memory_array_in_constructor)
@@ -4271,9 +3628,12 @@ BOOST_AUTO_TEST_CASE(payable_function_calls_library)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "L");
-	compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"L", m_contractAddress}});
-	ABI_CHECK(callContractFunctionWithValue("f()", 27), encodeArgs(u256(7)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "L");
+		compileAndRun(sourceCode, 0, "C", bytes(), map<string, h160>{{"L", m_contractAddress}});
+		ABI_CHECK(callContractFunctionWithValue("f()", 27), encodeArgs(u256(7)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(non_payable_throw)
@@ -4296,16 +3656,19 @@ BOOST_AUTO_TEST_CASE(non_payable_throw)
 
 		}
 	)";
-	compileAndRun(sourceCode, 0, "C");
-	ABI_CHECK(callContractFunctionWithValue("f()", 27), encodeArgs());
-	BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 0);
-	ABI_CHECK(callContractFunction(""), encodeArgs());
-	ABI_CHECK(callContractFunction("a()"), encodeArgs(u256(1)));
-	ABI_CHECK(callContractFunctionWithValue("", 27), encodeArgs());
-	BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 0);
-	ABI_CHECK(callContractFunction("a()"), encodeArgs(u256(1)));
-	ABI_CHECK(callContractFunctionWithValue("a()", 27), encodeArgs());
-	BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 0);
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "C");
+		ABI_CHECK(callContractFunctionWithValue("f()", 27), encodeArgs());
+		BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 0);
+		ABI_CHECK(callContractFunction(""), encodeArgs());
+		ABI_CHECK(callContractFunction("a()"), encodeArgs(u256(1)));
+		ABI_CHECK(callContractFunctionWithValue("", 27), encodeArgs());
+		BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 0);
+		ABI_CHECK(callContractFunction("a()"), encodeArgs(u256(1)));
+		ABI_CHECK(callContractFunctionWithValue("a()", 27), encodeArgs());
+		BOOST_CHECK_EQUAL(balanceAt(m_contractAddress), 0);
+	)
 }
 
 BOOST_AUTO_TEST_CASE(mem_resize_is_not_paid_at_call)
@@ -4340,11 +3703,14 @@ BOOST_AUTO_TEST_CASE(receive_external_function_type)
 		}
 	)";
 
-	compileAndRun(sourceCode, 0, "C");
-	ABI_CHECK(callContractFunction(
-		"f(function)",
-		m_contractAddress.asBytes() + FixedHash<4>(util::keccak256("g()")).asBytes() + bytes(32 - 4 - 20, 0)
-	), encodeArgs(u256(7)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "C");
+		ABI_CHECK(callContractFunction(
+			"f(function)",
+			m_contractAddress.asBytes() + FixedHash<4>(util::keccak256("g()")).asBytes() + bytes(32 - 4 - 20, 0)
+		), encodeArgs(u256(7)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(return_external_function_type)
@@ -4382,27 +3748,6 @@ BOOST_AUTO_TEST_CASE(shift_bytes)
 	compileAndRun(sourceCode, 0, "C");
 	ABI_CHECK(callContractFunction("left(bytes20,uint8)", "12345678901234567890", 8 * 8), encodeArgs("901234567890" + string(8, 0)));
 	ABI_CHECK(callContractFunction("right(bytes20,uint8)", "12345678901234567890", 8 * 8), encodeArgs(string(8, 0) + "123456789012"));
-}
-
-BOOST_AUTO_TEST_CASE(shift_bytes_cleanup)
-{
-	char const* sourceCode = R"(
-		contract C {
-			function left(uint8 y) public returns (bytes20) {
-				bytes20 x;
-				assembly { x := "12345678901234567890abcde" }
-				return x << y;
-			}
-			function right(uint8 y) public returns (bytes20) {
-				bytes20 x;
-				assembly { x := "12345678901234567890abcde" }
-				return x >> y;
-			}
-		}
-	)";
-	compileAndRun(sourceCode, 0, "C");
-	ABI_CHECK(callContractFunction("left(uint8)", 8 * 8), encodeArgs("901234567890" + string(8, 0)));
-	ABI_CHECK(callContractFunction("right(uint8)", 8 * 8), encodeArgs(string(8, 0) + "123456789012"));
 }
 
 BOOST_AUTO_TEST_CASE(contracts_separated_with_comment)
@@ -4882,23 +4227,26 @@ BOOST_AUTO_TEST_CASE(bare_call_return_data)
 					}
 				}
 			)DELIMITER";
-			compileAndRun(sourceCode, 0, "C");
-			ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_bool()"))), encodeArgs(true, 0x40, 0x20, true));
-			ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_int32()"))), encodeArgs(true, 0x40, 0x20, u256(-32)));
-			ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_uint32()"))), encodeArgs(true, 0x40, 0x20, u256(0x3232)));
-			ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_int256()"))), encodeArgs(true, 0x40, 0x20, u256(-256)));
-			ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_uint256()"))), encodeArgs(true, 0x40, 0x20, u256(0x256256)));
-			ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_bytes4()"))), encodeArgs(true, 0x40, 0x20, u256(0xabcd0012) << (28*8)));
-			ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_multi()"))), encodeArgs(true, 0x40, 0x60, false, u256(0x3232), u256(0xabcd0012) << (28*8)));
-			ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_bytes()"))), encodeArgs(true, 0x40, 0x60, 0x20, 0x02, encode(bytes{0x42,0x21}, false)));
-			ABI_CHECK(callContractFunction("check_bool()"), encodeArgs(true));
-			ABI_CHECK(callContractFunction("check_int32()"), encodeArgs(true));
-			ABI_CHECK(callContractFunction("check_uint32()"), encodeArgs(true));
-			ABI_CHECK(callContractFunction("check_int256()"), encodeArgs(true));
-			ABI_CHECK(callContractFunction("check_uint256()"), encodeArgs(true));
-			ABI_CHECK(callContractFunction("check_bytes4()"), encodeArgs(true));
-			ABI_CHECK(callContractFunction("check_multi()"), encodeArgs(true));
-			ABI_CHECK(callContractFunction("check_bytes()"), encodeArgs(true));
+			ALSO_VIA_YUL(
+				DISABLE_EWASM_TESTRUN()
+				compileAndRun(sourceCode, 0, "C");
+				ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_bool()"))), encodeArgs(true, 0x40, 0x20, true));
+				ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_int32()"))), encodeArgs(true, 0x40, 0x20, u256(-32)));
+				ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_uint32()"))), encodeArgs(true, 0x40, 0x20, u256(0x3232)));
+				ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_int256()"))), encodeArgs(true, 0x40, 0x20, u256(-256)));
+				ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_uint256()"))), encodeArgs(true, 0x40, 0x20, u256(0x256256)));
+				ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_bytes4()"))), encodeArgs(true, 0x40, 0x20, u256(0xabcd0012) << (28*8)));
+				ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_multi()"))), encodeArgs(true, 0x40, 0x60, false, u256(0x3232), u256(0xabcd0012) << (28*8)));
+				ABI_CHECK(callContractFunction("f(string)", encodeDyn(string("return_bytes()"))), encodeArgs(true, 0x40, 0x60, 0x20, 0x02, encode(bytes{0x42,0x21}, false)));
+				ABI_CHECK(callContractFunction("check_bool()"), encodeArgs(true));
+				ABI_CHECK(callContractFunction("check_int32()"), encodeArgs(true));
+				ABI_CHECK(callContractFunction("check_uint32()"), encodeArgs(true));
+				ABI_CHECK(callContractFunction("check_int256()"), encodeArgs(true));
+				ABI_CHECK(callContractFunction("check_uint256()"), encodeArgs(true));
+				ABI_CHECK(callContractFunction("check_bytes4()"), encodeArgs(true));
+				ABI_CHECK(callContractFunction("check_multi()"), encodeArgs(true));
+				ABI_CHECK(callContractFunction("check_bytes()"), encodeArgs(true));
+			)
 		}
 	}
 }
@@ -4940,15 +4288,18 @@ BOOST_AUTO_TEST_CASE(abi_encodePacked)
 	)";
 	for (auto v2: {false, true})
 	{
-		string prefix = "pragma abicoder " + string(v2 ? "v2" : "v1") + ";\n";
-		compileAndRun(prefix + sourceCode, 0, "C");
-		ABI_CHECK(callContractFunction("f0()"), encodeArgs(0x20, 0));
-		ABI_CHECK(callContractFunction("f1()"), encodeArgs(0x20, 2, "\x01\x02"));
-		ABI_CHECK(callContractFunction("f2()"), encodeArgs(0x20, 5, "\x01" "abc" "\x02"));
-		ABI_CHECK(callContractFunction("f3()"), encodeArgs(0x20, 5, "\x01" "abc" "\x02"));
-		ABI_CHECK(callContractFunction("f4()"), encodeArgs(0x20, 2 + 26 + 26 + 2, "\x07\x01" "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz" "\x12\x01"));
-		ABI_CHECK(callContractFunction("f_literal()"), encodeArgs(0x20, 5, "\x01" "abc" "\x02"));
-		ABI_CHECK(callContractFunction("f_calldata()"), encodeArgs(0x20, 6, "\x01" "\xa5\xbf\xa1\xee" "\x02"));
+		ALSO_VIA_YUL(
+			DISABLE_EWASM_TESTRUN()
+			string prefix = "pragma abicoder " + string(v2 ? "v2" : "v1") + ";\n";
+			compileAndRun(prefix + sourceCode, 0, "C");
+			ABI_CHECK(callContractFunction("f0()"), encodeArgs(0x20, 0));
+			ABI_CHECK(callContractFunction("f1()"), encodeArgs(0x20, 2, "\x01\x02"));
+			ABI_CHECK(callContractFunction("f2()"), encodeArgs(0x20, 5, "\x01" "abc" "\x02"));
+			ABI_CHECK(callContractFunction("f3()"), encodeArgs(0x20, 5, "\x01" "abc" "\x02"));
+			ABI_CHECK(callContractFunction("f4()"), encodeArgs(0x20, 2 + 26 + 26 + 2, "\x07\x01" "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz" "\x12\x01"));
+			ABI_CHECK(callContractFunction("f_literal()"), encodeArgs(0x20, 5, "\x01" "abc" "\x02"));
+			ABI_CHECK(callContractFunction("f_calldata()"), encodeArgs(0x20, 6, "\x01" "\xa5\xbf\xa1\xee" "\x02"));
+		)
 	}
 }
 
@@ -5015,26 +4366,29 @@ BOOST_AUTO_TEST_CASE(abi_encodePacked_from_storage)
 	)";
 	for (auto v2: {false, true})
 	{
-		string prefix = "pragma abicoder " + string(v2 ? "v2" : "v1") + ";\n";
-		compileAndRun(prefix + sourceCode, 0, "C");
-		bytes payload = encodeArgs(0xfffff1, 0, 0xfffff2, 0, 0, 0xfffff3, 0, 0, 0xfffff4);
-		bytes encoded = encodeArgs(0x20, 0x122, "\x01" + asString(payload) + "\x02");
-		ABI_CHECK(callContractFunction("sf()"), encoded);
-		ABI_CHECK(callContractFunction("sd()"), encoded);
-		ABI_CHECK(callContractFunction("sfs()"), encodeArgs(0x20, 0x122, "\x01" + asString(encodeArgs(
-			u256(-2), 0, 0xffff2, 0, 0, u256(-200), 0, 0, 0xffff4
-		)) + "\x02"));
-		payload = encodeArgs(
-			u256("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
-			0xfffff2,
-			u256("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
-			0,
-			0xfffff4
-		);
-		ABI_CHECK(callContractFunction("lf()"), encodeArgs(0x20, 5 * 32 + 2, "\x01" + asString(encodeArgs(payload)) + "\x02"));
-		ABI_CHECK(callContractFunction("ld()"), encodeArgs(0x20, 5 * 32 + 2, "\x01" + asString(encodeArgs(payload)) + "\x02"));
-		ABI_CHECK(callContractFunction("bytes_short()"), encodeArgs(0x20, 6, "\x01" "abcd\x02"));
-		ABI_CHECK(callContractFunction("bytes_long()"), encodeArgs(0x20, 42, "\x01" "0123456789012345678901234567890123456789\x02"));
+		ALSO_VIA_YUL(
+			DISABLE_EWASM_TESTRUN()
+			string prefix = "pragma abicoder " + string(v2 ? "v2" : "v1") + ";\n";
+			compileAndRun(prefix + sourceCode, 0, "C");
+			bytes payload = encodeArgs(0xfffff1, 0, 0xfffff2, 0, 0, 0xfffff3, 0, 0, 0xfffff4);
+			bytes encoded = encodeArgs(0x20, 0x122, "\x01" + asString(payload) + "\x02");
+			ABI_CHECK(callContractFunction("sf()"), encoded);
+			ABI_CHECK(callContractFunction("sd()"), encoded);
+			ABI_CHECK(callContractFunction("sfs()"), encodeArgs(0x20, 0x122, "\x01" + asString(encodeArgs(
+				u256(-2), 0, 0xffff2, 0, 0, u256(-200), 0, 0, 0xffff4
+			)) + "\x02"));
+			payload = encodeArgs(
+				u256("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+				0xfffff2,
+				u256("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
+				0,
+				0xfffff4
+			);
+			ABI_CHECK(callContractFunction("lf()"), encodeArgs(0x20, 5 * 32 + 2, "\x01" + asString(encodeArgs(payload)) + "\x02"));
+			ABI_CHECK(callContractFunction("ld()"), encodeArgs(0x20, 5 * 32 + 2, "\x01" + asString(encodeArgs(payload)) + "\x02"));
+			ABI_CHECK(callContractFunction("bytes_short()"), encodeArgs(0x20, 6, "\x01" "abcd\x02"));
+			ABI_CHECK(callContractFunction("bytes_long()"), encodeArgs(0x20, 42, "\x01" "0123456789012345678901234567890123456789\x02"));
+		)
 	}
 }
 
@@ -5086,24 +4440,27 @@ BOOST_AUTO_TEST_CASE(abi_encodePacked_from_memory)
 	)";
 	for (auto v2: {false, true})
 	{
-		string prefix = "pragma abicoder " + string(v2 ? "v2" : "v1") + ";\n";
-		compileAndRun(prefix + sourceCode, 0, "C");
-		bytes payload = encodeArgs(0xfffff1, 0, 0xfffff2, 0, 0, 0xfffff3, 0, 0, 0xfffff4);
-		bytes encoded = encodeArgs(0x20, 0x122, "\x01" + asString(payload) + "\x02");
-		ABI_CHECK(callContractFunction("sf()"), encoded);
-		ABI_CHECK(callContractFunction("sd()"), encoded);
-		ABI_CHECK(callContractFunction("sfs()"), encodeArgs(0x20, 0x122, "\x01" + asString(encodeArgs(
-			u256(-2), 0, 0xffff2, 0, 0, u256(-200), 0, 0, 0xffff4
-		)) + "\x02"));
-		payload = encodeArgs(
-			u256("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
-			0xfffff2,
-			u256("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
-			0,
-			0xfffff4
-		);
-		ABI_CHECK(callContractFunction("lf()"), encodeArgs(0x20, 5 * 32 + 2, "\x01" + asString(encodeArgs(payload)) + "\x02"));
-		ABI_CHECK(callContractFunction("ld()"), encodeArgs(0x20, 5 * 32 + 2, "\x01" + asString(encodeArgs(payload)) + "\x02"));
+		ALSO_VIA_YUL(
+			DISABLE_EWASM_TESTRUN()
+			string prefix = "pragma abicoder " + string(v2 ? "v2" : "v1") + ";\n";
+			compileAndRun(prefix + sourceCode, 0, "C");
+			bytes payload = encodeArgs(0xfffff1, 0, 0xfffff2, 0, 0, 0xfffff3, 0, 0, 0xfffff4);
+			bytes encoded = encodeArgs(0x20, 0x122, "\x01" + asString(payload) + "\x02");
+			ABI_CHECK(callContractFunction("sf()"), encoded);
+			ABI_CHECK(callContractFunction("sd()"), encoded);
+			ABI_CHECK(callContractFunction("sfs()"), encodeArgs(0x20, 0x122, "\x01" + asString(encodeArgs(
+				u256(-2), 0, 0xffff2, 0, 0, u256(-200), 0, 0, 0xffff4
+			)) + "\x02"));
+			payload = encodeArgs(
+				u256("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+				0xfffff2,
+				u256("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
+				0,
+				0xfffff4
+			);
+			ABI_CHECK(callContractFunction("lf()"), encodeArgs(0x20, 5 * 32 + 2, "\x01" + asString(encodeArgs(payload)) + "\x02"));
+			ABI_CHECK(callContractFunction("ld()"), encodeArgs(0x20, 5 * 32 + 2, "\x01" + asString(encodeArgs(payload)) + "\x02"));
+		)
 	}
 }
 
@@ -5130,13 +4487,16 @@ BOOST_AUTO_TEST_CASE(abi_encodePacked_functionPtr)
 	)";
 	for (auto v2: {false, true})
 	{
-		string prefix = "pragma abicoder " + string(v2 ? "v2" : "v1") + ";\n";
-		compileAndRun(prefix + sourceCode, 0, "C");
-		string directEncoding = asString(fromHex("08" "1112131400000000000011121314000000000087" "26121ff0" "02"));
-		ABI_CHECK(callContractFunction("testDirect()"), encodeArgs(0x20, directEncoding.size(), directEncoding));
-		string arrayEncoding = asString(fromHex("08" "1112131400000000000011121314000000000087" "26121ff0" "0000000000000000" "02"));
-		ABI_CHECK(callContractFunction("testFixedArray()"), encodeArgs(0x20, arrayEncoding.size(), arrayEncoding));
-		ABI_CHECK(callContractFunction("testDynamicArray()"), encodeArgs(0x20, arrayEncoding.size(), arrayEncoding));
+		ALSO_VIA_YUL(
+			DISABLE_EWASM_TESTRUN()
+			string prefix = "pragma abicoder " + string(v2 ? "v2" : "v1") + ";\n";
+			compileAndRun(prefix + sourceCode, 0, "C");
+			string directEncoding = asString(fromHex("08" "1112131400000000000011121314000000000087" "26121ff0" "02"));
+			ABI_CHECK(callContractFunction("testDirect()"), encodeArgs(0x20, directEncoding.size(), directEncoding));
+			string arrayEncoding = asString(fromHex("08" "1112131400000000000011121314000000000087" "26121ff0" "0000000000000000" "02"));
+			ABI_CHECK(callContractFunction("testFixedArray()"), encodeArgs(0x20, arrayEncoding.size(), arrayEncoding));
+			ABI_CHECK(callContractFunction("testDynamicArray()"), encodeArgs(0x20, arrayEncoding.size(), arrayEncoding));
+		)
 	}
 }
 
@@ -5170,16 +4530,19 @@ BOOST_AUTO_TEST_CASE(abi_encodePackedV2_structs)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "C");
-	bytes structEnc = encodeArgs(int(0x12), u256(-7), int(2), int(3), u256(-7), u256(-8));
-	ABI_CHECK(callContractFunction("testStorage()"), encodeArgs());
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint8,int16,uint8[2],int16[]))")));
-	BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(structEnc)));
-	ABI_CHECK(callContractFunction("testMemory()"), encodeArgs());
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint8,int16,uint8[2],int16[]))")));
-	BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(structEnc)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "C");
+		bytes structEnc = encodeArgs(int(0x12), u256(-7), int(2), int(3), u256(-7), u256(-8));
+		ABI_CHECK(callContractFunction("testStorage()"), encodeArgs());
+		BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
+		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint8,int16,uint8[2],int16[]))")));
+		BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(structEnc)));
+		ABI_CHECK(callContractFunction("testMemory()"), encodeArgs());
+		BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
+		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint8,int16,uint8[2],int16[]))")));
+		BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(structEnc)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(abi_encodePackedV2_nestedArray)
@@ -5203,12 +4566,15 @@ BOOST_AUTO_TEST_CASE(abi_encodePackedV2_nestedArray)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "C");
-	bytes structEnc = encodeArgs(1, 2, 3, 0, 0, 0, 0, 4);
-	ABI_CHECK(callContractFunction("testNestedArrays()"), encodeArgs());
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint8,int16)[2][][3])")));
-	BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(structEnc)));
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "C");
+		bytes structEnc = encodeArgs(1, 2, 3, 0, 0, 0, 0, 4);
+		ABI_CHECK(callContractFunction("testNestedArrays()"), encodeArgs());
+		BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
+		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint8,int16)[2][][3])")));
+		BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(structEnc)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(abi_encodePackedV2_arrayOfStrings)
@@ -5231,224 +4597,19 @@ BOOST_AUTO_TEST_CASE(abi_encodePackedV2_arrayOfStrings)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "C");
-	bytes arrayEncoding = encodeArgs("abc", "0123456789012345678901234567890123456789");
-	ABI_CHECK(callContractFunction("testStorage()"), encodeArgs());
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(string[])")));
-	BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(arrayEncoding)));
-	ABI_CHECK(callContractFunction("testMemory()"), encodeArgs());
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(string[])")));
-	BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(arrayEncoding)));
-}
-
-BOOST_AUTO_TEST_CASE(event_signature_in_library)
-{
-	// This tests a bug that was present where the "internal signature"
-	// for structs was also used for events.
-	char const* sourceCode = R"(
-		pragma abicoder v2;
-		library L {
-			struct S {
-				uint8 a;
-				int16 b;
-			}
-			event E(S indexed, S);
-			function f() internal {
-				S memory s;
-				emit E(s, s);
-			}
-		}
-		contract C {
-			constructor() {
-				L.f();
-			}
-		}
-	)";
-	compileAndRun(sourceCode, 0, "C");
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E((uint8,int16),(uint8,int16))")));
-}
-
-BOOST_AUTO_TEST_CASE(abi_encode_with_selector)
-{
-	char const* sourceCode = R"(
-		contract C {
-			function f0() public pure returns (bytes memory) {
-				return abi.encodeWithSelector(0x12345678);
-			}
-			function f1() public pure returns (bytes memory) {
-				return abi.encodeWithSelector(0x12345678, "abc");
-			}
-			function f2() public pure returns (bytes memory) {
-				bytes4 x = 0x12345678;
-				return abi.encodeWithSelector(x, "abc");
-			}
-			function f3() public pure returns (bytes memory) {
-				bytes4 x = 0x12345678;
-				return abi.encodeWithSelector(x, type(uint).max);
-			}
-		}
-	)";
-	compileAndRun(sourceCode, 0, "C");
-	ABI_CHECK(callContractFunction("f0()"), encodeArgs(0x20, 4, "\x12\x34\x56\x78"));
-	bytes expectation;
-	expectation = encodeArgs(0x20, 4 + 0x60) + bytes{0x12, 0x34, 0x56, 0x78} + encodeArgs(0x20, 3, "abc") + bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f1()"), expectation);
-	expectation = encodeArgs(0x20, 4 + 0x60) + bytes{0x12, 0x34, 0x56, 0x78} + encodeArgs(0x20, 3, "abc") + bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f2()"), expectation);
-	expectation = encodeArgs(0x20, 4 + 0x20) + bytes{0x12, 0x34, 0x56, 0x78} + encodeArgs(u256(-1)) + bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f3()"), expectation);
-}
-
-BOOST_AUTO_TEST_CASE(abi_encode_with_selectorv2)
-{
-	char const* sourceCode = R"(
-		pragma abicoder v2;
-		contract C {
-			function f0() public pure returns (bytes memory) {
-				return abi.encodeWithSelector(0x12345678);
-			}
-			function f1() public pure returns (bytes memory) {
-				return abi.encodeWithSelector(0x12345678, "abc");
-			}
-			function f2() public pure returns (bytes memory) {
-				bytes4 x = 0x12345678;
-				return abi.encodeWithSelector(x, "abc");
-			}
-			function f3() public pure returns (bytes memory) {
-				bytes4 x = 0x12345678;
-				return abi.encodeWithSelector(x, type(uint).max);
-			}
-			struct S { uint a; string b; uint16 c; }
-			function f4() public pure returns (bytes memory) {
-				bytes4 x = 0x12345678;
-				S memory s;
-				s.a = 0x1234567;
-				s.b = "Lorem ipsum dolor sit ethereum........";
-				s.c = 0x1234;
-				return abi.encodeWithSelector(x, type(uint).max, s, uint(3));
-			}
-		}
-	)";
-	compileAndRun(sourceCode, 0, "C");
-	ABI_CHECK(callContractFunction("f0()"), encodeArgs(0x20, 4, "\x12\x34\x56\x78"));
-	bytes expectation;
-	expectation = encodeArgs(0x20, 4 + 0x60) + bytes{0x12, 0x34, 0x56, 0x78} + encodeArgs(0x20, 3, "abc") + bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f1()"), expectation);
-	expectation = encodeArgs(0x20, 4 + 0x60) + bytes{0x12, 0x34, 0x56, 0x78} + encodeArgs(0x20, 3, "abc") + bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f2()"), expectation);
-	expectation = encodeArgs(0x20, 4 + 0x20) + bytes{0x12, 0x34, 0x56, 0x78} + encodeArgs(u256(-1)) + bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f3()"), expectation);
-	expectation =
-		encodeArgs(0x20, 4 + 0x120) +
-		bytes{0x12, 0x34, 0x56, 0x78} +
-		encodeArgs(u256(-1), 0x60, u256(3), 0x1234567, 0x60, 0x1234, 38, "Lorem ipsum dolor sit ethereum........") +
-		bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f4()"), expectation);
-}
-
-BOOST_AUTO_TEST_CASE(abi_encode_with_signature)
-{
-	char const* sourceCode = R"T(
-		contract C {
-			function f0() public pure returns (bytes memory) {
-				return abi.encodeWithSignature("f(uint256)");
-			}
-			function f1() public pure returns (bytes memory) {
-				string memory x = "f(uint256)";
-				return abi.encodeWithSignature(x, "abc");
-			}
-			string xstor;
-			function f1s() public returns (bytes memory) {
-				xstor = "f(uint256)";
-				return abi.encodeWithSignature(xstor, "abc");
-			}
-			function f2() public pure returns (bytes memory r, uint[] memory ar) {
-				string memory x = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
-				uint[] memory y = new uint[](4);
-				y[0] = type(uint).max;
-				y[1] = type(uint).max - 1;
-				y[2] = type(uint).max - 2;
-				y[3] = type(uint).max - 3;
-				r = abi.encodeWithSignature(x, y);
-				// The hash uses temporary memory. This allocation re-uses the memory
-				// and should initialize it properly.
-				ar = new uint[](2);
-			}
-		}
-	)T";
-	compileAndRun(sourceCode, 0, "C");
-	ABI_CHECK(callContractFunction("f0()"), encodeArgs(0x20, 4, "\xb3\xde\x64\x8b"));
-	bytes expectation;
-	expectation = encodeArgs(0x20, 4 + 0x60) + bytes{0xb3, 0xde, 0x64, 0x8b} + encodeArgs(0x20, 3, "abc") + bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f1()"), expectation);
-	ABI_CHECK(callContractFunction("f1s()"), expectation);
-	expectation =
-		encodeArgs(0x40, 0x140, 4 + 0xc0) +
-		(bytes{0xe9, 0xc9, 0x21, 0xcd} + encodeArgs(0x20, 4, u256(-1), u256(-2), u256(-3), u256(-4)) + bytes(0x20 - 4)) +
-		encodeArgs(2, 0, 0);
-	ABI_CHECK(callContractFunction("f2()"), expectation);
-}
-
-BOOST_AUTO_TEST_CASE(abi_encode_with_signaturev2)
-{
-	char const* sourceCode = R"T(
-		pragma abicoder v2;
-		contract C {
-			function f0() public pure returns (bytes memory) {
-				return abi.encodeWithSignature("f(uint256)");
-			}
-			function f1() public pure returns (bytes memory) {
-				string memory x = "f(uint256)";
-				return abi.encodeWithSignature(x, "abc");
-			}
-			string xstor;
-			function f1s() public returns (bytes memory) {
-				xstor = "f(uint256)";
-				return abi.encodeWithSignature(xstor, "abc");
-			}
-			function f2() public pure returns (bytes memory r, uint[] memory ar) {
-				string memory x = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
-				uint[] memory y = new uint[](4);
-				y[0] = type(uint).max;
-				y[1] = type(uint).max - 1;
-				y[2] = type(uint).max - 2;
-				y[3] = type(uint).max - 3;
-				r = abi.encodeWithSignature(x, y);
-				// The hash uses temporary memory. This allocation re-uses the memory
-				// and should initialize it properly.
-				ar = new uint[](2);
-			}
-			struct S { uint a; string b; uint16 c; }
-			function f4() public pure returns (bytes memory) {
-				bytes4 x = 0x12345678;
-				S memory s;
-				s.a = 0x1234567;
-				s.b = "Lorem ipsum dolor sit ethereum........";
-				s.c = 0x1234;
-				return abi.encodeWithSignature(s.b, type(uint).max, s, uint(3));
-			}
-		}
-	)T";
-	compileAndRun(sourceCode, 0, "C");
-	ABI_CHECK(callContractFunction("f0()"), encodeArgs(0x20, 4, "\xb3\xde\x64\x8b"));
-	bytes expectation;
-	expectation = encodeArgs(0x20, 4 + 0x60) + bytes{0xb3, 0xde, 0x64, 0x8b} + encodeArgs(0x20, 3, "abc") + bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f1()"), expectation);
-	ABI_CHECK(callContractFunction("f1s()"), expectation);
-	expectation =
-		encodeArgs(0x40, 0x140, 4 + 0xc0) +
-		(bytes{0xe9, 0xc9, 0x21, 0xcd} + encodeArgs(0x20, 4, u256(-1), u256(-2), u256(-3), u256(-4)) + bytes(0x20 - 4)) +
-		encodeArgs(2, 0, 0);
-	ABI_CHECK(callContractFunction("f2()"), expectation);
-	expectation =
-		encodeArgs(0x20, 4 + 0x120) +
-		bytes{0x7c, 0x79, 0x30, 0x02} +
-		encodeArgs(u256(-1), 0x60, u256(3), 0x1234567, 0x60, 0x1234, 38, "Lorem ipsum dolor sit ethereum........") +
-		bytes(0x20 - 4);
-	ABI_CHECK(callContractFunction("f4()"), expectation);
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "C");
+		bytes arrayEncoding = encodeArgs("abc", "0123456789012345678901234567890123456789");
+		ABI_CHECK(callContractFunction("testStorage()"), encodeArgs());
+		BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
+		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(string[])")));
+		BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(arrayEncoding)));
+		ABI_CHECK(callContractFunction("testMemory()"), encodeArgs());
+		BOOST_REQUIRE_EQUAL(numLogTopics(0), 2);
+		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("E(string[])")));
+		BOOST_CHECK_EQUAL(logTopic(0, 1), util::keccak256(asString(arrayEncoding)));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(code_access)
@@ -5556,32 +4717,17 @@ BOOST_AUTO_TEST_CASE(event_wrong_abi_name)
 			}
 		}
 	)";
-	compileAndRun(sourceCode, 0, "ClientReceipt", bytes());
-	compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"ClientReceipt", m_contractAddress}});
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		compileAndRun(sourceCode, 0, "ClientReceipt", bytes());
+		compileAndRun(sourceCode, 0, "Test", bytes(), map<string, h160>{{"ClientReceipt", m_contractAddress}});
 
-	callContractFunction("f()");
-	BOOST_REQUIRE_EQUAL(numLogs(), 1);
-	BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
-	BOOST_REQUIRE_EQUAL(numLogTopics(0), 3);
-	BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,bytes32,uint256)")));
-}
-
-BOOST_AUTO_TEST_CASE(uninitialized_internal_storage_function)
-{
-	char const* sourceCode = R"(
-		contract Test {
-			function() internal x;
-			function f() public returns (uint r) {
-				function() internal t = x;
-				assembly { r := t }
-			}
-		}
-	)";
-	compileAndRun(sourceCode, 0, "Test");
-
-	bytes result = callContractFunction("f()");
-	BOOST_CHECK(!result.empty());
-	BOOST_CHECK(result != encodeArgs(0));
+		callContractFunction("f()");
+		BOOST_REQUIRE_EQUAL(numLogs(), 1);
+		BOOST_CHECK_EQUAL(logAddress(0), m_contractAddress);
+		BOOST_REQUIRE_EQUAL(numLogTopics(0), 3);
+		BOOST_CHECK_EQUAL(logTopic(0, 0), util::keccak256(string("Deposit(address,bytes32,uint256)")));
+	)
 }
 
 BOOST_AUTO_TEST_CASE(dirty_scratch_space_prior_to_constant_optimiser)
@@ -5647,29 +4793,32 @@ BOOST_AUTO_TEST_CASE(strip_reason_strings)
 			}
 		}
 	)";
-	m_revertStrings = RevertStrings::Default;
-	compileAndRun(sourceCode, 0, "C");
+	ALSO_VIA_YUL(
+		DISABLE_EWASM_TESTRUN()
+		m_revertStrings = RevertStrings::Default;
+		compileAndRun(sourceCode, 0, "C");
 
-	if (
-		m_optimiserSettings == OptimiserSettings::minimal() ||
-		m_optimiserSettings == OptimiserSettings::none()
+		if (
+			m_optimiserSettings == OptimiserSettings::minimal() ||
+			m_optimiserSettings == OptimiserSettings::none()
+		)
+			// check that the reason string IS part of the binary.
+			BOOST_CHECK(toHex(m_output).find("736f6d6520726561736f6e") != std::string::npos);
+
+		m_revertStrings = RevertStrings::Strip;
+		compileAndRun(sourceCode, 0, "C");
+		// check that the reason string is NOT part of the binary.
+		BOOST_CHECK(toHex(m_output).find("736f6d6520726561736f6e") == std::string::npos);
+
+		ABI_CHECK(callContractFunction("f(bool)", true), encodeArgs(7));
+		ABI_CHECK(callContractFunction("f(bool)", false), encodeArgs());
+		ABI_CHECK(callContractFunction("g(bool)", true), encodeArgs(8));
+		ABI_CHECK(callContractFunction("g(bool)", false), encodeArgs());
+		ABI_CHECK(callContractFunction("f1(bool)", true), encodeArgs(9));
+		ABI_CHECK(callContractFunction("f1(bool)", false), encodeArgs());
+		ABI_CHECK(callContractFunction("g1(bool)", true), encodeArgs(10));
+		ABI_CHECK(callContractFunction("g1(bool)", false), encodeArgs());
 	)
-		// check that the reason string IS part of the binary.
-		BOOST_CHECK(toHex(m_output).find("736f6d6520726561736f6e") != std::string::npos);
-
-	m_revertStrings = RevertStrings::Strip;
-	compileAndRun(sourceCode, 0, "C");
-	// check that the reason string is NOT part of the binary.
-	BOOST_CHECK(toHex(m_output).find("736f6d6520726561736f6e") == std::string::npos);
-
-	ABI_CHECK(callContractFunction("f(bool)", true), encodeArgs(7));
-	ABI_CHECK(callContractFunction("f(bool)", false), encodeArgs());
-	ABI_CHECK(callContractFunction("g(bool)", true), encodeArgs(8));
-	ABI_CHECK(callContractFunction("g(bool)", false), encodeArgs());
-	ABI_CHECK(callContractFunction("f1(bool)", true), encodeArgs(9));
-	ABI_CHECK(callContractFunction("f1(bool)", false), encodeArgs());
-	ABI_CHECK(callContractFunction("g1(bool)", true), encodeArgs(10));
-	ABI_CHECK(callContractFunction("g1(bool)", false), encodeArgs());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

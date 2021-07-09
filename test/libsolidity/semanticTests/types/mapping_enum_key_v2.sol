@@ -1,4 +1,4 @@
-pragma experimental ABIEncoderV2;
+pragma abicoder v2;
 enum E { A, B, C }
 contract test {
     mapping(E => uint8) table;
@@ -10,8 +10,8 @@ contract test {
     }
 }
 // ====
-// compileViaYul: also
 // EVMVersion: >=byzantium
+// compileViaYul: also
 // ----
 // get(uint8): 0 -> 0
 // get(uint8): 0x01 -> 0

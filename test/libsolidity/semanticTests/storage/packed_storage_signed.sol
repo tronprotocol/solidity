@@ -21,6 +21,7 @@ contract C {
 }
 
 // ====
+// compileToEwasm: also
 // compileViaYul: also
 // ----
 // test() -> -2, 4, -112, 0

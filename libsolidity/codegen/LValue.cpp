@@ -300,16 +300,26 @@ void StorageItem::storeValue(Type const& _sourceType, SourceLocation const& _loc
 			// stack: value storage_ref cleared_value multiplier
 			utils.copyToStackTop(3 + m_dataType->sizeOnStack(), m_dataType->sizeOnStack());
 			// stack: value storage_ref cleared_value multiplier value
-			if (FunctionType const* fun = dynamic_cast<decltype(fun)>(m_dataType))
+			if (auto const* fun = dynamic_cast<FunctionType const*>(m_dataType))
 			{
-				solAssert(_sourceType == *m_dataType, "function item stored but target is not equal to source");
+				solAssert(
+					_sourceType.isImplicitlyConvertibleTo(*m_dataType),
+					"function item stored but target is not implicitly convertible to source"
+				);
+				solAssert(!fun->bound(), "");
 				if (fun->kind() == FunctionType::Kind::External)
+				{
+					solAssert(fun->sizeOnStack() == 2, "");
 					// Combine the two-item function type into a single stack slot.
 					utils.combineExternalFunctionType(false);
+				}
 				else
+				{
+					solAssert(fun->sizeOnStack() == 1, "");
 					m_context <<
 						((u256(1) << (8 * m_dataType->storageBytes())) - 1) <<
 						Instruction::AND;
+				}
 			}
 			else if (m_dataType->category() == Type::Category::FixedBytes)
 			{
@@ -369,9 +379,9 @@ void StorageItem::storeValue(Type const& _sourceType, SourceLocation const& _loc
 				for (auto const& member: structType.members(nullptr))
 				{
 					// assign each member that can live outside of storage
-					TypePointer const& memberType = member.type;
+					Type const* memberType = member.type;
 					solAssert(memberType->nameable(), "");
-					TypePointer sourceMemberType = sourceType.memberType(member.name);
+					Type const* sourceMemberType = sourceType.memberType(member.name);
 					if (sourceType.location() == DataLocation::Storage)
 					{
 						// stack layout: source_ref target_ref
@@ -431,7 +441,7 @@ void StorageItem::setToZero(SourceLocation const&, bool _removeReference) const
 		for (auto const& member: structType.members(nullptr))
 		{
 			// zero each member that is not a mapping
-			TypePointer const& memberType = member.type;
+			Type const* memberType = member.type;
 			if (memberType->category() == Type::Category::Mapping)
 				continue;
 			pair<u256, unsigned> const& offsets = structType.storageOffsetsOfMember(member.name);
@@ -558,7 +568,7 @@ void TupleObject::storeValue(Type const& _sourceType, SourceLocation const& _loc
 	for (size_t i = 0; i < m_lvalues.size(); ++i)
 	{
 		unique_ptr<LValue> const& lvalue = m_lvalues[m_lvalues.size() - i - 1];
-		TypePointer const& valType = valueTypes[valueTypes.size() - i - 1];
+		Type const* valType = valueTypes[valueTypes.size() - i - 1];
 		unsigned stackHeight = m_context.stackHeight();
 		solAssert(!valType == !lvalue, "");
 		if (!lvalue)

@@ -79,9 +79,9 @@ public:
 		m_filterExpression = regex{"(" + filter + "(\\.sol|\\.yul))"};
 	}
 
-	bool matches(string const& _name) const
+	bool matches(fs::path const& _path, string const& _name) const
 	{
-		return regex_match(_name, m_filterExpression);
+		return regex_match(_name, m_filterExpression) && solidity::test::isValidSemanticTestPath(_path);
 	}
 
 private:
@@ -131,6 +131,7 @@ private:
 		Quit
 	};
 
+	void updateTestCase();
 	Request handleResponse(bool _exception);
 
 	TestCreator m_testCaseCreator;
@@ -150,11 +151,10 @@ bool TestTool::m_exitRequested = false;
 TestTool::Result TestTool::process()
 {
 	bool formatted{!m_options.noColor};
-	std::stringstream outputMessages;
 
 	try
 	{
-		if (m_filter.matches(m_name))
+		if (m_filter.matches(m_path, m_name))
 		{
 			(AnsiColorized(cout, formatted, {BOLD}) << m_name << ": ").flush();
 
@@ -162,9 +162,14 @@ TestTool::Result TestTool::process()
 				m_path.string(),
 				m_options.evmVersion(),
 				m_options.vmPaths,
-				m_options.enforceViaYul
+				m_options.enforceViaYul,
+				m_options.enforceCompileToEwasm,
+				m_options.enforceGasTest,
+				m_options.enforceGasTestMinValue
 			});
 			if (m_test->shouldRun())
+			{
+				std::stringstream outputMessages;
 				switch (TestCase::TestResult result = m_test->run(outputMessages, "  ", formatted))
 				{
 					case TestCase::TestResult::Success:
@@ -180,6 +185,7 @@ TestTool::Result TestTool::process()
 						cout << endl << outputMessages.str() << endl;
 						return result == TestCase::TestResult::FatalError ? Result::Exception : Result::Failure;
 				}
+			}
 			else
 			{
 				AnsiColorized(cout, formatted, {BOLD, YELLOW}) << "NOT RUN" << endl;
@@ -211,8 +217,23 @@ TestTool::Result TestTool::process()
 	}
 }
 
+void TestTool::updateTestCase()
+{
+	ofstream file(m_path.string(), ios::trunc);
+	m_test->printSource(file);
+	m_test->printUpdatedSettings(file);
+	file << "// ----" << endl;
+	m_test->printUpdatedExpectations(file, "// ");
+}
+
 TestTool::Request TestTool::handleResponse(bool _exception)
 {
+	if (!_exception && m_options.acceptUpdates)
+	{
+		updateTestCase();
+		return Request::Rerun;
+	}
+
 	if (_exception)
 		cout << "(e)dit/(s)kip/(q)uit? ";
 	else
@@ -232,11 +253,7 @@ TestTool::Request TestTool::handleResponse(bool _exception)
 			else
 			{
 				cout << endl;
-				ofstream file(m_path.string(), ios::trunc);
-				m_test->printSource(file);
-				m_test->printUpdatedSettings(file);
-				file << "// ----" << endl;
-				m_test->printUpdatedExpectations(file, "// ");
+				updateTestCase();
 				return Request::Rerun;
 			}
 		case 'e':
@@ -403,82 +420,74 @@ std::optional<TestStats> runTestSuite(
 
 int main(int argc, char const *argv[])
 {
-	setupTerminal();
-
+	try
 	{
-		auto options = std::make_unique<solidity::test::IsolTestOptions>(&TestTool::editor);
+		setupTerminal();
 
-		try
 		{
+			auto options = std::make_unique<solidity::test::IsolTestOptions>(&TestTool::editor);
+
 			if (!options->parse(argc, argv))
 				return -1;
 
 			options->validate();
 			solidity::test::CommonOptions::setSingleton(std::move(options));
 		}
-		catch (std::exception const& _exception)
-		{
-			cerr << _exception.what() << endl;
+
+		auto& options = dynamic_cast<solidity::test::IsolTestOptions const&>(solidity::test::CommonOptions::get());
+
+		if (!solidity::test::loadVMs(options))
 			return 1;
+
+		if (options.disableSemanticTests)
+			cout << endl << "--- SKIPPING ALL SEMANTICS TESTS ---" << endl << endl;
+
+		TestStats global_stats{0, 0};
+		cout << "Running tests..." << endl << endl;
+
+		// Actually run the tests.
+		// Interactive tests are added in InteractiveTests.h
+		for (auto const& ts: g_interactiveTestsuites)
+		{
+			if (ts.needsVM && options.disableSemanticTests)
+				continue;
+
+			if (ts.smt && options.disableSMT)
+				continue;
+
+			auto stats = runTestSuite(
+				ts.testCaseCreator,
+				options,
+				options.testPath / ts.path,
+				ts.subpath,
+				ts.title
+			);
+			if (stats)
+				global_stats += *stats;
+			else
+				return 1;
 		}
-	}
 
-	auto& options = dynamic_cast<solidity::test::IsolTestOptions const&>(solidity::test::CommonOptions::get());
+		cout << endl << "Summary: ";
+		AnsiColorized(cout, !options.noColor, {BOLD, global_stats ? GREEN : RED}) <<
+			 global_stats.successCount << "/" << global_stats.testCount;
+		cout << " tests successful";
+		if (global_stats.skippedCount > 0)
+		{
+			cout << " (";
+			AnsiColorized(cout, !options.noColor, {BOLD, YELLOW}) << global_stats.skippedCount;
+			cout << " tests skipped)";
+		}
+		cout << "." << endl;
 
-	bool disableSemantics = true;
-	try
-	{
-		disableSemantics = !solidity::test::EVMHost::checkVmPaths(options.vmPaths);
+		if (options.disableSemanticTests)
+			cout << "\nNOTE: Skipped semantics tests.\n" << endl;
+
+		return global_stats ? 0 : 1;
 	}
-	catch (std::runtime_error const& _exception)
+	catch (std::exception const& _exception)
 	{
-		cerr << "Error: " << _exception.what() << endl;
+		cerr << _exception.what() << endl;
 		return 1;
 	}
-
-	if (disableSemantics)
-		cout << endl << "--- SKIPPING ALL SEMANTICS TESTS ---" << endl << endl;
-
-	TestStats global_stats{0, 0};
-	cout << "Running tests..." << endl << endl;
-
-	// Actually run the tests.
-	// Interactive tests are added in InteractiveTests.h
-	for (auto const& ts: g_interactiveTestsuites)
-	{
-		if (ts.needsVM && disableSemantics)
-			continue;
-
-		if (ts.smt && options.disableSMT)
-			continue;
-
-		auto stats = runTestSuite(
-			ts.testCaseCreator,
-			options,
-			options.testPath / ts.path,
-			ts.subpath,
-			ts.title
-		);
-		if (stats)
-			global_stats += *stats;
-		else
-			return 1;
-	}
-
-	cout << endl << "Summary: ";
-	AnsiColorized(cout, !options.noColor, {BOLD, global_stats ? GREEN : RED}) <<
-		 global_stats.successCount << "/" << global_stats.testCount;
-	cout << " tests successful";
-	if (global_stats.skippedCount > 0)
-	{
-		cout << " (";
-		AnsiColorized(cout, !options.noColor, {BOLD, YELLOW}) << global_stats.skippedCount;
-		cout << " tests skipped)";
-	}
-	cout << "." << endl;
-
-	if (disableSemantics)
-		cout << "\nNOTE: Skipped semantics tests because no evmc vm could be found.\n" << endl;
-
-	return global_stats ? 0 : 1;
 }

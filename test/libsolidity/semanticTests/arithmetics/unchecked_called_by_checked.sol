@@ -10,6 +10,7 @@ contract C {
     }
 }
 // ====
+// compileToEwasm: also
 // compileViaYul: also
 // ----
 // f(uint16): 7 -> 0x0207

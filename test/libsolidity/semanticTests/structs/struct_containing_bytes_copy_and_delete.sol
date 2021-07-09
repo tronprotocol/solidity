@@ -23,13 +23,16 @@ contract c {
 // ====
 // compileViaYul: also
 // ----
-// storage: empty
+// storageEmpty -> 1
 // set(uint256,bytes,uint256): 12, 0x60, 13, 33, "12345678901234567890123456789012", "3" -> true
+// gas irOptimized: 133905
+// gas legacy: 134436
+// gas legacyOptimized: 133879
 // test(uint256): 32 -> "3"
-// storage: nonempty
+// storageEmpty -> 0
 // copy() -> true
-// storage: empty
+// storageEmpty -> 1
 // set(uint256,bytes,uint256): 12, 0x60, 13, 33, "12345678901234567890123456789012", "3" -> true
-// storage: nonempty
+// storageEmpty -> 0
 // del() -> true
-// storage: empty
+// storageEmpty -> 1

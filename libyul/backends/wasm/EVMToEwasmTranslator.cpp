@@ -32,15 +32,17 @@
 #include <libyul/optimiser/OptimiserStep.h>
 #include <libyul/optimiser/ForLoopConditionIntoBody.h>
 
+#include <libyul/AST.h>
 #include <libyul/AsmParser.h>
 #include <libyul/AsmAnalysis.h>
 #include <libyul/AsmAnalysisInfo.h>
-#include <libyul/AST.h>
 #include <libyul/Object.h>
 
 #include <liblangutil/ErrorReporter.h>
 #include <liblangutil/Scanner.h>
 #include <liblangutil/SourceReferenceFormatter.h>
+
+#include <libsolidity/interface/OptimiserSettings.h>
 
 // The following headers are generated from the
 // yul files placed in libyul/backends/wasm/polyfill.
@@ -68,7 +70,13 @@ Object EVMToEwasmTranslator::run(Object const& _object)
 	Block ast = std::get<Block>(Disambiguator(m_dialect, *_object.analysisInfo)(*_object.code));
 	set<YulString> reservedIdentifiers;
 	NameDispenser nameDispenser{m_dialect, ast, reservedIdentifiers};
-	OptimiserStepContext context{m_dialect, nameDispenser, reservedIdentifiers};
+	// expectedExecutionsPerDeployment is currently unused.
+	OptimiserStepContext context{
+		m_dialect,
+		nameDispenser,
+		reservedIdentifiers,
+		frontend::OptimiserSettings::standard().expectedExecutionsPerDeployment
+	};
 
 	FunctionHoister::run(context, ast);
 	FunctionGrouper::run(context, ast);

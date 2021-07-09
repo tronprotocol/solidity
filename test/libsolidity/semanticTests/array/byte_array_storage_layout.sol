@@ -41,10 +41,17 @@ contract c {
 // ====
 // compileViaYul: also
 // ----
-// storage: empty
+// storageEmpty -> 1
 // test_short() -> 1780731860627700044960722568376587075150542249149356309979516913770823710
-// storage: nonempty
+// gas legacy: 59838
+// gas legacyOptimized: 58606
+// storageEmpty -> 0
 // test_long() -> 67
-// storage: nonempty
+// gas irOptimized: 91520
+// gas legacy: 103590
+// gas legacyOptimized: 101044
+// storageEmpty -> 0
 // test_pop() -> 1780731860627700044960722568376592200742329637303199754547598369979433020
-// storage: nonempty
+// gas legacy: 61930
+// gas legacyOptimized: 59404
+// storageEmpty -> 0

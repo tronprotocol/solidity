@@ -41,8 +41,7 @@ class Type;
 class ArrayType;
 class StructType;
 class FunctionType;
-using TypePointer = Type const*;
-using TypePointers = std::vector<TypePointer>;
+using TypePointers = std::vector<Type const*>;
 
 /**
  * Class to generate encoding and decoding functions. Also maintains a collection
@@ -79,7 +78,7 @@ public:
 	/// If @reversed is true, the order of the variables after <headStart> is reversed.
 	std::string tupleEncoder(
 		TypePointers const& _givenTypes,
-		TypePointers const& _targetTypes,
+		TypePointers _targetTypes,
 		bool _encodeAsLibraryTypes = false,
 		bool _reversed = false
 	);
@@ -106,7 +105,7 @@ public:
 	/// If @reversed is true, the order of the variables after <headStart> is reversed.
 	std::string tupleEncoderPacked(
 		TypePointers const& _givenTypes,
-		TypePointers const& _targetTypes,
+		TypePointers _targetTypes,
 		bool _reversed = false
 	);
 
@@ -274,9 +273,9 @@ private:
 	/// is true), for which it is two.
 	static size_t numVariablesForType(Type const& _type, EncodingOptions const& _options);
 
-	/// @returns code that stores @param _message for revert reason
+	/// @returns the name of a function that uses @param _message for revert reason
 	/// if m_revertStrings is debug.
-	std::string revertReasonIfDebug(std::string const& _message = "");
+	std::string revertReasonIfDebugFunction(std::string const& _message = "");
 
 	langutil::EVMVersion m_evmVersion;
 	RevertStrings const m_revertStrings;

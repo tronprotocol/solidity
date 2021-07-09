@@ -66,15 +66,22 @@ Shifts
 ^^^^^^
 
 The result of a shift operation has the type of the left operand, truncating the result to match the type.
-Right operand must be unsigned type. Trying to shift by signed type will produce a compilation error.
+The right operand must be of unsigned type, trying to shift by an signed type will produce a compilation error.
 
-- For positive and negative ``x`` values, ``x << y`` is equivalent to ``x * 2**y``.
-- For positive ``x`` values,  ``x >> y`` is equivalent to ``x / 2**y``.
-- For negative ``x`` values, ``x >> y`` is equivalent to ``(x + 1) / 2**y - 1`` (which is the same as dividing ``x`` by ``2**y`` while rounding down towards negative infinity).
+Shifts can be "simulated" using multiplication by powers of two in the following way. Note that the truncation
+to the type of the left operand is always performed at the end, but not mentioned explicitly.
+
+- ``x << y`` is equivalent to the mathematical expression ``x * 2**y``.
+- ``x >> y`` is equivalent to the mathematical expression ``x / 2**y``, rounded towards negative infinity.
 
 .. warning::
-    Before version ``0.5.0`` a right shift ``x >> y`` for negative ``x`` was equivalent to ``x / 2**y``,
+    Before version ``0.5.0`` a right shift ``x >> y`` for negative ``x`` was equivalent to
+    the mathematical expression ``x / 2**y`` rounded towards zero,
     i.e., right shifts used rounding up (towards zero) instead of rounding down (towards negative infinity).
+
+.. note::
+    Overflow checks are never performed for shift operations as they are done for arithmetic operations.
+    Instead, the result is always truncated.
 
 Addition, Subtraction and Multiplication
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -305,8 +312,8 @@ Since byzantium ``staticcall`` can be used as well. This is basically the same a
 
 All three functions ``call``, ``delegatecall`` and ``staticcall`` are very low-level functions and should only be used as a *last resort* as they break the type-safety of Solidity.
 
-The ``gas`` option is available on all three methods, while the ``value`` option is not
-supported for ``delegatecall``.
+The ``gas`` option is available on all three methods, while the ``value`` option is only available
+on ``call``.
 
 .. note::
     It is best to avoid relying on hardcoded gas values in your smart contract code,
@@ -637,7 +644,7 @@ Conversions:
 A function type ``A`` is implicitly convertible to a function type ``B`` if and only if
 their parameter types are identical, their return types are identical,
 their internal/external property is identical and the state mutability of ``A``
-is not more restrictive than the state mutability of ``B``. In particular:
+is more restrictive than the state mutability of ``B``. In particular:
 
  - ``pure`` functions can be converted to ``view`` and ``non-payable`` functions
  - ``view`` functions can be converted to ``non-payable`` functions
@@ -662,6 +669,16 @@ followed by the function identifier together in a single ``bytes24`` type.
 Note that public functions of the current contract can be used both as an
 internal and as an external function. To use ``f`` as an internal function,
 just use ``f``, if you want to use its external form, use ``this.f``.
+
+A function of an internal type can be assigned to a variable of an internal function type regardless
+of where it is defined.
+This includes private, internal and public functions of both contracts and libraries as well as free
+functions.
+External function types, on the other hand, are only compatible with public and external contract
+functions.
+Libraries are excluded because they require a ``delegatecall`` and use :ref:`a different ABI
+convention for their selectors <library-selectors>`.
+Functions declared in interfaces do not have definitions so pointing at them does not make sense either.
 
 Members:
 

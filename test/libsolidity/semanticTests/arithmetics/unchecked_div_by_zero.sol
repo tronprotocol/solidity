@@ -14,6 +14,7 @@ contract C {
     }
 }
 // ====
+// compileToEwasm: also
 // compileViaYul: also
 // ----
 // div(uint256,uint256): 7, 2 -> 3

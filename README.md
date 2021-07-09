@@ -1,7 +1,16 @@
 # The Solidity Contract-Oriented Programming Language
-You can talk to us on [![solidity at https://gitter.im/ethereum/solidity](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ethereum/solidity?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge). Questions, feedback, and suggestions are welcome!
+
+[![Matrix Chat](https://img.shields.io/badge/Matrix%20-chat-brightgreen?style=plastic&logo=matrix)](https://matrix.to/#/#ethereum_solidity:gitter.im)
+[![Gitter Chat](https://img.shields.io/badge/Gitter%20-chat-brightgreen?style=plastic&logo=gitter)](https://gitter.im/ethereum/solidity)
+[![Solidity Forum](https://img.shields.io/badge/Solidity_Forum%20-discuss-brightgreen?style=plastic&logo=discourse)](https://forum.soliditylang.org/)
+[![Twitter Follow](https://img.shields.io/twitter/follow/solidity_lang?style=plastic&logo=twitter)](https://twitter.com/solidity_lang)
+[![Mastodon Follow](https://img.shields.io/mastodon/follow/000335908?domain=https%3A%2F%2Ffosstodon.org%2F&logo=mastodon&style=plastic)](https://fosstodon.org/@solidity)
+
+You can talk to us on Gitter and Matrix, tweet at us on Twitter or create a new topic in the Solidity forum. Questions, feedback, and suggestions are welcome!
 
 Solidity is a statically typed, contract-oriented, high-level language for implementing smart contracts on the Tron platform.
+
+For a good overview and starting point, please check out the official [Solidity Language Portal](https://soliditylang.org).
 
 ## Table of Contents
 
@@ -37,12 +46,13 @@ found in the [Solidity documentation](https://docs.soliditylang.org/en/latest/in
 A "Hello World" program in Solidity is of even less use than in other languages, but still:
 
 ```solidity
-pragma solidity >=0.6.0 <0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.6.0 <0.9.0;
 
 contract HelloWorld {
-  function helloWorld() external pure returns (string memory) {
-    return "Hello, World!"; 
-  }
+    function helloWorld() external pure returns (string memory) {
+        return "Hello, World!";
+    }
 }
 ```
 

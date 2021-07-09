@@ -1,10 +1,13 @@
-pragma experimental SMTChecker;
-
 contract C {
 	function f(bytes calldata x, uint y) external pure {
+		require(x.length > 10);
 		x[8][0];
 		x[8][5*y];
 	}
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 4984: (118-121): CHC: Overflow (resulting value larger than 2**256 - 1) happens here.\nCounterexample:\n\ny = 23158417847463239084714197001737581570653996933128112807891516801582625927988\n\n\nTransaction trace:\nconstructor()\nf(x, 23158417847463239084714197001737581570653996933128112807891516801582625927988)
+// Warning 4984: (111-114): CHC: Overflow (resulting value larger than 2**256 - 1) happens here.
+// Warning 6368: (106-115): CHC: Out of bounds access happens here.

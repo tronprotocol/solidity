@@ -16,14 +16,18 @@
 */
 // SPDX-License-Identifier: GPL-3.0
 
-#include <libsolidity/codegen/ir/Common.h>
 #include <libsolidity/ast/TypeProvider.h>
+#include <libsolidity/codegen/ir/Common.h>
+#include <libsolidity/codegen/ir/IRGenerationContext.h>
 
 #include <libsolutil/CommonIO.h>
 
 using namespace std;
 using namespace solidity::util;
 using namespace solidity::frontend;
+
+namespace solidity::frontend
+{
 
 YulArity YulArity::fromType(FunctionType const& _functionType)
 {
@@ -32,10 +36,12 @@ YulArity YulArity::fromType(FunctionType const& _functionType)
 		TupleType(_functionType.returnParameterTypes()).sizeOnStack()
 	};
 }
+
 string IRNames::function(FunctionDefinition const& _function)
 {
-	// @TODO previously, we had to distinguish creation context and runtime context,
-	// but since we do not work with jump positions anymore, this should not be a problem, right?
+	if (_function.isConstructor())
+		return constructor(*_function.annotation().contract);
+
 	return "fun_" + _function.name() + "_" + to_string(_function.id());
 }
 
@@ -44,12 +50,27 @@ string IRNames::function(VariableDeclaration const& _varDecl)
 	return "getter_fun_" + _varDecl.name() + "_" + to_string(_varDecl.id());
 }
 
+string IRNames::modifierInvocation(ModifierInvocation const& _modifierInvocation)
+{
+	// This uses the ID of the modifier invocation because it has to be unique
+	// for each invocation.
+	solAssert(!_modifierInvocation.name().path().empty(), "");
+	string const& modifierName = _modifierInvocation.name().path().back();
+	solAssert(!modifierName.empty(), "");
+	return "modifier_" + modifierName + "_" + to_string(_modifierInvocation.id());
+}
+
+string IRNames::functionWithModifierInner(FunctionDefinition const& _function)
+{
+	return "fun_" + _function.name() + "_" + to_string(_function.id()) + "_inner";
+}
+
 string IRNames::creationObject(ContractDefinition const& _contract)
 {
 	return _contract.name() + "_" + toString(_contract.id());
 }
 
-string IRNames::runtimeObject(ContractDefinition const& _contract)
+string IRNames::deployedObject(ContractDefinition const& _contract)
 {
 	return _contract.name() + "_" + toString(_contract.id()) + "_deployed";
 }
@@ -61,9 +82,14 @@ string IRNames::internalDispatch(YulArity const& _arity)
 		"_out_" + to_string(_arity.out);
 }
 
-string IRNames::implicitConstructor(ContractDefinition const& _contract)
+string IRNames::constructor(ContractDefinition const& _contract)
 {
 	return "constructor_" + _contract.name() + "_" + to_string(_contract.id());
+}
+
+string IRNames::libraryAddressImmutable()
+{
+	return "library_deploy_address";
 }
 
 string IRNames::constantValueFunction(VariableDeclaration const& _constant)
@@ -74,7 +100,7 @@ string IRNames::constantValueFunction(VariableDeclaration const& _constant)
 
 string IRNames::localVariable(VariableDeclaration const& _declaration)
 {
-	return "vloc_" + _declaration.name() + '_' + std::to_string(_declaration.id());
+	return "var_" + _declaration.name() + '_' + std::to_string(_declaration.id());
 }
 
 string IRNames::localVariable(Expression const& _expression)
@@ -98,15 +124,22 @@ string IRNames::tupleComponent(size_t _i)
 
 string IRNames::zeroValue(Type const& _type, string const& _variableName)
 {
-	return "zero_value_for_type_" + _type.identifier() + _variableName;
+	return "zero_" + _type.identifier() + _variableName;
 }
 
-FunctionDefinition const* IRHelpers::referencedFunctionDeclaration(Expression const& _expression)
+string sourceLocationComment(langutil::SourceLocation const& _location, IRGenerationContext const& _context)
 {
-	if (auto memberAccess = dynamic_cast<MemberAccess const*>(&_expression))
-		return dynamic_cast<FunctionDefinition const*>(memberAccess->annotation().referencedDeclaration);
-	else if (auto identifier = dynamic_cast<Identifier const*>(&_expression))
-		return dynamic_cast<FunctionDefinition const*>(identifier->annotation().referencedDeclaration);
-	else
-		return nullptr;
+	return "/// @src "
+		+ to_string(_context.sourceIndices().at(_location.source->name()))
+		+ ":"
+		+ to_string(_location.start)
+		+ ","
+		+ to_string(_location.end);
+}
+
+string sourceLocationComment(ASTNode const& _node, IRGenerationContext const& _context)
+{
+	return sourceLocationComment(_node.location(), _context);
+}
+
 }

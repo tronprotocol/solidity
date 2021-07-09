@@ -88,6 +88,7 @@ public:
 	bool visit(ModifierDefinition const& _node) override;
 	bool visit(ModifierInvocation const& _node) override;
 	bool visit(EventDefinition const& _node) override;
+	bool visit(ErrorDefinition const& _node) override;
 	bool visit(ElementaryTypeName const& _node) override;
 	bool visit(UserDefinedTypeName const& _node) override;
 	bool visit(FunctionTypeName const& _node) override;
@@ -106,6 +107,7 @@ public:
 	bool visit(Return const& _node) override;
 	bool visit(Throw const& _node) override;
 	bool visit(EmitStatement const& _node) override;
+	bool visit(RevertStatement const& _node) override;
 	bool visit(VariableDeclarationStatement const& _node) override;
 	bool visit(ExpressionStatement const& _node) override;
 	bool visit(Conditional const& _node) override;
@@ -137,7 +139,8 @@ private:
 		std::string const& _nodeName,
 		std::vector<std::pair<std::string, Json::Value>>&& _attributes
 	);
-	size_t sourceIndexFromLocation(langutil::SourceLocation const& _location) const;
+	/// Maps source location to an index, if source is valid and a mapping does exist, otherwise returns std::nullopt.
+	std::optional<size_t> sourceIndexFromLocation(langutil::SourceLocation const& _location) const;
 	std::string sourceLocationToString(langutil::SourceLocation const& _location) const;
 	static std::string namePathToString(std::vector<ASTString> const& _namePath);
 	static Json::Value idOrNull(ASTNode const* _pt)
@@ -178,7 +181,7 @@ private:
 
 		return json;
 	}
-	static Json::Value typePointerToJson(TypePointer _tp, bool _short = false);
+	static Json::Value typePointerToJson(Type const* _tp, bool _short = false);
 	static Json::Value typePointerToJson(std::optional<FuncCallArguments> const& _tps);
 	void appendExpressionAttributes(
 		std::vector<std::pair<std::string, Json::Value>> &_attributes,

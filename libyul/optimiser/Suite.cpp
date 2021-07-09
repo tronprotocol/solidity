@@ -41,6 +41,7 @@
 #include <libyul/optimiser/ForLoopConditionOutOfBody.h>
 #include <libyul/optimiser/ForLoopInitRewriter.h>
 #include <libyul/optimiser/ForLoopConditionIntoBody.h>
+#include <libyul/optimiser/FunctionSpecializer.h>
 #include <libyul/optimiser/ReasoningBasedSimplifier.h>
 #include <libyul/optimiser/Rematerialiser.h>
 #include <libyul/optimiser/UnusedFunctionParameterPruner.h>
@@ -72,9 +73,10 @@
 
 #include <libsolutil/CommonData.h>
 
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <libyul/CompilabilityChecker.h>
+
+#include <range/v3/view/map.hpp>
+#include <range/v3/action/remove.hpp>
 
 using namespace std;
 using namespace solidity;
@@ -86,6 +88,7 @@ void OptimiserSuite::run(
 	Object& _object,
 	bool _optimizeStackAllocation,
 	string const& _optimisationSequence,
+	optional<size_t> _expectedExecutionsPerDeployment,
 	set<YulString> const& _externallyUsedIdentifiers
 )
 {
@@ -99,7 +102,7 @@ void OptimiserSuite::run(
 	)(*_object.code));
 	Block& ast = *_object.code;
 
-	OptimiserSuite suite(_dialect, reservedIdentifiers, Debug::None, ast);
+	OptimiserSuite suite(_dialect, reservedIdentifiers, Debug::None, ast, _expectedExecutionsPerDeployment);
 
 	// Some steps depend on properties ensured by FunctionHoister, BlockFlattener, FunctionGrouper and
 	// ForLoopInitRewriter. Run them first to be able to run arbitrary sequences safely.
@@ -192,6 +195,7 @@ map<string, unique_ptr<OptimiserStep>> const& OptimiserSuite::allSteps()
 			FullInliner,
 			FunctionGrouper,
 			FunctionHoister,
+			FunctionSpecializer,
 			LiteralRematerialiser,
 			LoadResolver,
 			LoopInvariantCodeMotion,
@@ -231,6 +235,7 @@ map<string, char> const& OptimiserSuite::stepNameToAbbreviationMap()
 		{FullInliner::name,                   'i'},
 		{FunctionGrouper::name,               'g'},
 		{FunctionHoister::name,               'h'},
+		{FunctionSpecializer::name,           'F'},
 		{LiteralRematerialiser::name,         'T'},
 		{LoadResolver::name,                  'L'},
 		{LoopInvariantCodeMotion::name,       'M'},
@@ -247,7 +252,7 @@ map<string, char> const& OptimiserSuite::stepNameToAbbreviationMap()
 	yulAssert(lookupTable.size() == allSteps().size(), "");
 	yulAssert((
 			util::convertContainer<set<char>>(string(NonStepAbbreviations)) -
-			util::convertContainer<set<char>>(lookupTable | boost::adaptors::map_values)
+			util::convertContainer<set<char>>(lookupTable | ranges::views::values)
 		).size() == string(NonStepAbbreviations).size(),
 		"Step abbreviation conflicts with a character reserved for another syntactic element"
 	);
@@ -307,8 +312,8 @@ void OptimiserSuite::runSequence(string const& _stepAbbreviations, Block& _ast)
 	validateSequence(_stepAbbreviations);
 
 	string input = _stepAbbreviations;
-	boost::remove_erase(input, ' ');
-	boost::remove_erase(input, '\n');
+	ranges::actions::remove(input, ' ');
+	ranges::actions::remove(input, '\n');
 
 	auto abbreviationsToSteps = [](string const& _sequence) -> vector<string>
 	{

@@ -1,4 +1,3 @@
-pragma experimental SMTChecker;
 pragma abicoder               v2;
 
 contract C {
@@ -14,5 +13,8 @@ contract C {
 		assert(s1.x == s2.x);
 	}
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (225-245): CHC: Assertion violation happens here.\nCounterexample:\n\ns1 = {x: 2, a: []}\ns2 = {x: 3, a: [6, 6, 6, 6, 6, 6, 6]}\n\n\nTransaction trace:\nconstructor()\nf({x: 0, a: []}, {x: 3, a: [6, 6, 6, 6, 6, 6, 6]})
+// Warning 6328: (193-213): CHC: Assertion violation happens here.

@@ -1,5 +1,3 @@
-pragma experimental SMTChecker;
-
 contract C
 {
 	uint x;
@@ -17,6 +15,8 @@ contract C
 }
 // ====
 // EVMVersion: >spuriousDragon
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 2072: (224-240): Unused local variable.
-// Warning 6328: (266-281): CHC: Assertion violation happens here.\nCounterexample:\nx = 0\na = 0\ndata = [10, 10]\n\n\nTransaction trace:\nconstructor()\nState: x = 0\nf(0, [10, 10])
+// Warning 2072: (191-207): Unused local variable.
+// Warning 6328: (233-248): CHC: Assertion violation happens here.

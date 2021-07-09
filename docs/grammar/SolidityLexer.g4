@@ -29,12 +29,14 @@ Do: 'do';
 Else: 'else';
 Emit: 'emit';
 Enum: 'enum';
+Error: 'error'; // not a real keyword
+Revert: 'revert'; // not a real keyword
 Event: 'event';
 External: 'external';
 Fallback: 'fallback';
 False: 'false';
 Fixed: 'fixed' | ('fixed' [1-9][0-9]* 'x' [1-9][0-9]*);
-From: 'from';
+From: 'from'; // not a real keyword
 /**
  * Bytes types of fixed length.
  */
@@ -153,15 +155,20 @@ Not: '!';
 BitNot: '~';
 Inc: '++';
 Dec: '--';
+//@doc:inline
+DoubleQuote: '"';
+//@doc:inline
+SingleQuote: '\'';
 
 /**
- * A single quoted string literal restricted to printable characters.
- */
-StringLiteral: '"' DoubleQuotedStringCharacter* '"' | '\'' SingleQuotedStringCharacter* '\'';
-/**
- * A single non-empty quoted string literal.
+ * A non-empty quoted string literal restricted to printable characters.
  */
 NonEmptyStringLiteral: '"' DoubleQuotedStringCharacter+ '"' | '\'' SingleQuotedStringCharacter+ '\'';
+/**
+ * An empty string literal
+ */
+EmptyStringLiteral: '"' '"' | '\'' '\'';
+
 // Note that this will also be used for Yul string literals.
 //@doc:inline
 fragment DoubleQuotedStringCharacter: DoubleQuotedPrintable | EscapeSequence;
@@ -198,6 +205,7 @@ fragment DoubleQuotedUnicodeStringCharacter: ~["\r\n\\] | EscapeSequence;
 //@doc:inline
 fragment SingleQuotedUnicodeStringCharacter: ~['\r\n\\] | EscapeSequence;
 
+// Note that this will also be used for Yul hex string literals.
 /**
  * Hex strings need to consist of an even number of hex digits that may be grouped using underscores.
  */
@@ -261,6 +269,7 @@ YulLeave: 'leave';
 YulLet: 'let';
 YulSwitch: 'switch';
 YulTrue: 'true';
+YulHex: 'hex';
 
 /**
  * Builtin functions in the EVM Yul dialect.
@@ -312,7 +321,8 @@ YulDecimalNumber: '0' | ([1-9] [0-9]*);
 YulStringLiteral:
 	'"' DoubleQuotedStringCharacter* '"'
 	| '\'' SingleQuotedStringCharacter* '\'';
-
+//@doc:inline
+YulHexStringLiteral: HexString;
 
 YulWS: [ \t\r\n\u000C]+ -> skip ;
 YulCOMMENT: '/*' .*? '*/' -> channel(HIDDEN) ;

@@ -65,7 +65,6 @@ using bytesConstRef = util::vector_ref<uint8_t const>;
 using bigint = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<>>;
 using u256 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<256, 256, boost::multiprecision::unsigned_magnitude, boost::multiprecision::unchecked, void>>;
 using s256 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<256, 256, boost::multiprecision::signed_magnitude, boost::multiprecision::unchecked, void>>;
-using u160 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<160, 160, boost::multiprecision::unsigned_magnitude, boost::multiprecision::unchecked, void>>;
 
 // Map types.
 using StringMap = std::map<std::string, std::string>;
@@ -132,5 +131,27 @@ public:
 private:
 	std::function<void(void)> m_f;
 };
+
+/// RAII utility class that sets the value of a variable for the current scope and restores it to its old value
+/// during its destructor.
+template<typename V>
+class ScopedSaveAndRestore
+{
+public:
+	explicit ScopedSaveAndRestore(V& _variable, V&& _value): m_variable(_variable), m_oldValue(std::move(_value))
+	{
+		std::swap(m_variable, m_oldValue);
+	}
+	ScopedSaveAndRestore(ScopedSaveAndRestore const&) = delete;
+	~ScopedSaveAndRestore() { std::swap(m_variable, m_oldValue); }
+	ScopedSaveAndRestore& operator=(ScopedSaveAndRestore const&) = delete;
+
+private:
+	V& m_variable;
+	V m_oldValue;
+};
+
+template<typename V, typename... Args>
+ScopedSaveAndRestore(V, Args...) -> ScopedSaveAndRestore<V>;
 
 }

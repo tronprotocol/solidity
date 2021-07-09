@@ -1,14 +1,17 @@
-pragma experimental SMTChecker;
-
 contract C
 {
 	uint[] b;
 	uint[] d;
 	uint[][] array2d;
+	function p() public {
+		array2d.push().push();
+	}
 	function g(uint x, uint[] memory c) public {
+		require(x < array2d.length);
 		f(array2d[x], c);
 	}
 	function f(uint[] storage a, uint[] memory c) internal {
+		// Accesses are safe but oob is reported because of aliasing.
 		d[0] = 42;
 		c[0] = 42;
 		a[0] = 2;
@@ -26,5 +29,15 @@ contract C
 		assert(b[0] == 1);
 	}
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (572-589): CHC: Assertion violation happens here.\nCounterexample:\nb = [1, 20, 20, 20, 20], d = [], array2d = []\nx = 0\nc = [0, 9, 9, 9, 9, 9, 9, 9, 9, 9]\n\n\nTransaction trace:\nconstructor()\nState: b = [], d = [], array2d = []\ng(0, [0, 9, 9, 9, 9, 9, 9, 9, 9, 9])
+// Warning 6368: (329-333): CHC: Out of bounds access happens here.
+// Warning 6368: (342-346): CHC: Out of bounds access happens here.
+// Warning 6368: (355-359): CHC: Out of bounds access happens here.
+// Warning 6368: (367-371): CHC: Out of bounds access happens here.
+// Warning 6368: (490-494): CHC: Out of bounds access happens here.
+// Warning 6368: (692-696): CHC: Out of bounds access happens here.
+// Warning 6328: (685-702): CHC: Assertion violation happens here.
+// Warning 6368: (796-800): CHC: Out of bounds access happens here.

@@ -26,11 +26,11 @@
 #include <array>
 #include <memory>
 
-namespace solidity::frontend {
+namespace solidity::frontend
+{
 
-/** Helper class that builds the control flow of a function or modifier.
- * Modifiers are not yet applied to the functions. This is done in a second
- * step in the CFG class.
+/**
+ * Helper class that builds the control flow of a function or modifier.
  */
 class ControlFlowBuilder: private ASTConstVisitor, private yul::ASTWalker
 {
@@ -56,6 +56,7 @@ private:
 	bool visit(Break const&) override;
 	bool visit(Continue const&) override;
 	bool visit(Throw const&) override;
+	bool visit(RevertStatement const&) override;
 	bool visit(PlaceholderStatement const&) override;
 	bool visit(FunctionCall const& _functionCall) override;
 	bool visit(ModifierInvocation const& _modifierInvocation) override;

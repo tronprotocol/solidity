@@ -30,10 +30,6 @@ add_library(yul
 	AsmParser.h
 	AsmPrinter.cpp
 	AsmPrinter.h
-	AsmScope.cpp
-	AsmScope.h
-	AsmScopeFiller.cpp
-	AsmScopeFiller.h
 	AssemblyStack.h
 	AssemblyStack.cpp
 	CompilabilityChecker.cpp
@@ -45,16 +41,20 @@ add_library(yul
 	Object.h
 	ObjectParser.cpp
 	ObjectParser.h
+	Scope.cpp
+	Scope.h
+	ScopeFiller.cpp
+	ScopeFiller.h
 	Utilities.cpp
 	Utilities.h
 	YulString.h
 	backends/evm/AbstractAssembly.h
-	backends/evm/AsmCodeGen.h
 	backends/evm/AsmCodeGen.cpp
+	backends/evm/AsmCodeGen.h
 	backends/evm/ConstantOptimiser.cpp
 	backends/evm/ConstantOptimiser.h
-	backends/evm/EVMAssembly.cpp
-	backends/evm/EVMAssembly.h
+	backends/evm/EthAssemblyAdapter.cpp
+	backends/evm/EthAssemblyAdapter.h
 	backends/evm/EVMCodeTransform.cpp
 	backends/evm/EVMCodeTransform.h
 	backends/evm/EVMDialect.cpp
@@ -65,6 +65,8 @@ add_library(yul
 	backends/evm/EVMMetrics.h
 	backends/evm/NoOutputAssembly.h
 	backends/evm/NoOutputAssembly.cpp
+	backends/evm/VariableReferenceCounter.h
+	backends/evm/VariableReferenceCounter.cpp
 	backends/wasm/EVMToEwasmTranslator.cpp
 	backends/wasm/EVMToEwasmTranslator.h
 	backends/wasm/BinaryTransform.cpp
@@ -131,6 +133,8 @@ add_library(yul
 	optimiser/FunctionGrouper.h
 	optimiser/FunctionHoister.cpp
 	optimiser/FunctionHoister.h
+	optimiser/FunctionSpecializer.cpp
+	optimiser/FunctionSpecializer.h
 	optimiser/InlinableExpressionFunctionFinder.cpp
 	optimiser/InlinableExpressionFunctionFinder.h
 	optimiser/KnowledgeBase.cpp
@@ -160,6 +164,8 @@ add_library(yul
 	optimiser/RedundantAssignEliminator.h
 	optimiser/Rematerialiser.cpp
 	optimiser/Rematerialiser.h
+	optimiser/SMTSolver.cpp
+	optimiser/SMTSolver.h
 	optimiser/SSAReverser.cpp
 	optimiser/SSAReverser.h
 	optimiser/SSATransform.cpp

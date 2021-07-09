@@ -1,14 +1,20 @@
-pragma experimental SMTChecker;
-
 contract C
 {
 	uint[] a;
+	function f(uint x) public {
+		a.push(x);
+	}
 	function g(uint x, uint y) public {
+		require(x < a.length);
+		require(y < a.length);
 		require(x != y);
 		(, a[y]) = (2, 4);
 		assert(a[x] == 2);
 		assert(a[y] == 4);
 	}
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (136-153): CHC: Assertion violation happens here.\nCounterexample:\na = []\nx = 39\ny = 0\n\n\nTransaction trace:\nconstructor()\nState: a = []\ng(39, 0)
+// Warning 6328: (198-215): CHC: Assertion violation happens here.

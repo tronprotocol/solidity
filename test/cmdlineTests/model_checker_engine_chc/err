@@ -3,11 +3,10 @@ Counterexample:
 
 x = 0
 
-
 Transaction trace:
-constructor()
-f(0)
- --> model_checker_engine_chc/input.sol:6:3:
+test.constructor()
+test.f(0)
+ --> model_checker_engine_chc/input.sol:5:3:
   |
-6 | 		assert(x > 0);
+5 | 		assert(x > 0);
   | 		^^^^^^^^^^^^^

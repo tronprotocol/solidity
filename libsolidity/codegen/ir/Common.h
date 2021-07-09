@@ -29,6 +29,8 @@
 namespace solidity::frontend
 {
 
+class IRGenerationContext;
+
 /**
  * Structure that describes arity and co-arity of a Yul function, i.e. the number of its inputs and outputs.
  */
@@ -49,10 +51,13 @@ struct IRNames
 {
 	static std::string function(FunctionDefinition const& _function);
 	static std::string function(VariableDeclaration const& _varDecl);
+	static std::string modifierInvocation(ModifierInvocation const& _modifierInvocation);
+	static std::string functionWithModifierInner(FunctionDefinition const& _function);
 	static std::string creationObject(ContractDefinition const& _contract);
-	static std::string runtimeObject(ContractDefinition const& _contract);
+	static std::string deployedObject(ContractDefinition const& _contract);
 	static std::string internalDispatch(YulArity const& _arity);
-	static std::string implicitConstructor(ContractDefinition const& _contract);
+	static std::string constructor(ContractDefinition const& _contract);
+	static std::string libraryAddressImmutable();
 	static std::string constantValueFunction(VariableDeclaration const& _constant);
 	static std::string localVariable(VariableDeclaration const& _declaration);
 	static std::string localVariable(Expression const& _expression);
@@ -63,10 +68,13 @@ struct IRNames
 	static std::string zeroValue(Type const& _type, std::string const& _variableName);
 };
 
-struct IRHelpers
-{
-	static FunctionDefinition const* referencedFunctionDeclaration(Expression const& _expression);
-};
+
+/**
+ * @returns a source location comment in the form of
+ * `/// @src <sourceIndex>:<locationStart>:<locationEnd>`.
+ */
+std::string sourceLocationComment(langutil::SourceLocation const& _location, IRGenerationContext const& _context);
+std::string sourceLocationComment(ASTNode const& _node, IRGenerationContext const& _context);
 
 }
 

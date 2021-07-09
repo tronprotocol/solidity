@@ -107,8 +107,7 @@ bool successParse(
 bool successAssemble(string const& _source, bool _allowWarnings = true, AssemblyStack::Language _language = AssemblyStack::Language::Assembly)
 {
 	return
-		successParse(_source, true, _allowWarnings, _language, AssemblyStack::Machine::EVM) &&
-		successParse(_source, true, _allowWarnings, _language, AssemblyStack::Machine::EVM15);
+		successParse(_source, true, _allowWarnings, _language, AssemblyStack::Machine::EVM);
 }
 
 Error expectError(
@@ -273,8 +272,8 @@ BOOST_AUTO_TEST_CASE(oversize_string_literals)
 
 BOOST_AUTO_TEST_CASE(magic_variables)
 {
-	CHECK_ASSEMBLE_ERROR("{ pop(this) }", DeclarationError, "Identifier not found");
-	CHECK_ASSEMBLE_ERROR("{ pop(ecrecover) }", DeclarationError, "Identifier not found");
+	CHECK_ASSEMBLE_ERROR("{ pop(this) }", DeclarationError, "Identifier \"this\" not found");
+	CHECK_ASSEMBLE_ERROR("{ pop(ecrecover) }", DeclarationError, "Identifier \"ecrecover\" not found");
 	BOOST_CHECK(successAssemble("{ let ecrecover := 1 pop(ecrecover) }"));
 }
 

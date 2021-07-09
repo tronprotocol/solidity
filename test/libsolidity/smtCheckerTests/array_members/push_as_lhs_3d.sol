@@ -1,5 +1,3 @@
-pragma experimental SMTChecker;
-
 contract C {
 	uint[][][] c;
 
@@ -25,6 +23,8 @@ contract C {
 		assert(c[length1 - 1][length2 - 1][length3 - 1] == 200);
 	}
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (570-625): CHC: Assertion violation might happen here.
-// Warning 4661: (570-625): BMC: Assertion violation happens here.
+// Warning 6328: (537-592): CHC: Assertion violation happens here.

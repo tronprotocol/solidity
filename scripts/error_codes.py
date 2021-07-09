@@ -188,14 +188,14 @@ def examine_id_coverage(top_dir, source_id_to_file_names, new_ids_only=False):
     # Warning (1878): SPDX license identifier not provided in source file. ....
     # Warning (3420): Source file does not specify required compiler version!
     test_ids |= find_ids_in_cmdline_test_err(path.join(top_dir, "test", "cmdlineTests", "error_codes", "err"))
-    test_ids |= find_ids_in_cmdline_test_err(path.join(top_dir, "test", "cmdlineTests", "yul_unimplemented", "err"))
 
     # white list of ids which are not covered by tests
     white_ids = {
         "3805", # "This is a pre-release compiler version, please do not use it in production."
                 # The warning may or may not exist in a compiler build.
-        "4591"  # "There are more than 256 warnings. Ignoring the rest."
+        "4591", # "There are more than 256 warnings. Ignoring the rest."
                 # Due to 3805, the warning lists look different for different compiler builds.
+        "1834"  # Unimplemented feature error, as we do not test it anymore via cmdLineTests
     }
     assert len(test_ids & white_ids) == 0, "The sets are not supposed to intersect"
     test_ids |= white_ids
@@ -220,12 +220,12 @@ def examine_id_coverage(top_dir, source_id_to_file_names, new_ids_only=False):
             return False
 
     old_source_only_ids = {
-        "1123", "1220", "1584", "1823",
-        "1988", "2066", "2657", "2800", "3356",
+        "1584", "1823",
+        "1988", "2066", "3356",
         "3893", "3996", "4010", "4802",
-        "5073", "5272", "5622", "7128",
-        "7589", "7593", "7653", "8065", "8084", "8140",
-        "8312", "8592", "9085", "9390"
+        "5272", "5622", "7128", "7400",
+        "7589", "7593", "8065", "8084", "8140",
+        "8312", "8592", "9134", "9609",
     }
 
     new_source_only_ids = source_only_ids - old_source_only_ids

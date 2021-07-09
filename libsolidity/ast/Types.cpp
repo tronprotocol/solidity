@@ -41,10 +41,12 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
-#include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/adaptor/sliced.hpp>
-#include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/algorithm/copy.hpp>
+
+#include <range/v3/view/enumerate.hpp>
+#include <range/v3/view/reverse.hpp>
+#include <range/v3/view/transform.hpp>
 
 #include <limits>
 #include <unordered_set>
@@ -98,7 +100,7 @@ util::Result<TypePointers> transformParametersToExternal(TypePointers const& _pa
 	{
 		if (!type)
 			return util::Result<TypePointers>::err("Type information not present.");
-		else if (TypePointer ext = type->interfaceType(_inLibrary).get())
+		else if (Type const* ext = type->interfaceType(_inLibrary).get())
 			transformed.push_back(ext);
 		else
 			return util::Result<TypePointers>::err("Parameter should have external type.");
@@ -107,6 +109,17 @@ util::Result<TypePointers> transformParametersToExternal(TypePointers const& _pa
 	return transformed;
 }
 
+}
+
+MemberList::Member::Member(Declaration const* _declaration, Type const* _type):
+	Member(_declaration, _type, _declaration->name())
+{}
+
+MemberList::Member::Member(Declaration const* _declaration, Type const* _type, string _name):
+	name(move(_name)),
+	type(_type),
+	declaration(_declaration)
+{
 }
 
 void Type::clearCache() const
@@ -167,8 +180,8 @@ pair<u256, unsigned> const* MemberList::memberStorageOffset(string const& _name)
 {
 	StorageOffsets const& offsets = storageOffsets();
 
-	for (size_t index = 0; index < m_memberTypes.size(); ++index)
-		if (m_memberTypes[index].name == _name)
+	for (auto&& [index, member]: m_memberTypes | ranges::views::enumerate)
+		if (member.name == _name)
 			return offsets.offset(index);
 	return nullptr;
 }
@@ -212,9 +225,9 @@ string richIdentifier(Type const* _type)
 	return _type ? _type->richIdentifier() : "";
 }
 
-string identifierList(vector<TypePointer> const& _list)
+string identifierList(vector<Type const*> const& _list)
 {
-	return identifierList(_list | boost::adaptors::transformed(richIdentifier));
+	return identifierList(_list | ranges::views::transform(richIdentifier));
 }
 
 string identifierList(Type const* _type)
@@ -259,7 +272,7 @@ string Type::identifier() const
 	return ret;
 }
 
-TypePointer Type::commonType(Type const* _a, Type const* _b)
+Type const* Type::commonType(Type const* _a, Type const* _b)
 {
 	if (!_a || !_b)
 		return nullptr;
@@ -288,9 +301,9 @@ MemberList const& Type::members(ASTNode const* _currentScope) const
 	return *m_members[_currentScope];
 }
 
-TypePointer Type::fullEncodingType(bool _inLibraryCall, bool _encoderV2, bool) const
+Type const* Type::fullEncodingType(bool _inLibraryCall, bool _encoderV2, bool) const
 {
-	TypePointer encodingType = mobileType();
+	Type const* encodingType = mobileType();
 	if (encodingType)
 		encodingType = encodingType->interfaceType(_inLibraryCall);
 	if (encodingType)
@@ -300,7 +313,7 @@ TypePointer Type::fullEncodingType(bool _inLibraryCall, bool _encoderV2, bool) c
 	// - storage struct for a library
 	if (_inLibraryCall && encodingType && encodingType->dataStoredIn(DataLocation::Storage))
 		return encodingType;
-	TypePointer baseType = encodingType;
+	Type const* baseType = encodingType;
 	while (auto const* arrayType = dynamic_cast<ArrayType const*>(baseType))
 	{
 		baseType = arrayType->baseType();
@@ -363,7 +376,7 @@ MemberList::MemberMap Type::boundFunctions(Type const& _type, ASTNode const& _sc
 			FunctionTypePointer fun =
 				dynamic_cast<FunctionType const&>(*function->typeViaContractName()).asBoundFunction();
 			if (_type.isImplicitlyConvertibleTo(*fun->selfType()))
-				members.emplace_back(function->name(), fun, function);
+				members.emplace_back(function, fun);
 		}
 	}
 
@@ -517,14 +530,15 @@ BoolResult IntegerType::isImplicitlyConvertibleTo(Type const& _convertTo) const
 	if (_convertTo.category() == category())
 	{
 		IntegerType const& convertTo = dynamic_cast<IntegerType const&>(_convertTo);
-		if (convertTo.m_bits < m_bits)
-			return false;
+		// disallowing unsigned to signed conversion of different bits
 		if (isTrcToken())
 			return !convertTo.isSigned() && convertTo.m_bits == 256;
-		else if (isSigned())
-			return convertTo.isSigned();
+		else if (isSigned() != convertTo.isSigned())
+			return false;
+		else if (convertTo.m_bits < m_bits)
+			return false;
 		else
-			return !convertTo.isSigned() || convertTo.m_bits > m_bits;
+			return true;
 	}
 	else if (_convertTo.category() == Category::FixedPoint)
 	{
@@ -982,7 +996,7 @@ BoolResult RationalNumberType::isExplicitlyConvertibleTo(Type const& _convertTo)
 		if (isNegative() || isFractional() || m_value >= enumType->numberOfMembers())
 			return false;
 
-	TypePointer mobType = mobileType();
+	Type const* mobType = mobileType();
 	return (mobType && mobType->isExplicitlyConvertibleTo(_convertTo));
 
 }
@@ -1041,8 +1055,8 @@ TypeResult RationalNumberType::binaryOperatorResult(Token _operator, Type const*
 		// Since we do not have a "BoolConstantType", we have to do the actual comparison
 		// at runtime and convert to mobile typse first. Such a comparison is not a very common
 		// use-case and will be optimized away.
-		TypePointer thisMobile = mobileType();
-		TypePointer otherMobile = other.mobileType();
+		Type const* thisMobile = mobileType();
+		Type const* otherMobile = other.mobileType();
 		if (!thisMobile || !otherMobile)
 			return nullptr;
 		return thisMobile->binaryOperatorResult(_operator, otherMobile);
@@ -1129,7 +1143,7 @@ u256 RationalNumberType::literalValue(Literal const*) const
 	return value;
 }
 
-TypePointer RationalNumberType::mobileType() const
+Type const* RationalNumberType::mobileType() const
 {
 	if (!isFractional())
 		return integerType();
@@ -1258,7 +1272,7 @@ std::string StringLiteralType::toString(bool) const
 		("literal_string hex\"" + util::toHex(util::asBytes(m_value)) + "\"");
 }
 
-TypePointer StringLiteralType::mobileType() const
+Type const* StringLiteralType::mobileType() const
 {
 	return TypeProvider::stringMemory();
 }
@@ -1484,7 +1498,7 @@ bool ReferenceType::isPointer() const
 		return true;
 }
 
-TypePointer ReferenceType::copyForLocationIfReference(Type const* _type) const
+Type const* ReferenceType::copyForLocationIfReference(Type const* _type) const
 {
 	return TypeProvider::withLocationIfReference(m_location, _type);
 }
@@ -1583,9 +1597,9 @@ BoolResult ArrayType::isExplicitlyConvertibleTo(Type const& _convertTo) const
 {
 	if (isImplicitlyConvertibleTo(_convertTo))
 		return true;
-	// allow conversion bytes <-> string
+	// allow conversion bytes <-> string and bytes -> bytesNN
 	if (_convertTo.category() != category())
-		return false;
+		return isByteArray() && !isString() && _convertTo.category() == Type::Category::FixedBytes;
 	auto& convertTo = dynamic_cast<ArrayType const&>(_convertTo);
 	if (convertTo.location() != location())
 		return false;
@@ -1742,7 +1756,7 @@ u256 ArrayType::storageSize() const
 	return max<u256>(1, u256(size));
 }
 
-vector<tuple<string, TypePointer>> ArrayType::makeStackItems() const
+vector<tuple<string, Type const*>> ArrayType::makeStackItems() const
 {
 	switch (m_location)
 	{
@@ -1819,33 +1833,34 @@ MemberList::MemberMap ArrayType::nativeMembers(ASTNode const*) const
 		members.emplace_back("length", TypeProvider::uint256());
 		if (isDynamicallySized() && location() == DataLocation::Storage)
 		{
+			Type const* thisAsPointer = TypeProvider::withLocation(this, location(), true);
 			members.emplace_back("push", TypeProvider::function(
-				TypePointers{},
+				TypePointers{thisAsPointer},
 				TypePointers{baseType()},
-				strings{},
 				strings{string()},
-				isByteArray() ? FunctionType::Kind::ByteArrayPush : FunctionType::Kind::ArrayPush
-			));
+				strings{string()},
+				FunctionType::Kind::ArrayPush
+			)->asBoundFunction());
 			members.emplace_back("push", TypeProvider::function(
-				TypePointers{baseType()},
+				TypePointers{thisAsPointer, baseType()},
 				TypePointers{},
-				strings{string()},
+				strings{string(),string()},
 				strings{},
-				isByteArray() ? FunctionType::Kind::ByteArrayPush : FunctionType::Kind::ArrayPush
-			));
+				FunctionType::Kind::ArrayPush
+			)->asBoundFunction());
 			members.emplace_back("pop", TypeProvider::function(
+				TypePointers{thisAsPointer},
 				TypePointers{},
-				TypePointers{},
-				strings{},
+				strings{string()},
 				strings{},
 				FunctionType::Kind::ArrayPop
-			));
+			)->asBoundFunction());
 		}
 	}
 	return members;
 }
 
-TypePointer ArrayType::encodingType() const
+Type const* ArrayType::encodingType() const
 {
 	if (location() == DataLocation::Storage)
 		return TypeProvider::uint256();
@@ -1853,7 +1868,7 @@ TypePointer ArrayType::encodingType() const
 		return TypeProvider::withLocation(this, DataLocation::Memory, true);
 }
 
-TypePointer ArrayType::decodingType() const
+Type const* ArrayType::decodingType() const
 {
 	if (location() == DataLocation::Storage)
 		return TypeProvider::uint256();
@@ -1869,7 +1884,7 @@ TypeResult ArrayType::interfaceType(bool _inLibrary) const
 	if (!_inLibrary && m_interfaceType.has_value())
 		return *m_interfaceType;
 
-	TypeResult result{TypePointer{}};
+	TypeResult result{nullptr};
 	TypeResult baseInterfaceType = m_baseType->interfaceType(_inLibrary);
 
 	if (!baseInterfaceType.get())
@@ -1941,6 +1956,13 @@ BoolResult ArraySliceType::isImplicitlyConvertibleTo(Type const& _other) const
 		);
 }
 
+BoolResult ArraySliceType::isExplicitlyConvertibleTo(Type const& _convertTo) const
+{
+	return
+		isImplicitlyConvertibleTo(_convertTo) ||
+		m_arrayType.isExplicitlyConvertibleTo(_convertTo);
+}
+
 string ArraySliceType::richIdentifier() const
 {
 	return m_arrayType.richIdentifier() + "_slice";
@@ -1958,7 +1980,7 @@ string ArraySliceType::toString(bool _short) const
 	return m_arrayType.toString(_short) + " slice";
 }
 
-TypePointer ArraySliceType::mobileType() const
+Type const* ArraySliceType::mobileType() const
 {
 	if (
 		m_arrayType.dataStoredIn(DataLocation::CallData) &&
@@ -1971,7 +1993,7 @@ TypePointer ArraySliceType::mobileType() const
 }
 
 
-std::vector<std::tuple<std::string, TypePointer>> ArraySliceType::makeStackItems() const
+std::vector<std::tuple<std::string, Type const*>> ArraySliceType::makeStackItems() const
 {
 	return {{"offset", TypeProvider::uint256()}, {"length", TypeProvider::uint256()}};
 }
@@ -2009,9 +2031,8 @@ MemberList::MemberMap ContractType::nativeMembers(ASTNode const*) const
 	if (!m_contract.isLibrary())
 		for (auto const& it: m_contract.interfaceFunctions())
 			members.emplace_back(
-				it.second->declaration().name(),
-				it.second->asExternallyCallableFunction(m_contract.isLibrary()),
-				&it.second->declaration()
+				&it.second->declaration(),
+				it.second->asExternallyCallableFunction(m_contract.isLibrary())
 			);
 
 	return members;
@@ -2027,7 +2048,7 @@ FunctionType const* ContractType::newExpressionType() const
 vector<tuple<VariableDeclaration const*, u256, unsigned>> ContractType::stateVariables() const
 {
 	vector<VariableDeclaration const*> variables;
-	for (ContractDefinition const* contract: boost::adaptors::reverse(m_contract.annotation().linearizedBaseContracts))
+	for (ContractDefinition const* contract: m_contract.annotation().linearizedBaseContracts | ranges::views::reverse)
 		for (VariableDeclaration const* variable: contract->stateVariables())
 			if (!(variable->isConstant() || variable->immutable()))
 				variables.push_back(variable);
@@ -2047,14 +2068,14 @@ vector<tuple<VariableDeclaration const*, u256, unsigned>> ContractType::stateVar
 vector<VariableDeclaration const*> ContractType::immutableVariables() const
 {
 	vector<VariableDeclaration const*> variables;
-	for (ContractDefinition const* contract: boost::adaptors::reverse(m_contract.annotation().linearizedBaseContracts))
+	for (ContractDefinition const* contract: m_contract.annotation().linearizedBaseContracts | ranges::views::reverse)
 		for (VariableDeclaration const* variable: contract->stateVariables())
 			if (variable->immutable())
 				variables.push_back(variable);
 	return variables;
 }
 
-vector<tuple<string, TypePointer>> ContractType::makeStackItems() const
+vector<tuple<string, Type const*>> ContractType::makeStackItems() const
 {
 	if (m_super)
 		return {};
@@ -2197,7 +2218,7 @@ bool StructType::containsNestedMapping() const
 			{
 				for (auto const& member: _struct->members())
 				{
-					TypePointer memberType = member->annotation().type;
+					Type const* memberType = member->annotation().type;
 					solAssert(memberType, "");
 
 					if (auto arrayType = dynamic_cast<ArrayType const*>(memberType))
@@ -2233,13 +2254,12 @@ MemberList::MemberMap StructType::nativeMembers(ASTNode const*) const
 	MemberList::MemberMap members;
 	for (ASTPointer<VariableDeclaration> const& variable: m_struct.members())
 	{
-		TypePointer type = variable->annotation().type;
+		Type const* type = variable->annotation().type;
 		solAssert(type, "");
 		solAssert(!(location() != DataLocation::Storage && type->containsNestedMapping()), "");
 		members.emplace_back(
-			variable->name(),
-			copyForLocationIfReference(type),
-			variable.get()
+			variable.get(),
+			copyForLocationIfReference(type)
 		);
 	}
 	return members;
@@ -2255,7 +2275,7 @@ TypeResult StructType::interfaceType(bool _inLibrary) const
 				m_interfaceType = TypeResult::err("Recursive type not allowed for public or external contract functions.");
 			else
 			{
-				TypeResult result{TypePointer{}};
+				TypeResult result{nullptr};
 				for (ASTPointer<VariableDeclaration> const& member: m_struct.members())
 				{
 					if (!member->annotation().type)
@@ -2282,7 +2302,7 @@ TypeResult StructType::interfaceType(bool _inLibrary) const
 	else if (m_interfaceType_library.has_value())
 		return *m_interfaceType_library;
 
-	TypeResult result{TypePointer{}};
+	TypeResult result{nullptr};
 
 	if (recursive() && !(_inLibrary && location() == DataLocation::Storage))
 		return TypeResult::err(
@@ -2388,7 +2408,7 @@ string StructType::signatureInExternalFunction(bool _structsByName) const
 	else
 	{
 		TypePointers memberTypes = memoryMemberTypes();
-		auto memberTypeStrings = memberTypes | boost::adaptors::transformed([&](TypePointer _t) -> string
+		auto memberTypeStrings = memberTypes | ranges::views::transform([&](Type const* _t) -> string
 		{
 			solAssert(_t, "Parameter should have external type.");
 			auto t = _t->interfaceType(_structsByName);
@@ -2452,7 +2472,7 @@ TypePointers StructType::memoryMemberTypes() const
 	return types;
 }
 
-vector<tuple<string, TypePointer>> StructType::makeStackItems() const
+vector<tuple<string, Type const*>> StructType::makeStackItems() const
 {
 	switch (m_location)
 	{
@@ -2474,7 +2494,7 @@ vector<Type const*> StructType::decomposition() const
 	return res;
 }
 
-TypePointer EnumType::encodingType() const
+Type const* EnumType::encodingType() const
 {
 	solAssert(numberOfMembers() <= 256, "");
 	return TypeProvider::uint(8);
@@ -2589,9 +2609,9 @@ u256 TupleType::storageSize() const
 	solAssert(false, "Storage size of non-storable tuple type requested.");
 }
 
-vector<tuple<string, TypePointer>> TupleType::makeStackItems() const
+vector<tuple<string, Type const*>> TupleType::makeStackItems() const
 {
-	vector<tuple<string, TypePointer>> slots;
+	vector<tuple<string, Type const*>> slots;
 	unsigned i = 1;
 	for (auto const& t: components())
 	{
@@ -2602,7 +2622,7 @@ vector<tuple<string, TypePointer>> TupleType::makeStackItems() const
 	return slots;
 }
 
-TypePointer TupleType::mobileType() const
+Type const* TupleType::mobileType() const
 {
 	TypePointers mobiles;
 	for (auto const& c: components())
@@ -2620,23 +2640,6 @@ TypePointer TupleType::mobileType() const
 	return TypeProvider::tuple(move(mobiles));
 }
 
-TypePointer TupleType::closestTemporaryType(Type const* _targetType) const
-{
-	solAssert(!!_targetType, "");
-	TypePointers const& targetComponents = dynamic_cast<TupleType const&>(*_targetType).components();
-	solAssert(components().size() == targetComponents.size(), "");
-	TypePointers tempComponents(targetComponents.size());
-	for (size_t i = 0; i < targetComponents.size(); ++i)
-	{
-		if (components()[i] && targetComponents[i])
-		{
-			tempComponents[i] = components()[i]->closestTemporaryType(targetComponents[i]);
-			solAssert(tempComponents[i], "");
-		}
-	}
-	return TypeProvider::tuple(move(tempComponents));
-}
-
 FunctionType::FunctionType(FunctionDefinition const& _function, Kind _kind):
 	m_kind(_kind),
 	m_stateMutability(_function.stateMutability()),
@@ -2651,11 +2654,13 @@ FunctionType::FunctionType(FunctionDefinition const& _function, Kind _kind):
 
 	for (ASTPointer<VariableDeclaration> const& var: _function.parameters())
 	{
+		solAssert(var->annotation().type, "Parameter type is not yet available in the AST.");
 		m_parameterNames.push_back(var->name());
 		m_parameterTypes.push_back(var->annotation().type);
 	}
 	for (ASTPointer<VariableDeclaration> const& var: _function.returnParameters())
 	{
+		solAssert(var->annotation().type, "Return parameter type is not yet available in the AST.");
 		m_returnParameterNames.push_back(var->name());
 		m_returnParameterTypes.push_back(var->annotation().type);
 	}
@@ -2748,13 +2753,36 @@ FunctionType::FunctionType(EventDefinition const& _event):
 	}
 
 	solAssert(
-			m_parameterNames.size() == m_parameterTypes.size(),
-			"Parameter names list must match parameter types list!"
-			);
+		m_parameterNames.size() == m_parameterTypes.size(),
+		"Parameter names list must match parameter types list!"
+	);
 	solAssert(
-			m_returnParameterNames.size() == m_returnParameterTypes.size(),
-			"Return parameter names list must match return parameter types list!"
-			);
+		m_returnParameterNames.size() == 0 &&
+		m_returnParameterTypes.size() == 0,
+		""
+	);
+}
+
+FunctionType::FunctionType(ErrorDefinition const& _error):
+	m_kind(Kind::Error),
+	m_stateMutability(StateMutability::Pure),
+	m_declaration(&_error)
+{
+	for (ASTPointer<VariableDeclaration> const& var: _error.parameters())
+	{
+		m_parameterNames.push_back(var->name());
+		m_parameterTypes.push_back(var->annotation().type);
+	}
+
+	solAssert(
+		m_parameterNames.size() == m_parameterTypes.size(),
+		"Parameter names list must match parameter types list!"
+	);
+	solAssert(
+		m_returnParameterNames.size() == 0 &&
+		m_returnParameterTypes.size() == 0,
+		""
+	);
 }
 
 FunctionType::FunctionType(FunctionTypeName const& _typeName):
@@ -2890,6 +2918,7 @@ string FunctionType::richIdentifier() const
 	case Kind::RIPEMD160: id += "ripemd160"; break;
 	case Kind::GasLeft: id += "gasleft"; break;
 	case Kind::Event: id += "event"; break;
+	case Kind::Error: id += "error"; break;
 	case Kind::SetGas: id += "setgas"; break;
 	case Kind::SetValue: id += "setvalue"; break;
 	case Kind::BlockHash: id += "blockhash"; break;
@@ -2897,7 +2926,7 @@ string FunctionType::richIdentifier() const
 	case Kind::MulMod: id += "mulmod"; break;
 	case Kind::ArrayPush: id += "arraypush"; break;
 	case Kind::ArrayPop: id += "arraypop"; break;
-	case Kind::ByteArrayPush: id += "bytearraypush"; break;
+	case Kind::BytesConcat: id += "bytesconcat"; break;
 	case Kind::ObjectCreation: id += "objectcreation"; break;
 	case Kind::Assert: id += "assert"; break;
 	case Kind::Require: id += "require"; break;
@@ -3075,9 +3104,9 @@ bool FunctionType::nameable() const
 		!m_saltSet;
 }
 
-vector<tuple<string, TypePointer>> FunctionType::makeStackItems() const
+vector<tuple<string, Type const*>> FunctionType::makeStackItems() const
 {
-	vector<tuple<string, TypePointer>> slots;
+	vector<tuple<string, Type const*>> slots;
 	Kind kind = m_kind;
 	if (m_kind == Kind::SetGas || m_kind == Kind::SetValue)
 	{
@@ -3107,8 +3136,8 @@ vector<tuple<string, TypePointer>> FunctionType::makeStackItems() const
 		break;
 	case Kind::ArrayPush:
 	case Kind::ArrayPop:
-	case Kind::ByteArrayPush:
-		slots = {make_tuple("slot", TypeProvider::uint256())};
+		solAssert(bound(), "");
+		slots = {};
 		break;
 	default:
 		break;
@@ -3130,7 +3159,7 @@ FunctionTypePointer FunctionType::interfaceFunctionType() const
 	// Note that m_declaration might also be a state variable!
 	solAssert(m_declaration, "Declaration needed to determine interface function type.");
 	bool isLibraryFunction = false;
-	if (kind() != Kind::Event)
+	if (kind() != Kind::Event && kind() != Kind::Error)
 		if (auto const* contract = dynamic_cast<ContractDefinition const*>(m_declaration->scope()))
 			isLibraryFunction = contract->isLibrary();
 
@@ -3255,12 +3284,14 @@ MemberList::MemberMap FunctionType::nativeMembers(ASTNode const* _scope) const
 		}
 		return {};
 	}
+	case Kind::Error:
+		return {{"selector", TypeProvider::fixedBytes(4)}};
 	default:
 		return MemberList::MemberMap();
 	}
 }
 
-TypePointer FunctionType::encodingType() const
+Type const* FunctionType::encodingType() const
 {
 	if (m_gasSet || m_valueSet)
 		return nullptr;
@@ -3279,7 +3310,7 @@ TypeResult FunctionType::interfaceType(bool /*_inLibrary*/) const
 		return TypeResult::err("Internal type is not allowed for public or external functions.");
 }
 
-TypePointer FunctionType::mobileType() const
+Type const* FunctionType::mobileType() const
 {
 	if (m_valueSet || m_gasSet || m_saltSet || m_bound)
 		return nullptr;
@@ -3428,15 +3459,16 @@ string FunctionType::externalSignature() const
 	case Kind::External:
 	case Kind::DelegateCall:
 	case Kind::Event:
+	case Kind::Error:
 	case Kind::Declaration:
 		break;
 	default:
 		solAssert(false, "Invalid function type for requesting external signature.");
 	}
 
-	// "inLibrary" is only relevant if this is not an event.
+	// "inLibrary" is only relevant if this is neither an event nor an error.
 	bool inLibrary = false;
-	if (kind() != Kind::Event)
+	if (kind() != Kind::Event && kind() != Kind::Error)
 		if (auto const* contract = dynamic_cast<ContractDefinition const*>(m_declaration->scope()))
 			inLibrary = contract->isLibrary();
 
@@ -3444,7 +3476,7 @@ string FunctionType::externalSignature() const
 
 	solAssert(extParams.message().empty(), extParams.message());
 
-	auto typeStrings = extParams.get() | boost::adaptors::transformed([&](TypePointer _t) -> string
+	auto typeStrings = extParams.get() | ranges::views::transform([&](Type const* _t) -> string
 	{
 		string typeName = _t->signatureInExternalFunction(inLibrary);
 
@@ -3500,7 +3532,7 @@ TypePointers FunctionType::parseElementaryTypeVector(strings const& _types)
 	return pointers;
 }
 
-TypePointer FunctionType::copyAndSetCallOptions(bool _setGas, bool _setValue, bool _setToken, bool _setSalt) const
+Type const* FunctionType::copyAndSetCallOptions(bool _setGas, bool _setValue, bool _setToken, bool _setSalt) const
 {
 	solAssert(m_kind != Kind::Declaration, "");
 	return TypeProvider::function(
@@ -3523,8 +3555,6 @@ TypePointer FunctionType::copyAndSetCallOptions(bool _setGas, bool _setValue, bo
 FunctionTypePointer FunctionType::asBoundFunction() const
 {
 	solAssert(!m_parameterTypes.empty(), "");
-	FunctionDefinition const* fun = dynamic_cast<FunctionDefinition const*>(m_declaration);
-	solAssert(fun && fun->libraryFunction(), "");
 	solAssert(!m_gasSet, "");
 	solAssert(!m_valueSet, "");
 	solAssert(!m_saltSet, "");
@@ -3695,7 +3725,7 @@ u256 TypeType::storageSize() const
 	solAssert(false, "Storage size of non-storable type type requested.");
 }
 
-vector<tuple<string, TypePointer>> TypeType::makeStackItems() const
+vector<tuple<string, Type const*>> TypeType::makeStackItems() const
 {
 	if (auto contractType = dynamic_cast<ContractType const*>(m_actualType))
 		if (contractType->contractDefinition().isLibrary())
@@ -3740,7 +3770,7 @@ MemberList::MemberMap TypeType::nativeMembers(ASTNode const* _currentScope) cons
 						break;
 					}
 					if (!functionWithEqualArgumentsFound)
-						members.emplace_back(function->name(), functionType, function);
+						members.emplace_back(function, functionType);
 				}
 		}
 		else
@@ -3761,15 +3791,15 @@ MemberList::MemberMap TypeType::nativeMembers(ASTNode const* _currentScope) cons
 						auto const* functionDefinition = dynamic_cast<FunctionDefinition const*>(declaration);
 						functionDefinition && !functionDefinition->isImplemented()
 					)
-						members.emplace_back(declaration->name(), declaration->typeViaContractName(), declaration);
+						members.emplace_back(declaration, declaration->typeViaContractName());
 					else
-						members.emplace_back(declaration->name(), declaration->type(), declaration);
+						members.emplace_back(declaration, declaration->type());
 				}
 				else if (
 					(contract.isLibrary() && declaration->isVisibleAsLibraryMember()) ||
 					declaration->isVisibleViaContractTypeAccess()
 				)
-					members.emplace_back(declaration->name(), declaration->typeViaContractName(), declaration);
+					members.emplace_back(declaration, declaration->typeViaContractName());
 			}
 		}
 	}
@@ -3778,8 +3808,22 @@ MemberList::MemberMap TypeType::nativeMembers(ASTNode const* _currentScope) cons
 		EnumDefinition const& enumDef = dynamic_cast<EnumType const&>(*m_actualType).enumDefinition();
 		auto enumType = TypeProvider::enumType(enumDef);
 		for (ASTPointer<EnumValue> const& enumValue: enumDef.members())
-			members.emplace_back(enumValue->name(), enumType);
+			members.emplace_back(enumValue.get(), enumType);
 	}
+	else if (
+		auto const* arrayType = dynamic_cast<ArrayType const*>(m_actualType);
+		arrayType && arrayType->isByteArray()
+	)
+		members.emplace_back("concat", TypeProvider::function(
+			TypePointers{},
+			TypePointers{TypeProvider::bytesMemory()},
+			strings{},
+			strings{string()},
+			FunctionType::Kind::BytesConcat,
+			/* _arbitraryParameters */ true,
+			StateMutability::Pure
+		));
+
 	return members;
 }
 
@@ -3854,9 +3898,9 @@ bool ModuleType::operator==(Type const& _other) const
 MemberList::MemberMap ModuleType::nativeMembers(ASTNode const*) const
 {
 	MemberList::MemberMap symbols;
-	for (auto const& symbolName: *m_sourceUnit.annotation().exportedSymbols)
-		for (Declaration const* symbol: symbolName.second)
-			symbols.emplace_back(symbolName.first, symbol->type(), symbol);
+	for (auto const& [name, declarations]: *m_sourceUnit.annotation().exportedSymbols)
+		for (Declaration const* symbol: declarations)
+			symbols.emplace_back(symbol, symbol->type(), name);
 	return symbols;
 }
 
@@ -4028,14 +4072,14 @@ string MagicType::toString(bool _short) const
 	return {};
 }
 
-TypePointer MagicType::typeArgument() const
+Type const* MagicType::typeArgument() const
 {
 	solAssert(m_kind == Kind::MetaType, "");
 	solAssert(m_typeArgument, "");
 	return m_typeArgument;
 }
 
-TypePointer InaccessibleDynamicType::decodingType() const
+Type const* InaccessibleDynamicType::decodingType() const
 {
 	return TypeProvider::integer(256, IntegerType::Modifier::Unsigned);
 }

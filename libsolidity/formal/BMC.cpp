@@ -18,7 +18,6 @@
 
 #include <libsolidity/formal/BMC.h>
 
-#include <libsolidity/formal/SymbolicState.h>
 #include <libsolidity/formal/SymbolicTypes.h>
 
 #include <libsmtutil/SMTPortfolio.h>
@@ -39,10 +38,10 @@ BMC::BMC(
 	map<h256, string> const& _smtlib2Responses,
 	ReadCallback::Callback const& _smtCallback,
 	smtutil::SMTSolverChoice _enabledSolvers,
-	optional<unsigned> _timeout
+	ModelCheckerSettings const& _settings
 ):
-	SMTEncoder(_context),
-	m_interface(make_unique<smtutil::SMTPortfolio>(_smtlib2Responses, _smtCallback, _enabledSolvers, _timeout)),
+	SMTEncoder(_context, _settings),
+	m_interface(make_unique<smtutil::SMTPortfolio>(_smtlib2Responses, _smtCallback, _enabledSolvers, _settings.timeout)),
 	m_outerErrorReporter(_errorReporter)
 {
 #if defined (HAVE_Z3) || defined (HAVE_CVC4)
@@ -58,12 +57,8 @@ BMC::BMC(
 #endif
 }
 
-void BMC::analyze(SourceUnit const& _source, map<ASTNode const*, set<VerificationTarget::Type>> _solvedTargets)
+void BMC::analyze(SourceUnit const& _source, map<ASTNode const*, set<VerificationTargetType>> _solvedTargets)
 {
-	solAssert(_source.annotation().experimentalFeatures.count(ExperimentalFeature::SMTChecker), "");
-
-	/// This is currently used to abort analysis of SourceUnits
-	/// containing file level functions or constants.
 	if (SMTEncoder::analyze(_source))
 	{
 		m_solvedTargets = move(_solvedTargets);
@@ -71,6 +66,7 @@ void BMC::analyze(SourceUnit const& _source, map<ASTNode const*, set<Verificatio
 		m_context.clear();
 		m_context.setAssertionAccumulation(true);
 		m_variableUsage.setFunctionInlining(shouldInlineFunctionCall);
+		createFreeConstants(sourceDependencies(_source));
 
 		_source.accept(*this);
 	}
@@ -100,9 +96,13 @@ void BMC::analyze(SourceUnit const& _source, map<ASTNode const*, set<Verificatio
 	m_errorReporter.clear();
 }
 
-bool BMC::shouldInlineFunctionCall(FunctionCall const& _funCall)
+bool BMC::shouldInlineFunctionCall(
+	FunctionCall const& _funCall,
+	ContractDefinition const* _scopeContract,
+	ContractDefinition const* _contextContract
+)
 {
-	FunctionDefinition const* funDef = functionCallToDefinition(_funCall);
+	auto funDef = functionCallToDefinition(_funCall, _scopeContract, _contextContract);
 	if (!funDef || !funDef->isImplemented())
 		return false;
 
@@ -137,8 +137,7 @@ void BMC::endVisit(ContractDefinition const& _contract)
 		inlineConstructorHierarchy(_contract);
 		popCallStack();
 		/// Check targets created by state variable initialization.
-		smtutil::Expression constraints = m_context.assertions();
-		checkVerificationTargets(constraints);
+		checkVerificationTargets();
 		m_verificationTargets.clear();
 	}
 
@@ -147,22 +146,28 @@ void BMC::endVisit(ContractDefinition const& _contract)
 
 bool BMC::visit(FunctionDefinition const& _function)
 {
+	// Free functions need to be visited in the context of a contract.
+	if (!m_currentContract)
+		return false;
+
 	auto contract = dynamic_cast<ContractDefinition const*>(_function.scope());
-	solAssert(contract, "");
-	solAssert(m_currentContract, "");
 	auto const& hierarchy = m_currentContract->annotation().linearizedBaseContracts;
-	if (find(hierarchy.begin(), hierarchy.end(), contract) == hierarchy.end())
+	if (contract && find(hierarchy.begin(), hierarchy.end(), contract) == hierarchy.end())
 		createStateVariables(*contract);
 
 	if (m_callStack.empty())
 	{
 		reset();
 		initFunction(_function);
+		m_context.addAssertion(state().txTypeConstraints() && state().txFunctionConstraints(_function));
 		resetStateVariables();
 	}
 
 	if (_function.isConstructor())
-		inlineConstructorHierarchy(dynamic_cast<ContractDefinition const&>(*_function.scope()));
+	{
+		solAssert(contract, "");
+		inlineConstructorHierarchy(*contract);
+	}
 
 	/// Already visits the children.
 	SMTEncoder::visit(_function);
@@ -172,10 +177,13 @@ bool BMC::visit(FunctionDefinition const& _function)
 
 void BMC::endVisit(FunctionDefinition const& _function)
 {
+	// Free functions need to be visited in the context of a contract.
+	if (!m_currentContract)
+		return;
+
 	if (isRootFunction())
 	{
-		smtutil::Expression constraints = m_context.assertions();
-		checkVerificationTargets(constraints);
+		checkVerificationTargets();
 		m_verificationTargets.clear();
 		m_pathConditions.clear();
 	}
@@ -194,7 +202,7 @@ bool BMC::visit(IfStatement const& _node)
 	// specific input values.
 	if (isRootFunction())
 		addVerificationTarget(
-			VerificationTarget::Type::ConstantCondition,
+			VerificationTargetType::ConstantCondition,
 			expr(_node.condition()),
 			&_node.condition()
 		);
@@ -204,22 +212,18 @@ bool BMC::visit(IfStatement const& _node)
 	auto conditionExpr = expr(_node.condition());
 	// visit true branch
 	auto [indicesEndTrue, trueEndPathCondition] = visitBranch(&_node.trueStatement(), conditionExpr);
-	auto touchedVars = touchedVariables(_node.trueStatement());
 
 	// visit false branch
 	decltype(indicesEndTrue) indicesEndFalse;
 	auto falseEndPathCondition = currentPathConditions() && !conditionExpr;
 	if (_node.falseStatement())
-	{
 		std::tie(indicesEndFalse, falseEndPathCondition) = visitBranch(_node.falseStatement(), !conditionExpr);
-		touchedVars += touchedVariables(*_node.falseStatement());
-	}
 	else
 		indicesEndFalse = copyVariableIndices();
 
 	// merge the information from branches
 	setPathCondition(trueEndPathCondition || falseEndPathCondition);
-	mergeVariables(touchedVars, expr(_node.condition()), indicesEndTrue, indicesEndFalse);
+	mergeVariables(expr(_node.condition()), indicesEndTrue, indicesEndFalse);
 
 	return false;
 }
@@ -231,7 +235,7 @@ bool BMC::visit(Conditional const& _op)
 
 	if (isRootFunction())
 		addVerificationTarget(
-			VerificationTarget::Type::ConstantCondition,
+			VerificationTargetType::ConstantCondition,
 			expr(_op.condition()),
 			&_op.condition()
 		);
@@ -254,8 +258,7 @@ bool BMC::visit(Conditional const& _op)
 bool BMC::visit(WhileStatement const& _node)
 {
 	auto indicesBeforeLoop = copyVariableIndices();
-	auto touchedVars = touchedVariables(_node);
-	m_context.resetVariables(touchedVars);
+	m_context.resetVariables(touchedVariables(_node));
 	decltype(indicesBeforeLoop) indicesAfterLoop;
 	if (_node.isDoWhile())
 	{
@@ -264,7 +267,7 @@ bool BMC::visit(WhileStatement const& _node)
 		_node.condition().accept(*this);
 		if (isRootFunction())
 			addVerificationTarget(
-				VerificationTarget::Type::ConstantCondition,
+				VerificationTargetType::ConstantCondition,
 				expr(_node.condition()),
 				&_node.condition()
 			);
@@ -274,7 +277,7 @@ bool BMC::visit(WhileStatement const& _node)
 		_node.condition().accept(*this);
 		if (isRootFunction())
 			addVerificationTarget(
-				VerificationTarget::Type::ConstantCondition,
+				VerificationTargetType::ConstantCondition,
 				expr(_node.condition()),
 				&_node.condition()
 			);
@@ -290,7 +293,7 @@ bool BMC::visit(WhileStatement const& _node)
 	if (!_node.isDoWhile())
 		_node.condition().accept(*this);
 
-	mergeVariables(touchedVars, expr(_node.condition()), indicesAfterLoop, copyVariableIndices());
+	mergeVariables(expr(_node.condition()), indicesAfterLoop, copyVariableIndices());
 
 	m_loopExecutionHappened = true;
 	return false;
@@ -318,7 +321,7 @@ bool BMC::visit(ForStatement const& _node)
 		_node.condition()->accept(*this);
 		if (isRootFunction())
 			addVerificationTarget(
-				VerificationTarget::Type::ConstantCondition,
+				VerificationTargetType::ConstantCondition,
 				expr(*_node.condition()),
 				_node.condition()
 			);
@@ -340,9 +343,40 @@ bool BMC::visit(ForStatement const& _node)
 		_node.condition()->accept(*this);
 
 	auto forCondition = _node.condition() ? expr(*_node.condition()) : smtutil::Expression(true);
-	mergeVariables(touchedVars, forCondition, indicesAfterLoop, copyVariableIndices());
+	mergeVariables(forCondition, indicesAfterLoop, copyVariableIndices());
 
 	m_loopExecutionHappened = true;
+	return false;
+}
+
+bool BMC::visit(TryStatement const& _tryStatement)
+{
+	FunctionCall const* externalCall = dynamic_cast<FunctionCall const*>(&_tryStatement.externalCall());
+	solAssert(externalCall && externalCall->annotation().tryCall, "");
+
+	externalCall->accept(*this);
+	if (_tryStatement.successClause()->parameters())
+		expressionToTupleAssignment(_tryStatement.successClause()->parameters()->parameters(), *externalCall);
+
+	smtutil::Expression clauseId = m_context.newVariable("clause_choice_" + to_string(m_context.newUniqueId()), smtutil::SortProvider::uintSort);
+	auto const& clauses = _tryStatement.clauses();
+	m_context.addAssertion(clauseId >= 0 && clauseId < clauses.size());
+	solAssert(clauses[0].get() == _tryStatement.successClause(), "First clause of TryStatement should be the success clause");
+	vector<pair<VariableIndices, smtutil::Expression>> clausesVisitResults;
+	for (size_t i = 0; i < clauses.size(); ++i)
+		clausesVisitResults.push_back(visitBranch(clauses[i].get()));
+
+	// merge the information from all clauses
+	smtutil::Expression pathCondition = clausesVisitResults.front().second;
+	auto currentIndices = clausesVisitResults[0].first;
+	for (size_t i = 1; i < clauses.size(); ++i)
+	{
+		mergeVariables(clauseId == i, clausesVisitResults[i].first, currentIndices);
+		currentIndices = copyVariableIndices();
+		pathCondition = pathCondition || clausesVisitResults[i].second;
+	}
+	setPathCondition(pathCondition);
+
 	return false;
 }
 
@@ -358,7 +392,7 @@ void BMC::endVisit(UnaryOperation const& _op)
 
 	if (_op.getOperator() == Token::Sub && smt::isInteger(*_op.annotation().type))
 		addVerificationTarget(
-			VerificationTarget::Type::UnderOverflow,
+			VerificationTargetType::UnderOverflow,
 			expr(_op),
 			&_op
 		);
@@ -401,10 +435,10 @@ void BMC::endVisit(FunctionCall const& _funCall)
 	{
 		auto value = _funCall.arguments().front();
 		solAssert(value, "");
-		smtutil::Expression thisBalance = m_context.state().balance();
+		smtutil::Expression thisBalance = state().balance();
 
 		addVerificationTarget(
-			VerificationTarget::Type::Balance,
+			VerificationTargetType::Balance,
 			thisBalance < expr(*value),
 			&_funCall
 		);
@@ -440,7 +474,7 @@ void BMC::visitAssert(FunctionCall const& _funCall)
 	solAssert(args.size() == 1, "");
 	solAssert(args.front()->annotation().type->category() == Type::Category::Bool, "");
 	addVerificationTarget(
-		VerificationTarget::Type::Assert,
+		VerificationTargetType::Assert,
 		expr(*args.front()),
 		&_funCall
 	);
@@ -453,7 +487,7 @@ void BMC::visitRequire(FunctionCall const& _funCall)
 	solAssert(args.front()->annotation().type->category() == Type::Category::Bool, "");
 	if (isRootFunction())
 		addVerificationTarget(
-			VerificationTarget::Type::ConstantCondition,
+			VerificationTargetType::ConstantCondition,
 			expr(*args.front()),
 			args.front().get()
 		);
@@ -463,7 +497,7 @@ void BMC::visitAddMulMod(FunctionCall const& _funCall)
 {
 	solAssert(_funCall.arguments().at(2), "");
 	addVerificationTarget(
-		VerificationTarget::Type::DivByZero,
+		VerificationTargetType::DivByZero,
 		expr(*_funCall.arguments().at(2)),
 		&_funCall
 	);
@@ -473,8 +507,8 @@ void BMC::visitAddMulMod(FunctionCall const& _funCall)
 
 void BMC::inlineFunctionCall(FunctionCall const& _funCall)
 {
-	solAssert(shouldInlineFunctionCall(_funCall), "");
-	FunctionDefinition const* funDef = functionCallToDefinition(_funCall);
+	solAssert(shouldInlineFunctionCall(_funCall, currentScopeContract(), m_currentContract), "");
+	auto funDef = functionCallToDefinition(_funCall, currentScopeContract(), m_currentContract);
 	solAssert(funDef, "");
 
 	if (visitedFunction(funDef))
@@ -488,23 +522,25 @@ void BMC::inlineFunctionCall(FunctionCall const& _funCall)
 	}
 	else
 	{
-		initializeFunctionCallParameters(*funDef, symbolicArguments(_funCall));
+		initializeFunctionCallParameters(*funDef, symbolicArguments(_funCall, m_currentContract));
 
 		// The reason why we need to pushCallStack here instead of visit(FunctionDefinition)
 		// is that there we don't have `_funCall`.
 		pushCallStack({funDef, &_funCall});
 		pushPathCondition(currentPathConditions());
+		auto oldChecked = std::exchange(m_checked, true);
 		funDef->accept(*this);
+		m_checked = oldChecked;
 		popPathCondition();
 	}
 
-	createReturnedExpressions(_funCall);
+	createReturnedExpressions(_funCall, m_currentContract);
 }
 
 void BMC::internalOrExternalFunctionCall(FunctionCall const& _funCall)
 {
 	auto const& funType = dynamic_cast<FunctionType const&>(*_funCall.expression().annotation().type);
-	if (shouldInlineFunctionCall(_funCall))
+	if (shouldInlineFunctionCall(_funCall, currentScopeContract(), m_currentContract))
 		inlineFunctionCall(_funCall);
 	else if (isPublicGetter(_funCall.expression()))
 	{
@@ -520,8 +556,7 @@ void BMC::internalOrExternalFunctionCall(FunctionCall const& _funCall)
 	else
 	{
 		m_externalFunctionCallHappened = true;
-		resetStateVariables();
-		resetStorageReferences();
+		resetStorageVariables();
 	}
 }
 
@@ -529,18 +564,22 @@ pair<smtutil::Expression, smtutil::Expression> BMC::arithmeticOperation(
 	Token _op,
 	smtutil::Expression const& _left,
 	smtutil::Expression const& _right,
-	TypePointer const& _commonType,
+	Type const* _commonType,
 	Expression const& _expression
 )
 {
+	// Unchecked does not disable div by 0 checks.
 	if (_op == Token::Div || _op == Token::Mod)
 		addVerificationTarget(
-			VerificationTarget::Type::DivByZero,
+			VerificationTargetType::DivByZero,
 			_right,
 			&_expression
 		);
 
 	auto values = SMTEncoder::arithmeticOperation(_op, _left, _right, _commonType, _expression);
+
+	if (!m_checked)
+		return values;
 
 	auto const* intType = dynamic_cast<IntegerType const*>(_commonType);
 	if (!intType)
@@ -550,24 +589,24 @@ pair<smtutil::Expression, smtutil::Expression> BMC::arithmeticOperation(
 	if (_op == Token::Mod)
 		return values;
 
-	VerificationTarget::Type type;
+	VerificationTargetType type;
 	// The order matters here:
 	// If _op is Div and intType is signed, we only care about overflow.
 	if (_op == Token::Div)
 	{
 		if (intType->isSigned())
 			// Signed division can only overflow.
-			type = VerificationTarget::Type::Overflow;
+			type = VerificationTargetType::Overflow;
 		else
 			// Unsigned division cannot underflow/overflow.
 			return values;
 	}
 	else if (intType->isSigned())
-		type = VerificationTarget::Type::UnderOverflow;
+		type = VerificationTargetType::UnderOverflow;
 	else if (_op == Token::Sub)
-		type = VerificationTarget::Type::Underflow;
+		type = VerificationTargetType::Underflow;
 	else if (_op == Token::Add || _op == Token::Mul)
-		type = VerificationTarget::Type::Overflow;
+		type = VerificationTargetType::Overflow;
 	else
 		solAssert(false, "");
 
@@ -577,11 +616,6 @@ pair<smtutil::Expression, smtutil::Expression> BMC::arithmeticOperation(
 		&_expression
 	);
 	return values;
-}
-
-void BMC::resetStorageReferences()
-{
-	m_context.resetVariables([&](VariableDeclaration const& _variable) { return _variable.hasReferenceOrMappingType(); });
 }
 
 void BMC::reset()
@@ -624,36 +658,36 @@ pair<vector<smtutil::Expression>, vector<string>> BMC::modelExpressions()
 
 /// Verification targets.
 
-void BMC::checkVerificationTargets(smtutil::Expression const& _constraints)
+void BMC::checkVerificationTargets()
 {
 	for (auto& target: m_verificationTargets)
-		checkVerificationTarget(target, _constraints);
+		checkVerificationTarget(target);
 }
 
-void BMC::checkVerificationTarget(BMCVerificationTarget& _target, smtutil::Expression const& _constraints)
+void BMC::checkVerificationTarget(BMCVerificationTarget& _target)
 {
 	switch (_target.type)
 	{
-		case VerificationTarget::Type::ConstantCondition:
+		case VerificationTargetType::ConstantCondition:
 			checkConstantCondition(_target);
 			break;
-		case VerificationTarget::Type::Underflow:
-			checkUnderflow(_target, _constraints);
+		case VerificationTargetType::Underflow:
+			checkUnderflow(_target);
 			break;
-		case VerificationTarget::Type::Overflow:
-			checkOverflow(_target, _constraints);
+		case VerificationTargetType::Overflow:
+			checkOverflow(_target);
 			break;
-		case VerificationTarget::Type::UnderOverflow:
-			checkUnderflow(_target, _constraints);
-			checkOverflow(_target, _constraints);
+		case VerificationTargetType::UnderOverflow:
+			checkUnderflow(_target);
+			checkOverflow(_target);
 			break;
-		case VerificationTarget::Type::DivByZero:
+		case VerificationTargetType::DivByZero:
 			checkDivByZero(_target);
 			break;
-		case VerificationTarget::Type::Balance:
+		case VerificationTargetType::Balance:
 			checkBalance(_target);
 			break;
-		case VerificationTarget::Type::Assert:
+		case VerificationTargetType::Assert:
 			checkAssert(_target);
 			break;
 		default:
@@ -671,18 +705,18 @@ void BMC::checkConstantCondition(BMCVerificationTarget& _target)
 	);
 }
 
-void BMC::checkUnderflow(BMCVerificationTarget& _target, smtutil::Expression const& _constraints)
+void BMC::checkUnderflow(BMCVerificationTarget& _target)
 {
 	solAssert(
-		_target.type == VerificationTarget::Type::Underflow ||
-			_target.type == VerificationTarget::Type::UnderOverflow,
+		_target.type == VerificationTargetType::Underflow ||
+			_target.type == VerificationTargetType::UnderOverflow,
 		""
 	);
 
 	if (
 		m_solvedTargets.count(_target.expression) && (
-			m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::Underflow) ||
-			m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::UnderOverflow)
+			m_solvedTargets.at(_target.expression).count(VerificationTargetType::Underflow) ||
+			m_solvedTargets.at(_target.expression).count(VerificationTargetType::UnderOverflow)
 		)
 	)
 		return;
@@ -692,7 +726,7 @@ void BMC::checkUnderflow(BMCVerificationTarget& _target, smtutil::Expression con
 		intType = TypeProvider::uint256();
 
 	checkCondition(
-		_target.constraints && _constraints && _target.value < smt::minValue(*intType),
+		_target.constraints && _target.value < smt::minValue(*intType),
 		_target.callStack,
 		_target.modelExpressions,
 		_target.expression->location(),
@@ -704,18 +738,18 @@ void BMC::checkUnderflow(BMCVerificationTarget& _target, smtutil::Expression con
 	);
 }
 
-void BMC::checkOverflow(BMCVerificationTarget& _target, smtutil::Expression const& _constraints)
+void BMC::checkOverflow(BMCVerificationTarget& _target)
 {
 	solAssert(
-		_target.type == VerificationTarget::Type::Overflow ||
-			_target.type == VerificationTarget::Type::UnderOverflow,
+		_target.type == VerificationTargetType::Overflow ||
+			_target.type == VerificationTargetType::UnderOverflow,
 		""
 	);
 
 	if (
 		m_solvedTargets.count(_target.expression) && (
-			m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::Overflow) ||
-			m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::UnderOverflow)
+			m_solvedTargets.at(_target.expression).count(VerificationTargetType::Overflow) ||
+			m_solvedTargets.at(_target.expression).count(VerificationTargetType::UnderOverflow)
 		)
 	)
 		return;
@@ -725,7 +759,7 @@ void BMC::checkOverflow(BMCVerificationTarget& _target, smtutil::Expression cons
 		intType = TypeProvider::uint256();
 
 	checkCondition(
-		_target.constraints && _constraints && _target.value > smt::maxValue(*intType),
+		_target.constraints && _target.value > smt::maxValue(*intType),
 		_target.callStack,
 		_target.modelExpressions,
 		_target.expression->location(),
@@ -739,11 +773,11 @@ void BMC::checkOverflow(BMCVerificationTarget& _target, smtutil::Expression cons
 
 void BMC::checkDivByZero(BMCVerificationTarget& _target)
 {
-	solAssert(_target.type == VerificationTarget::Type::DivByZero, "");
+	solAssert(_target.type == VerificationTargetType::DivByZero, "");
 
 	if (
 		m_solvedTargets.count(_target.expression) &&
-		m_solvedTargets.at(_target.expression).count(VerificationTarget::Type::DivByZero)
+		m_solvedTargets.at(_target.expression).count(VerificationTargetType::DivByZero)
 	)
 		return;
 
@@ -762,7 +796,7 @@ void BMC::checkDivByZero(BMCVerificationTarget& _target)
 
 void BMC::checkBalance(BMCVerificationTarget& _target)
 {
-	solAssert(_target.type == VerificationTarget::Type::Balance, "");
+	solAssert(_target.type == VerificationTargetType::Balance, "");
 	checkCondition(
 		_target.constraints && _target.value,
 		_target.callStack,
@@ -777,7 +811,7 @@ void BMC::checkBalance(BMCVerificationTarget& _target)
 
 void BMC::checkAssert(BMCVerificationTarget& _target)
 {
-	solAssert(_target.type == VerificationTarget::Type::Assert, "");
+	solAssert(_target.type == VerificationTargetType::Assert, "");
 
 	if (
 		m_solvedTargets.count(_target.expression) &&
@@ -797,11 +831,14 @@ void BMC::checkAssert(BMCVerificationTarget& _target)
 }
 
 void BMC::addVerificationTarget(
-	VerificationTarget::Type _type,
+	VerificationTargetType _type,
 	smtutil::Expression const& _value,
 	Expression const* _expression
 )
 {
+	if (!m_settings.targets.has(_type) || (m_currentContract && !shouldAnalyze(*m_currentContract)))
+		return;
+
 	BMCVerificationTarget target{
 		{
 			_type,
@@ -812,7 +849,7 @@ void BMC::addVerificationTarget(
 		m_callStack,
 		modelExpressions()
 	};
-	if (_type == VerificationTarget::Type::ConstantCondition)
+	if (_type == VerificationTargetType::ConstantCondition)
 		checkVerificationTarget(target);
 	else
 		m_verificationTargets.emplace_back(move(target));

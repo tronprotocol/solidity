@@ -5,7 +5,7 @@ Layout of a Solidity Source File
 Source files can contain an arbitrary number of
 :ref:`contract definitions<contract_structure>`, import_ directives,
 :ref:`pragma directives<pragma>` and
-:ref:`struct<structs>`, :ref:`enum<enums>`, :ref:`function<functions>`
+:ref:`struct<structs>`, :ref:`enum<enums>`, :ref:`function<functions>`, :ref:`error<errors>`
 and :ref:`constant variable<constants>` definitions.
 
 .. index:: ! license, spdx
@@ -49,7 +49,7 @@ Pragmas
 
 The ``pragma`` keyword is used to enable certain compiler features
 or checks. A pragma directive is always local to a source file, so
-you have to add the pragma to all your files if you want enable it
+you have to add the pragma to all your files if you want to enable it
 in your whole project. If you :ref:`import<import>` another file, the pragma
 from that file does *not* automatically apply to the importing file.
 
@@ -79,7 +79,7 @@ be sure that your code compiles the way you intended. The exact version of the
 compiler is not fixed, so that bugfix releases are still possible.
 
 It is possible to specify more complex rules for the compiler version,
-these follow the same syntax used by `npm <https://docs.npmjs.com/misc/semver>`_.
+these follow the same syntax used by `npm <https://docs.npmjs.com/cli/v6/using-npm/semver>`_.
 
 .. note::
   Using the version pragma *does not* change the version of the compiler.
@@ -163,7 +163,7 @@ The component does not yet support all features of the Solidity language and
 likely outputs many warnings. In case it reports unsupported features, the
 analysis may not be fully sound.
 
-.. index:: source file, ! import, module
+.. index:: source file, ! import, module, source unit
 
 .. _import:
 
@@ -184,6 +184,7 @@ At a global level, you can use import statements of the following form:
 
   import "filename";
 
+The ``filename`` part is called an *import path*.
 This statement imports all global symbols from "filename" (and symbols imported there) into the
 current global scope (different than in ES6 but backwards-compatible for Solidity).
 This form is not recommended for use, because it unpredictably pollutes the namespace.
@@ -216,101 +217,34 @@ the code below creates new global symbols ``alias`` and ``symbol2`` which refere
 
   import {symbol1 as alias, symbol2} from "filename";
 
-Paths
------
+.. index:: virtual filesystem, source unit name, import; path, filesystem path, import callback, Remix IDE
 
-In the above, ``filename`` is always treated as a path with ``/`` as directory separator,
-and ``.`` as the current and ``..`` as the parent directory.  When ``.`` or ``..`` is followed by a character except ``/``,
-it is not considered as the current or the parent directory.
-All path names are treated as absolute paths unless they start with the current ``.`` or the parent directory ``..``.
+Import Paths
+------------
 
-To import a file ``filename`` from the same directory as the current file, use ``import "./filename" as symbolName;``.
-If you use ``import "filename" as symbolName;`` instead, a different file could be referenced
-(in a global "include directory").
+In order to be able to support reproducible builds on all platforms, the Solidity compiler has to
+abstract away the details of the filesystem where source files are stored.
+For this reason import paths do not refer directly to files in the host filesystem.
+Instead the compiler maintains an internal database (*virtual filesystem* or *VFS* for short) where
+each source unit is assigned a unique *source unit name* which is an opaque and unstructured identifier.
+The import path specified in an import statement is translated into a source unit name and used to
+find the corresponding source unit in this database.
 
-It depends on the compiler (see :ref:`import-compiler`) how to actually resolve the paths.
-In general, the directory hierarchy does not need to strictly map onto your local
-filesystem, and the path can also map to resources such as ipfs, http or git.
+Using the :ref:`Standard JSON <compiler-api>` API it is possible to directly provide the names and
+content of all the source files as a part of the compiler input.
+In this case source unit names are truly arbitrary.
+If, however, you want the compiler to automatically find and load source code into the VFS, your
+source unit names need to be structured in a way that makes it possible for an :ref:`import callback
+<import-callback>` to locate them.
+When using the command-line compiler the default import callback supports only loading source code
+from the host filesystem, which means that your source unit names must be paths.
+Some environments provide custom callbacks that are more versatile.
+For example the `Remix IDE <https://remix.ethereum.org/>`_ provides one that
+lets you `import files from HTTP, IPFS and Swarm URLs or refer directly to packages in NPM registry
+<https://remix-ide.readthedocs.io/en/latest/import.html>`_.
 
-.. note::
-    Always use relative imports like ``import "./filename.sol";`` and avoid
-    using ``..`` in path specifiers. In the latter case, it is probably better to use
-    global paths and set up remappings as explained below.
-
-.. _import-compiler:
-
-Use in Actual Compilers
------------------------
-
-When invoking the compiler, you can specify how to discover the first element
-of a path, and also path prefix remappings. For
-example you can setup a remapping so that everything imported from the virtual
-directory ``github.com/ethereum/dapp-bin/library`` would actually be read from
-your local directory ``/usr/local/dapp-bin/library``.
-If multiple remappings apply, the one with the longest key is tried first.
-An empty prefix is not allowed. The remappings can depend on a context,
-which allows you to configure packages to import e.g., different versions of a
-library of the same name.
-
-**solc**:
-
-For solc (the commandline compiler), you provide these path remappings as
-``context:prefix=target`` arguments, where both the ``context:`` and the
-``=target`` parts are optional (``target`` defaults to ``prefix`` in this
-case). All remapping values that are regular files are compiled (including
-their dependencies).
-
-This mechanism is backwards-compatible (as long
-as no filename contains ``=`` or ``:``) and thus not a breaking change. All
-files in or below the ``context`` directory that import a file that starts with
-``prefix`` are redirected by replacing ``prefix`` by ``target``.
-
-For example, if you clone ``github.com/ethereum/dapp-bin/`` locally to
-``/usr/local/dapp-bin``, you can use the following in your source file:
-
-::
-
-  import "github.com/ethereum/dapp-bin/library/iterable_mapping.sol" as it_mapping;
-
-Then run the compiler:
-
-.. code-block:: bash
-
-  solc github.com/ethereum/dapp-bin/=/usr/local/dapp-bin/ source.sol
-
-As a more complex example, suppose you rely on a module that uses an old
-version of dapp-bin that you checked out to ``/usr/local/dapp-bin_old``, then you can run:
-
-.. code-block:: bash
-
-  solc module1:github.com/ethereum/dapp-bin/=/usr/local/dapp-bin/ \
-       module2:github.com/ethereum/dapp-bin/=/usr/local/dapp-bin_old/ \
-       source.sol
-
-This means that all imports in ``module2`` point to the old version but imports
-in ``module1`` point to the new version.
-
-.. note::
-
-  ``solc`` only allows you to include files from certain directories. They have
-  to be in the directory (or subdirectory) of one of the explicitly specified
-  source files or in the directory (or subdirectory) of a remapping target. If
-  you want to allow direct absolute includes, add the remapping ``/=/``.
-
-If there are multiple remappings that lead to a valid file, the remapping
-with the longest common prefix is chosen.
-
-**Remix**:
-
-`Remix <https://remix.ethereum.org/>`_ provides an automatic remapping for
-GitHub and automatically retrieves the file over the network. You can import
-the iterable mapping as above,  e.g.
-
-::
-
-  import "github.com/ethereum/dapp-bin/library/iterable_mapping.sol" as it_mapping;
-
-Remix may add other source code providers in the future.
+For a complete description of the virtual filesystem and the path resolution logic used by the
+compiler see :ref:`Path Resolution <path-resolution>`.
 
 .. index:: ! comment, natspec
 
@@ -330,36 +264,11 @@ Single-line comments (``//``) and multi-line comments (``/*...*/``) are possible
 
 .. note::
   A single-line comment is terminated by any unicode line terminator
-  (LF, VF, FF, CR, NEL, LS or PS) in utf8 encoding. The terminator is still part of
-  the source code after the comment, so if it is not an ascii symbol
+  (LF, VF, FF, CR, NEL, LS or PS) in UTF-8 encoding. The terminator is still part of
+  the source code after the comment, so if it is not an ASCII symbol
   (these are NEL, LS and PS), it will lead to a parser error.
 
-Additionally, there is another type of comment called a natspec comment,
-which is detailed in the :ref:`style guide<natspec>`. They are written with a
-triple slash (``///``) or a double asterisk block(``/** ... */``) and
+Additionally, there is another type of comment called a NatSpec comment,
+which is detailed in the :ref:`style guide<style_guide_natspec>`. They are written with a
+triple slash (``///``) or a double asterisk block (``/** ... */``) and
 they should be used directly above function declarations or statements.
-You can use `Doxygen <https://en.wikipedia.org/wiki/Doxygen>`_-style tags inside these comments to document
-functions, annotate conditions for formal verification, and provide a
-**confirmation text** which is shown to users when they attempt to invoke a
-function.
-
-In the following example we document the title of the contract, the explanation
-for the two function parameters and two return variables.
-
-::
-
-    // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.4.21 <0.9.0;
-
-    /** @title Shape calculator. */
-    contract ShapeCalculator {
-        /// @dev Calculates a rectangle's surface and perimeter.
-        /// @param w Width of the rectangle.
-        /// @param h Height of the rectangle.
-        /// @return s The calculated surface.
-        /// @return p The calculated perimeter.
-        function rectangle(uint w, uint h) public pure returns (uint s, uint p) {
-            s = w * h;
-            p = 2 * (w + h);
-        }
-    }

@@ -33,8 +33,13 @@
 # - /usr/local/Cellar
 # - /usr/local/Homebrew
 
+set -eu
+
 if [ ! -f /usr/local/lib/libz3.a ] # if this file does not exists (cache was not restored), rebuild dependencies
 then
+  git -C /usr/local/Homebrew/Library/Taps/homebrew/homebrew-core fetch --unshallow
+  git -C /usr/local/Homebrew/Library/Taps/homebrew/homebrew-cask fetch --unshallow
+  brew update
   brew unlink python
   brew install boost
   brew install cmake
@@ -43,21 +48,21 @@ then
   ./scripts/install_obsolete_jsoncpp_1_7_4.sh
 
   # z3
-  wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.9/z3-4.8.9-x64-osx-10.14.6.zip
-  unzip z3-4.8.9-x64-osx-10.14.6.zip
-  rm -f z3-4.8.9-x64-osx-10.14.6.zip
-  cp z3-4.8.9-x64-osx-10.14.6/bin/libz3.a /usr/local/lib
-  cp z3-4.8.9-x64-osx-10.14.6/bin/z3 /usr/local/bin
-  cp z3-4.8.9-x64-osx-10.14.6/include/* /usr/local/include
-  rm -rf z3-4.8.9-x64-osx-10.14.6
+  wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.10/z3-4.8.10-x64-osx-10.15.7.zip
+  unzip z3-4.8.10-x64-osx-10.15.7.zip
+  rm -f z3-4.8.10-x64-osx-10.15.7.zip
+  cp z3-4.8.10-x64-osx-10.15.7/bin/libz3.a /usr/local/lib
+  cp z3-4.8.10-x64-osx-10.15.7/bin/z3 /usr/local/bin
+  cp z3-4.8.10-x64-osx-10.15.7/include/* /usr/local/include
+  rm -rf z3-4.8.10-x64-osx-10.15.7
 
   # evmone
-  wget https://github.com/ethereum/evmone/releases/download/v0.4.0/evmone-0.4.0-darwin-x86_64.tar.gz
-  tar xzpf evmone-0.4.0-darwin-x86_64.tar.gz -C /usr/local
-  rm -f evmone-0.4.0-darwin-x86_64.tar.gz
+  wget https://github.com/ethereum/evmone/releases/download/v0.7.0/evmone-0.7.0-darwin-x86_64.tar.gz
+  tar xzpf evmone-0.7.0-darwin-x86_64.tar.gz -C /usr/local
+  rm -f evmone-0.7.0-darwin-x86_64.tar.gz
 
   # hera
-  wget https://github.com/ewasm/hera/releases/download/v0.3.2/hera-0.3.2-darwin-x86_64.tar.gz
-  tar xzpf hera-0.3.2-darwin-x86_64.tar.gz -C /usr/local
-  rm -f hera-0.3.2-darwin-x86_64.tar.gz
+  wget https://github.com/ewasm/hera/releases/download/v0.3.2-evmc8/hera-0.3.2+commit.dc886eb7-darwin-x86_64.tar.gz
+  tar xzpf hera-0.3.2+commit.dc886eb7-darwin-x86_64.tar.gz -C /usr/local
+  rm -f hera-0.3.2+commit.dc886eb7-darwin-x86_64.tar.gz
 fi

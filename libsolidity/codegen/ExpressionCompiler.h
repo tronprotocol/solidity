@@ -31,7 +31,6 @@
 #include <liblangutil/SourceLocation.h>
 #include <libsolutil/Common.h>
 
-#include <boost/noncopyable.hpp>
 #include <functional>
 #include <memory>
 
@@ -40,7 +39,8 @@ namespace solidity::evmasm
 class AssemblyItem; // forward
 }
 
-namespace solidity::frontend {
+namespace solidity::frontend
+{
 
 // forward declarations
 class CompilerContext;

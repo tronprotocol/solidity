@@ -26,13 +26,12 @@
 #include <libsolidity/formal/BMC.h>
 #include <libsolidity/formal/CHC.h>
 #include <libsolidity/formal/EncodingContext.h>
+#include <libsolidity/formal/ModelCheckerSettings.h>
 
 #include <libsolidity/interface/ReadFile.h>
 
 #include <libsmtutil/SolverInterface.h>
 #include <liblangutil/ErrorReporter.h>
-
-#include <optional>
 
 namespace solidity::langutil
 {
@@ -42,40 +41,6 @@ struct SourceLocation;
 
 namespace solidity::frontend
 {
-
-struct ModelCheckerEngine
-{
-	bool bmc = false;
-	bool chc = false;
-
-	static constexpr ModelCheckerEngine All() { return {true, true}; }
-	static constexpr ModelCheckerEngine BMC() { return {true, false}; }
-	static constexpr ModelCheckerEngine CHC() { return {false, true}; }
-	static constexpr ModelCheckerEngine None() { return {false, false}; }
-
-	bool none() const { return !any(); }
-	bool any() const { return bmc || chc; }
-	bool all() const { return bmc && chc; }
-
-	static std::optional<ModelCheckerEngine> fromString(std::string const& _engine)
-	{
-		static std::map<std::string, ModelCheckerEngine> engineMap{
-			{"all", All()},
-			{"bmc", BMC()},
-			{"chc", CHC()},
-			{"none", None()}
-		};
-		if (engineMap.count(_engine))
-			return engineMap.at(_engine);
-		return {};
-	}
-};
-
-struct ModelCheckerSettings
-{
-	ModelCheckerEngine engine = ModelCheckerEngine::All();
-	std::optional<unsigned> timeout;
-};
 
 class ModelChecker
 {
@@ -90,6 +55,13 @@ public:
 		smtutil::SMTSolverChoice _enabledSolvers = smtutil::SMTSolverChoice::All()
 	);
 
+	// TODO This should be removed for 0.9.0.
+	void enableAllEnginesIfPragmaPresent(std::vector<std::shared_ptr<SourceUnit>> const& _sources);
+
+	/// Generates error messages if the requested sources and contracts
+	/// do not exist.
+	void checkRequestedSourcesAndContracts(std::vector<std::shared_ptr<SourceUnit>> const& _sources);
+
 	void analyze(SourceUnit const& _sources);
 
 	/// This is used if the SMT solver is not directly linked into this binary.
@@ -101,6 +73,8 @@ public:
 	static smtutil::SMTSolverChoice availableSolvers();
 
 private:
+	langutil::ErrorReporter& m_errorReporter;
+
 	ModelCheckerSettings m_settings;
 
 	/// Stores the context of the encoding.

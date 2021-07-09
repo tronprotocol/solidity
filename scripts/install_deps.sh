@@ -51,7 +51,7 @@ uname -v > /dev/null 2>&1 || { echo >&2 "ERROR - solidity requires 'uname' to id
 
 # See http://unix.stackexchange.com/questions/92199/how-can-i-reliably-get-the-operating-systems-name
 detect_linux_distro() {
-    if [ $(command -v lsb_release) ]; then
+    if [ "$(command -v lsb_release)" ]; then
         DISTRO=$(lsb_release -is)
     elif [ -f /etc/os-release ]; then
         # extract 'foo' from NAME=foo, only on the line with NAME=foo
@@ -61,7 +61,7 @@ detect_linux_distro() {
     else
         DISTRO=''
     fi
-    echo $DISTRO
+    echo "$DISTRO"
 }
 
 case $(uname -s) in
@@ -93,9 +93,12 @@ case $(uname -s) in
             10.15)
                 echo "Installing solidity dependencies on macOS 10.15 Catalina."
                 ;;
+            11.0 | 11.1 | 11.2 | 11.3 | 11.4)
+                echo "Installing solidity dependencies on macOS 11.0 / 11.1 / 11.2 / 11.3 / 11.4 Big Sur."
+                ;;
             *)
                 echo "Unsupported macOS version."
-                echo "We only support Mavericks, Yosemite, El Capitan, Sierra, High Sierra, Mojave, and Catalina."
+                echo "We only support Mavericks, Yosemite, El Capitan, Sierra, High Sierra, Mojave, Catalina, and Big Sur."
                 exit 1
                 ;;
         esac
@@ -172,6 +175,7 @@ case $(uname -s) in
 
             Debian*|Raspbian)
                 #Debian
+                # shellcheck disable=SC1091
                 . /etc/os-release
                 install_z3=""
                 case $VERSION_ID in
@@ -318,7 +322,7 @@ case $(uname -s) in
                         ;;
                     *)
                         #other Ubuntu
-                        echo "ERROR - Unknown or unsupported Ubuntu version (" $(lsb_release -cs) ")"
+                        echo "ERROR - Unknown or unsupported Ubuntu version ($(lsb_release -cs))"
                         echo "ERROR - This might not work, but we are trying anyway."
                         echo "Please drop us a message at https://gitter.im/ethereum/solidity-dev."
                         echo "We only support Trusty, Utopic, Vivid, Wily, Xenial, Yakkety, Zesty, Artful and Bionic."
@@ -351,7 +355,10 @@ case $(uname -s) in
 #------------------------------------------------------------------------------
             CentOS*)
                 echo "Attention: CentOS 7 is currently not supported!";
+                # FIXME: read -p and [[ ]] are bash features but our shebang says we're using sh
+                # shellcheck disable=SC2039
                 read -p "This script will heavily modify your system in order to allow for compilation of Solidity. Are you sure? [Y/N]" -n 1 -r
+                # shellcheck disable=SC2039
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
                     # Make Sure we have the EPEL repos
                     sudo yum -y install epel-release

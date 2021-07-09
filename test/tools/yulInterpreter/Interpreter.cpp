@@ -34,8 +34,9 @@
 
 #include <libsolutil/FixedHash.h>
 
-#include <boost/range/adaptor/reversed.hpp>
 #include <boost/algorithm/cxx11/all_of.hpp>
+
+#include <range/v3/view/reverse.hpp>
 
 #include <ostream>
 #include <variant>
@@ -46,6 +47,13 @@ using namespace solidity::yul;
 using namespace solidity::yul::test;
 
 using solidity::util::h256;
+
+void InterpreterState::dumpStorage(ostream& _out) const
+{
+	for (auto const& slot: storage)
+		if (slot.second != h256{})
+			_out << "  " << slot.first.hex() << ": " << slot.second.hex() << endl;
+}
 
 void InterpreterState::dumpTraceAndState(ostream& _out) const
 {
@@ -60,9 +68,7 @@ void InterpreterState::dumpTraceAndState(ostream& _out) const
 		if (value != 0)
 			_out << "  " << std::uppercase << std::hex << std::setw(4) << offset << ": " << h256(value).hex() << endl;
 	_out << "Storage dump:" << endl;
-	for (auto const& slot: storage)
-		if (slot.second != h256{})
-			_out << "  " << slot.first.hex() << ": " << slot.second.hex() << endl;
+	dumpStorage(_out);
 }
 
 void Interpreter::run(InterpreterState& _state, Dialect const& _dialect, Block const& _ast)
@@ -241,7 +247,7 @@ void Interpreter::incrementStep()
 	if (m_state.maxSteps > 0 && m_state.numSteps >= m_state.maxSteps)
 	{
 		m_state.trace.emplace_back("Interpreter execution step limit reached.");
-		throw StepLimitReached();
+		BOOST_THROW_EXCEPTION(StepLimitReached());
 	}
 }
 
@@ -332,7 +338,7 @@ void ExpressionEvaluator::evaluateArgs(
 	vector<u256> values;
 	size_t i = 0;
 	/// Function arguments are evaluated in reverse.
-	for (auto const& expr: _expr | boost::adaptors::reversed)
+	for (auto const& expr: _expr | ranges::views::reverse)
 	{
 		if (!_literalArguments || !_literalArguments->at(_expr.size() - i - 1))
 			visit(expr);
@@ -351,6 +357,6 @@ void ExpressionEvaluator::incrementStep()
 	if (m_state.maxExprNesting > 0 && m_nestingLevel > m_state.maxExprNesting)
 	{
 		m_state.trace.emplace_back("Maximum expression nesting level reached.");
-		throw ExpressionNestingLimitReached();
+		BOOST_THROW_EXCEPTION(ExpressionNestingLimitReached());
 	}
 }

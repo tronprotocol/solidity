@@ -26,7 +26,6 @@
 #include <boost/filesystem.hpp>
 
 #include <iostream>
-#include <cstdlib>
 #include <fstream>
 #if defined(_WIN32)
 #include <windows.h>
@@ -137,7 +136,11 @@ string solidity::util::absolutePath(string const& _path, string const& _referenc
 	if (p.begin() == p.end() || (*p.begin() != "." && *p.begin() != ".."))
 		return _path;
 	boost::filesystem::path result(_reference);
-	result.remove_filename();
+
+	// If filename is "/", then remove_filename() throws.
+	// See: https://github.com/boostorg/filesystem/issues/176
+	if (result.filename() != boost::filesystem::path("/"))
+		result.remove_filename();
 	for (boost::filesystem::path::iterator it = p.begin(); it != p.end(); ++it)
 		if (*it == "..")
 			result = result.parent_path();

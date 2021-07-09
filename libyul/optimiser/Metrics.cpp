@@ -19,16 +19,14 @@
 */
 
 #include <libyul/optimiser/Metrics.h>
+#include <libyul/optimiser/OptimizerUtilities.h>
 
 #include <libyul/AST.h>
 #include <libyul/Exceptions.h>
 #include <libyul/Utilities.h>
-#include <libyul/backends/evm/EVMDialect.h>
 
 #include <libevmasm/Instruction.h>
-#include <libevmasm/GasMeter.h>
 
-#include <libsolutil/Visitor.h>
 #include <libsolutil/CommonData.h>
 
 using namespace std;
@@ -70,8 +68,14 @@ size_t CodeWeights::costOf(Expression const& _expression) const
 		return functionCallCost;
 	else if (holds_alternative<Identifier>(_expression))
 		return identifierCost;
-	else if (holds_alternative<Literal>(_expression))
-		return literalCost;
+	else if (Literal const* literal = get_if<Literal>(&_expression))
+	{
+		// Avoid strings because they could be longer than 32 bytes.
+		if (literal->kind != LiteralKind::String && valueOfLiteral(*literal) == 0)
+			return literalZeroCost;
+		else
+			return literalCost;
+	}
 	else
 		yulAssert(false, "If you add a new expression type, you must update CodeWeights.");
 }
@@ -133,13 +137,11 @@ void CodeCost::operator()(FunctionCall const& _funCall)
 {
 	ASTWalker::operator()(_funCall);
 
-	if (EVMDialect const* dialect = dynamic_cast<EVMDialect const*>(&m_dialect))
-		if (BuiltinFunctionForEVM const* f = dialect->builtin(_funCall.functionName.name))
-			if (f->instruction)
-			{
-				addInstructionCost(*f->instruction);
-				return;
-			}
+	if (auto instruction = toEVMInstruction(m_dialect, _funCall.functionName.name))
+	{
+		addInstructionCost(*instruction);
+		return;
+	}
 
 	m_cost += 49;
 }

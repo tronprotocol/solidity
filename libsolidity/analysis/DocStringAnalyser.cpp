@@ -25,8 +25,9 @@
 #include <libsolidity/analysis/DocStringAnalyser.h>
 
 #include <libsolidity/ast/AST.h>
-#include <libsolidity/parsing/DocStringParser.h>
 #include <liblangutil/ErrorReporter.h>
+
+#include <boost/algorithm/string.hpp>
 
 using namespace std;
 using namespace solidity;
@@ -55,8 +56,8 @@ void copyMissingTags(set<CallableDeclaration const*> const& _baseFunctions, Stru
 	for (auto it = sourceDoc.docTags.begin(); it != sourceDoc.docTags.end();)
 	{
 		string const& tag = it->first;
-		// Don't copy tag "inheritdoc" or already existing tags
-		if (tag == "inheritdoc" || _target.docTags.count(tag))
+		// Don't copy tag "inheritdoc", custom tags or already existing tags
+		if (tag == "inheritdoc" || _target.docTags.count(tag) || boost::starts_with(tag, "custom"))
 		{
 			it++;
 			continue;
@@ -153,6 +154,13 @@ bool DocStringAnalyser::visit(ModifierDefinition const& _modifier)
 bool DocStringAnalyser::visit(EventDefinition const& _event)
 {
 	handleCallable(_event, _event, _event.annotation());
+
+	return true;
+}
+
+bool DocStringAnalyser::visit(ErrorDefinition const& _error)
+{
+	handleCallable(_error, _error, _error.annotation());
 
 	return true;
 }

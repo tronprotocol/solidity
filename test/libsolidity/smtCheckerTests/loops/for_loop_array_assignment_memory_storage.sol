@@ -1,15 +1,20 @@
-pragma experimental SMTChecker;
-
 contract LoopFor2 {
 	uint[] a;
-
+	function p() public {
+		a.push();
+	}
 	function testUnboundedForLoop(uint n, uint[] memory b, uint[] memory c) public {
+		require(n < a.length);
+		require(n < b.length);
+		require(n < c.length);
+		require(n > 0 && n < 100);
 		b[0] = 900;
 		a = b;
-		require(n > 0 && n < 100);
 		for (uint i = 0; i < n; i += 1) {
+			// Accesses are safe but oob is reported due to potential aliasing after c's assignment.
 			b[i] = i + 1;
-			c[i] = b[i];
+			// Disabled because of Spacer's nondeterminism.
+			//c[i] = b[i];
 		}
 		// Removed because current Spacer seg faults in cex generation.
 		//assert(b[0] == c[0]);
@@ -18,7 +23,6 @@ contract LoopFor2 {
 	}
 }
 // ====
+// SMTEngine: all
 // SMTSolvers: z3
 // ----
-// Warning 4984: (245-250): CHC: Overflow (resulting value larger than 2**256 - 1) might happen here.
-// Warning 4984: (225-231): CHC: Overflow (resulting value larger than 2**256 - 1) might happen here.

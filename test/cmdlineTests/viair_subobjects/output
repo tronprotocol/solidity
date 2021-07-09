@@ -1,16 +1,16 @@
 
 ======= viair_subobjects/input.sol:C =======
 Binary:
-60806040523415600f5760006000fd5b600a80601e600039806000f350fe608060405260006000fd
+<BYTECODE REMOVED>
 Binary of the runtime part:
-
+<BYTECODE REMOVED>
 Optimized IR:
-/*******************************************************
+/*=====================================================*
  *                       WARNING                       *
  *  Solidity to Yul compilation is still EXPERIMENTAL  *
  *       It can result in LOSS OF FUNDS or worse       *
  *                !USE AT YOUR OWN RISK!               *
- *******************************************************/
+ *=====================================================*/
 
 object "C_3" {
     code {
@@ -18,8 +18,8 @@ object "C_3" {
             mstore(64, 128)
             if callvalue() { revert(0, 0) }
             let _1 := datasize("C_3_deployed")
-            codecopy(0, dataoffset("C_3_deployed"), _1)
-            return(0, _1)
+            codecopy(128, dataoffset("C_3_deployed"), _1)
+            return(128, _1)
         }
     }
     object "C_3_deployed" {
@@ -29,22 +29,23 @@ object "C_3" {
                 revert(0, 0)
             }
         }
+        data ".metadata" hex"<BYTECODE REMOVED>"
     }
 }
 
 
 ======= viair_subobjects/input.sol:D =======
 Binary:
-608060405234156100105760006000fd5b61010680610021600039806000f350fe6080604052600436101515610088576000803560e01c6326121ff0141561008657341561002a578081fd5b806003193601121561003a578081fd5b6028806080016080811067ffffffffffffffff8211171561005e5761005d6100c4565b5b50806100de60803980608083f01515610079573d82833e3d82fd5b508061008482610092565bf35b505b60006000fd6100dc565b6000604051905081810181811067ffffffffffffffff821117156100b9576100b86100c4565b5b80604052505b919050565b634e487b7160e01b600052604160045260246000fd5b565bfe60806040523415600f5760006000fd5b600a80601e600039806000f350fe608060405260006000fd
+<BYTECODE REMOVED>
 Binary of the runtime part:
-
+<BYTECODE REMOVED>
 Optimized IR:
-/*******************************************************
+/*=====================================================*
  *                       WARNING                       *
  *  Solidity to Yul compilation is still EXPERIMENTAL  *
  *       It can result in LOSS OF FUNDS or worse       *
  *                !USE AT YOUR OWN RISK!               *
- *******************************************************/
+ *=====================================================*/
 
 object "D_16" {
     code {
@@ -52,8 +53,8 @@ object "D_16" {
             mstore(64, 128)
             if callvalue() { revert(0, 0) }
             let _1 := datasize("D_16_deployed")
-            codecopy(0, dataoffset("D_16_deployed"), _1)
-            return(0, _1)
+            codecopy(128, dataoffset("D_16_deployed"), _1)
+            return(128, _1)
         }
     }
     object "D_16_deployed" {
@@ -69,30 +70,23 @@ object "D_16" {
                         if slt(add(calldatasize(), not(3)), _1) { revert(_1, _1) }
                         let _2 := datasize("C_3")
                         let _3 := add(128, _2)
-                        if or(gt(_3, 0xffffffffffffffff), lt(_3, 128)) { panic_error_0x41() }
+                        if or(gt(_3, 0xffffffffffffffff), lt(_3, 128))
+                        {
+                            mstore(_1, shl(224, 0x4e487b71))
+                            mstore(4, 0x41)
+                            revert(_1, 0x24)
+                        }
                         datacopy(128, dataoffset("C_3"), _2)
                         if iszero(create(_1, 128, _2))
                         {
-                            returndatacopy(_1, _1, returndatasize())
-                            revert(_1, returndatasize())
+                            let pos := mload(64)
+                            returndatacopy(pos, _1, returndatasize())
+                            revert(pos, returndatasize())
                         }
-                        return(allocateMemory(_1), _1)
+                        return(mload(64), _1)
                     }
                 }
                 revert(0, 0)
-            }
-            function allocateMemory(size) -> memPtr
-            {
-                memPtr := mload(64)
-                let newFreePtr := add(memPtr, size)
-                if or(gt(newFreePtr, 0xffffffffffffffff), lt(newFreePtr, memPtr)) { panic_error_0x41() }
-                mstore(64, newFreePtr)
-            }
-            function panic_error_0x41()
-            {
-                mstore(0, shl(224, 0x4e487b71))
-                mstore(4, 0x41)
-                revert(0, 0x24)
             }
         }
         object "C_3" {
@@ -101,8 +95,8 @@ object "D_16" {
                     mstore(64, 128)
                     if callvalue() { revert(0, 0) }
                     let _1 := datasize("C_3_deployed")
-                    codecopy(0, dataoffset("C_3_deployed"), _1)
-                    return(0, _1)
+                    codecopy(128, dataoffset("C_3_deployed"), _1)
+                    return(128, _1)
                 }
             }
             object "C_3_deployed" {
@@ -112,7 +106,9 @@ object "D_16" {
                         revert(0, 0)
                     }
                 }
+                data ".metadata" hex"<BYTECODE REMOVED>"
             }
         }
+        data ".metadata" hex"<BYTECODE REMOVED>"
     }
 }

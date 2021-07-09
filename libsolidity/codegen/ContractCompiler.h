@@ -117,6 +117,7 @@ private:
 	bool visit(Return const& _return) override;
 	bool visit(Throw const& _throw) override;
 	bool visit(EmitStatement const& _emit) override;
+	bool visit(RevertStatement const& _revert) override;
 	bool visit(VariableDeclarationStatement const& _variableDeclarationStatement) override;
 	bool visit(ExpressionStatement const& _expressionStatement) override;
 	bool visit(PlaceholderStatement const&) override;
@@ -134,7 +135,7 @@ private:
 	/// If the default value is complex (needs memory allocation) and @a _provideDefaultValue
 	/// is false, this might be skipped.
 	void appendStackVariableInitialisation(VariableDeclaration const& _variable, bool _provideDefaultValue);
-	void compileExpression(Expression const& _expression, TypePointer const& _targetType = TypePointer());
+	void compileExpression(Expression const& _expression, Type const* _targetType = nullptr);
 
 	/// Frees the variables of a certain scope (to be used when leaving).
 	void popScopedVariables(ASTNode const* _node);

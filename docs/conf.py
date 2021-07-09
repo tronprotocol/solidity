@@ -26,10 +26,10 @@ from pygments_lexer_solidity import SolidityLexer, YulLexer
 def setup(sphinx):
     thisdir = os.path.dirname(os.path.realpath(__file__))
     sys.path.insert(0, thisdir + '/utils')
-    sphinx.add_lexer('Solidity', SolidityLexer())
-    sphinx.add_lexer('Yul', YulLexer())
+    sphinx.add_lexer('Solidity', SolidityLexer)
+    sphinx.add_lexer('Yul', YulLexer)
 
-    sphinx.add_stylesheet('css/custom.css')
+    sphinx.add_css_file('css/custom.css')
 
 # -- General configuration ------------------------------------------------
 
@@ -57,7 +57,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'Solidity'
-copyright = '2016-2020, Ethereum'
+copyright = '2016-2021, Ethereum'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -156,7 +156,7 @@ html_js_files = ["js/toggle.js"]
 # Add any extra paths that contain custom files (such as robots.txt or
 # .htaccess) here, relative to this directory. These files are copied
 # directly to the root of the documentation.
-html_extra_path = ["_static/css"]
+html_extra_path = ["_static/css", "_static/robots.txt"]
 
 # If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
 # using the given strftime format.

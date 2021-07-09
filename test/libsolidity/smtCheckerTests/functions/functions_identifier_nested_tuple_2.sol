@@ -1,5 +1,3 @@
-pragma experimental SMTChecker;
-
 library L {
 	struct S {
 		uint256[] data;
@@ -18,6 +16,6 @@ contract C {
 		assert(y == 42); // should hold
 	}
 }
+// ====
+// SMTEngine: all
 // ----
-// Warning 6031: (289-292): Internal error: Expression undefined for SMT solver.
-// Warning 6031: (289-292): Internal error: Expression undefined for SMT solver.

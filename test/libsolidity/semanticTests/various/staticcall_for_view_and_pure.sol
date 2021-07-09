@@ -32,9 +32,16 @@ contract D {
     }
 }
 // ====
-// compileViaYul: also
 // EVMVersion: >=byzantium
+// compileViaYul: also
 // ----
 // f() -> 0x1 # This should work, next should throw #
+// gas legacy: 103844
 // fview() -> FAILURE
+// gas irOptimized: 98438645
+// gas legacy: 98438803
+// gas legacyOptimized: 98438596
 // fpure() -> FAILURE
+// gas irOptimized: 98438646
+// gas legacy: 98438803
+// gas legacyOptimized: 98438597

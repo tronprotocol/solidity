@@ -33,7 +33,10 @@
 
 #include <liblangutil/Exceptions.h>
 
-#include <boost/range/adaptor/reversed.hpp>
+#include <range/v3/view/reverse.hpp>
+#include <range/v3/view/tail.hpp>
+
+#include <regex>
 
 using namespace std;
 using namespace solidity;
@@ -49,10 +52,10 @@ void visitArguments(
 	function<void(Expression const&)> _visitExpression
 )
 {
-	for (auto const& arg: _call.arguments | boost::adaptors::reversed)
+	for (auto const& arg: _call.arguments | ranges::views::reverse)
 		_visitExpression(arg);
 
-	_assembly.setSourceLocation(_call.location);
+	_assembly.setSourceLocation(_call.debugData->location);
 }
 
 
@@ -256,7 +259,7 @@ map<YulString, BuiltinFunctionForEVM> createBuiltins(langutil::EVMVersion _evmVe
 				_visitExpression(_call.arguments[2]);
 				YulString identifier = std::get<Literal>(_call.arguments[1]).value;
 				_visitExpression(_call.arguments[0]);
-				_assembly.setSourceLocation(_call.location);
+				_assembly.setSourceLocation(_call.debugData->location);
 				_assembly.appendImmutableAssignment(identifier.str());
 			}
 		));
@@ -280,6 +283,12 @@ map<YulString, BuiltinFunctionForEVM> createBuiltins(langutil::EVMVersion _evmVe
 	return builtins;
 }
 
+regex const& verbatimPattern()
+{
+	regex static const pattern{"verbatim_([1-9]?[0-9])i_([1-9]?[0-9])o"};
+	return pattern;
+}
+
 }
 
 EVMDialect::EVMDialect(langutil::EVMVersion _evmVersion, bool _objectAccess):
@@ -292,6 +301,12 @@ EVMDialect::EVMDialect(langutil::EVMVersion _evmVersion, bool _objectAccess):
 
 BuiltinFunctionForEVM const* EVMDialect::builtin(YulString _name) const
 {
+	if (m_objectAccess)
+	{
+		smatch match;
+		if (regex_match(_name.str(), match, verbatimPattern()))
+			return verbatimFunction(stoul(match[1]), stoul(match[2]));
+	}
 	auto it = m_functions.find(_name);
 	if (it != m_functions.end())
 		return &it->second;
@@ -301,6 +316,9 @@ BuiltinFunctionForEVM const* EVMDialect::builtin(YulString _name) const
 
 bool EVMDialect::reservedIdentifier(YulString _name) const
 {
+	if (m_objectAccess)
+		if (_name.str().substr(0, "verbatim"s.size()) == "verbatim")
+			return true;
 	return m_reserved.count(_name) != 0;
 }
 
@@ -339,6 +357,41 @@ SideEffects EVMDialect::sideEffectsOfInstruction(evmasm::Instruction _instructio
 		translate(evmasm::SemanticInformation::storage(_instruction)),
 		translate(evmasm::SemanticInformation::memory(_instruction)),
 	};
+}
+
+BuiltinFunctionForEVM const* EVMDialect::verbatimFunction(size_t _arguments, size_t _returnVariables) const
+{
+	pair<size_t, size_t> key{_arguments, _returnVariables};
+	shared_ptr<BuiltinFunctionForEVM const>& function = m_verbatimFunctions[key];
+	if (!function)
+	{
+		BuiltinFunctionForEVM builtinFunction = createFunction(
+			"verbatim_" + to_string(_arguments) + "i_" + to_string(_returnVariables) + "o",
+			1 + _arguments,
+			_returnVariables,
+			SideEffects::worst(),
+			vector<optional<LiteralKind>>{LiteralKind::String} + vector<optional<LiteralKind>>(_arguments),
+			[=](
+				FunctionCall const& _call,
+				AbstractAssembly& _assembly,
+				BuiltinContext&,
+				std::function<void(Expression const&)> _visitExpression
+			) {
+				yulAssert(_call.arguments.size() == (1 + _arguments), "");
+				for (Expression const& arg: _call.arguments | ranges::views::tail | ranges::views::reverse)
+					_visitExpression(arg);
+				Expression const& bytecode = _call.arguments.front();
+				_assembly.appendVerbatim(
+					asBytes(std::get<Literal>(bytecode).value.str()),
+					_arguments,
+					_returnVariables
+				);
+			}
+		).second;
+		builtinFunction.isMSize = true;
+		function = make_shared<BuiltinFunctionForEVM const>(move(builtinFunction));
+	}
+	return function.get();
 }
 
 EVMDialectTyped::EVMDialectTyped(langutil::EVMVersion _evmVersion, bool _objectAccess):

@@ -185,8 +185,6 @@ void ReferencesResolver::endVisit(IdentifierPath const& _path)
 
 bool ReferencesResolver::visit(InlineAssembly const& _inlineAssembly)
 {
-	m_resolver.warnVariablesNamedLikeInstructions();
-
 	m_yulAnnotation = &_inlineAssembly.annotation();
 	(*this)(_inlineAssembly.operations());
 	m_yulAnnotation = nullptr;
@@ -203,9 +201,9 @@ bool ReferencesResolver::visit(Return const& _return)
 
 void ReferencesResolver::operator()(yul::FunctionDefinition const& _function)
 {
-	validateYulIdentifierName(_function.name, _function.location);
+	validateYulIdentifierName(_function.name, _function.debugData->location);
 	for (yul::TypedName const& varName: _function.parameters + _function.returnVariables)
-		validateYulIdentifierName(varName.name, varName.location);
+		validateYulIdentifierName(varName.name, varName.debugData->location);
 
 	bool wasInsideFunction = m_yulInsideFunction;
 	m_yulInsideFunction = true;
@@ -240,7 +238,7 @@ void ReferencesResolver::operator()(yul::Identifier const& _identifier)
 	{
 		m_errorReporter.declarationError(
 			4718_error,
-			_identifier.location,
+			_identifier.debugData->location,
 			"Multiple matching identifiers. Resolving overloaded identifiers is not supported."
 		);
 		return;
@@ -253,7 +251,7 @@ void ReferencesResolver::operator()(yul::Identifier const& _identifier)
 		)
 			m_errorReporter.declarationError(
 				9467_error,
-				_identifier.location,
+				_identifier.debugData->location,
 				"Identifier not found. Use \".slot\" and \".offset\" to access storage variables."
 			);
 		return;
@@ -263,7 +261,7 @@ void ReferencesResolver::operator()(yul::Identifier const& _identifier)
 		{
 			m_errorReporter.declarationError(
 				6578_error,
-				_identifier.location,
+				_identifier.debugData->location,
 				"Cannot access local Solidity variables from inside an inline assembly function."
 			);
 			return;
@@ -277,7 +275,7 @@ void ReferencesResolver::operator()(yul::VariableDeclaration const& _varDecl)
 {
 	for (auto const& identifier: _varDecl.variables)
 	{
-		validateYulIdentifierName(identifier.name, identifier.location);
+		validateYulIdentifierName(identifier.name, identifier.debugData->location);
 
 
 		if (
@@ -291,7 +289,7 @@ void ReferencesResolver::operator()(yul::VariableDeclaration const& _varDecl)
 			if (!ssl.infos.empty())
 				m_errorReporter.declarationError(
 					3859_error,
-					identifier.location,
+					identifier.debugData->location,
 					ssl,
 					"This declaration shadows a declaration outside the inline assembly block."
 				);

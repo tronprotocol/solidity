@@ -25,9 +25,10 @@
 #include <libsolidity/ast/AST.h>
 #include <libsolidity/ast/TypeProvider.h>
 #include <libsolidity/analysis/TypeChecker.h>
+#include <libsolutil/FunctionSelector.h>
 #include <liblangutil/ErrorReporter.h>
-#include <boost/range/adaptor/reversed.hpp>
 
+#include <range/v3/view/reverse.hpp>
 
 using namespace std;
 using namespace solidity;
@@ -85,6 +86,7 @@ bool ContractLevelChecker::check(ContractDefinition const& _contract)
 
 	checkDuplicateFunctions(_contract);
 	checkDuplicateEvents(_contract);
+	checkReceiveFunction(_contract);
 	m_overrideChecker.check(_contract);
 	checkBaseConstructorArguments(_contract);
 	checkAbstractDefinitions(_contract);
@@ -159,6 +161,35 @@ void ContractLevelChecker::checkDuplicateEvents(ContractDefinition const& _contr
 			events[event->name()].push_back(event);
 
 	findDuplicateDefinitions(events);
+}
+
+void ContractLevelChecker::checkReceiveFunction(ContractDefinition const& _contract)
+{
+	for (FunctionDefinition const* function: _contract.definedFunctions())
+	{
+		solAssert(function, "");
+		if (function->isReceive())
+		{
+			if (function->libraryFunction())
+				m_errorReporter.declarationError(4549_error, function->location(), "Libraries cannot have receive ether functions.");
+
+			if (function->stateMutability() != StateMutability::Payable)
+				m_errorReporter.declarationError(
+					7793_error,
+					function->location(),
+					"Receive ether function must be payable, but is \"" +
+					stateMutabilityToString(function->stateMutability()) +
+					"\"."
+				);
+			if (function->visibility() != Visibility::External)
+				m_errorReporter.declarationError(4095_error, function->location(), "Receive ether function must be defined as \"external\".");
+
+			if (!function->returnParameters().empty())
+				m_errorReporter.fatalDeclarationError(6899_error, function->returnParameterList()->location(), "Receive ether function cannot return values.");
+			if (!function->parameters().empty())
+				m_errorReporter.fatalDeclarationError(6857_error, function->parameterList().location(), "Receive ether function cannot take parameters.");
+		}
+	}
 }
 
 template <class T>
@@ -238,7 +269,7 @@ void ContractLevelChecker::checkAbstractDefinitions(ContractDefinition const& _c
 
 	// Search from base to derived, collect all functions and modifiers and
 	// update proxies.
-	for (ContractDefinition const* contract: boost::adaptors::reverse(_contract.annotation().linearizedBaseContracts))
+	for (ContractDefinition const* contract: _contract.annotation().linearizedBaseContracts | ranges::views::reverse)
 	{
 		for (VariableDeclaration const* v: contract->stateVariables())
 			if (v->isPartOfExternalInterface())
@@ -426,7 +457,7 @@ void ContractLevelChecker::checkHashCollisions(ContractDefinition const& _contra
 	{
 		util::FixedHash<4> const& hash = it.first;
 		if (hashes.count(hash))
-			m_errorReporter.typeError(
+			m_errorReporter.fatalTypeError(
 				1860_error,
 				_contract.location(),
 				string("Function signature hash collision for ") + it.second->externalSignature()
@@ -474,7 +505,7 @@ void ContractLevelChecker::checkBaseABICompatibility(ContractDefinition const& _
 
 		auto const& currentLoc = func.second->declaration().location();
 
-		for (TypePointer const& paramType: func.second->parameterTypes() + func.second->returnParameterTypes())
+		for (Type const* paramType: func.second->parameterTypes() + func.second->returnParameterTypes())
 			if (!TypeChecker::typeSupportedByOldABIEncoder(*paramType, false))
 			{
 				errors.append("Type only supported by ABIEncoderV2", currentLoc);
@@ -511,7 +542,7 @@ void ContractLevelChecker::checkPayableFallbackWithoutReceive(ContractDefinition
 void ContractLevelChecker::checkStorageSize(ContractDefinition const& _contract)
 {
 	bigint size = 0;
-	for (ContractDefinition const* contract: boost::adaptors::reverse(_contract.annotation().linearizedBaseContracts))
+	for (ContractDefinition const* contract: _contract.annotation().linearizedBaseContracts | ranges::views::reverse)
 		for (VariableDeclaration const* variable: contract->stateVariables())
 			if (!(variable->isConstant() || variable->immutable()))
 			{

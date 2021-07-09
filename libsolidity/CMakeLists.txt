@@ -10,6 +10,8 @@ set(sources
 	analysis/ControlFlowBuilder.h
 	analysis/ControlFlowGraph.cpp
 	analysis/ControlFlowGraph.h
+	analysis/ControlFlowRevertPruner.cpp
+	analysis/ControlFlowRevertPruner.h
 	analysis/DeclarationContainer.cpp
 	analysis/DeclarationContainer.h
 	analysis/DeclarationTypeChecker.cpp
@@ -18,6 +20,8 @@ set(sources
 	analysis/DocStringAnalyser.h
 	analysis/DocStringTagParser.cpp
 	analysis/DocStringTagParser.h
+	analysis/FunctionCallGraph.cpp
+	analysis/FunctionCallGraph.h
 	analysis/ImmutableValidator.cpp
 	analysis/ImmutableValidator.h
 	analysis/GlobalContext.cpp
@@ -28,6 +32,8 @@ set(sources
 	analysis/OverrideChecker.h
 	analysis/PostTypeChecker.cpp
 	analysis/PostTypeChecker.h
+	analysis/PostTypeContractLevelChecker.cpp
+	analysis/PostTypeContractLevelChecker.h
 	analysis/ReferencesResolver.cpp
 	analysis/ReferencesResolver.h
 	analysis/Scoper.cpp
@@ -54,6 +60,8 @@ set(sources
 	ast/ASTJsonImporter.cpp
 	ast/ASTJsonImporter.h
 	ast/ASTVisitor.h
+	ast/CallGraph.cpp
+	ast/CallGraph.h
 	ast/ExperimentalFeatures.h
 	ast/Types.cpp
 	ast/Types.h
@@ -102,6 +110,8 @@ set(sources
 	formal/EncodingContext.h
 	formal/ModelChecker.cpp
 	formal/ModelChecker.h
+	formal/ModelCheckerSettings.cpp
+	formal/ModelCheckerSettings.h
 	formal/Predicate.cpp
 	formal/Predicate.h
 	formal/PredicateInstance.cpp
@@ -125,6 +135,10 @@ set(sources
 	interface/CompilerStack.cpp
 	interface/CompilerStack.h
 	interface/DebugSettings.h
+	interface/FileReader.cpp
+	interface/FileReader.h
+	interface/ImportRemapper.cpp
+	interface/ImportRemapper.h
 	interface/GasEstimator.cpp
 	interface/GasEstimator.h
 	interface/Natspec.cpp

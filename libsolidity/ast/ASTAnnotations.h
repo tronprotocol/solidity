@@ -46,8 +46,10 @@ namespace solidity::frontend
 {
 
 class Type;
-using TypePointer = Type const*;
+class ArrayType;
 using namespace util;
+
+struct CallGraph;
 
 struct ASTAnnotation
 {
@@ -156,12 +158,17 @@ struct ContractDefinitionAnnotation: TypeDeclarationAnnotation, StructurallyDocu
 	/// List of all (direct and indirect) base contracts in order from derived to
 	/// base, including the contract itself.
 	std::vector<ContractDefinition const*> linearizedBaseContracts;
-	/// List of contracts this contract creates, i.e. which need to be compiled first.
-	/// Also includes all contracts from @a linearizedBaseContracts.
-	std::set<ContractDefinition const*> contractDependencies;
 	/// Mapping containing the nodes that define the arguments for base constructors.
 	/// These can either be inheritance specifiers or modifier invocations.
 	std::map<FunctionDefinition const*, ASTNode const*> baseConstructorArguments;
+	/// A graph with edges representing calls between functions that may happen during contract construction.
+	SetOnce<std::shared_ptr<CallGraph const>> creationCallGraph;
+	/// A graph with edges representing calls between functions that may happen in a deployed contract.
+	SetOnce<std::shared_ptr<CallGraph const>> deployedCallGraph;
+
+	/// List of contracts whose bytecode is referenced by this contract, e.g. through "new".
+	/// The Value represents the ast node that referenced the contract.
+	std::map<ContractDefinition const*, ASTNode const*, ASTCompareByID<ContractDefinition>> contractDependencies;
 };
 
 struct CallableDeclarationAnnotation: DeclarationAnnotation
@@ -178,6 +185,11 @@ struct EventDefinitionAnnotation: CallableDeclarationAnnotation, StructurallyDoc
 {
 };
 
+struct ErrorDefinitionAnnotation: CallableDeclarationAnnotation, StructurallyDocumentedAnnotation
+{
+};
+
+
 struct ModifierDefinitionAnnotation: CallableDeclarationAnnotation, StructurallyDocumentedAnnotation
 {
 };
@@ -185,7 +197,7 @@ struct ModifierDefinitionAnnotation: CallableDeclarationAnnotation, Structurally
 struct VariableDeclarationAnnotation: DeclarationAnnotation, StructurallyDocumentedAnnotation
 {
 	/// Type of variable (type of identifier referencing this variable).
-	TypePointer type = nullptr;
+	Type const* type = nullptr;
 	/// The set of functions this (public state) variable overrides.
 	std::set<CallableDeclaration const*> baseFunctions;
 };
@@ -232,7 +244,7 @@ struct TypeNameAnnotation: ASTAnnotation
 {
 	/// Type declared by this type name, i.e. type of a variable where this type name is used.
 	/// Set during reference resolution stage.
-	TypePointer type = nullptr;
+	Type const* type = nullptr;
 };
 
 struct IdentifierPathAnnotation: ASTAnnotation
@@ -246,7 +258,7 @@ struct IdentifierPathAnnotation: ASTAnnotation
 struct ExpressionAnnotation: ASTAnnotation
 {
 	/// Inferred type of the expression.
-	TypePointer type = nullptr;
+	Type const* type = nullptr;
 	/// Whether the expression is a constant variable
 	SetOnce<bool> isConstant;
 	/// Whether the expression is pure, i.e. compile-time constant.
@@ -298,7 +310,7 @@ struct BinaryOperationAnnotation: ExpressionAnnotation
 {
 	/// The common type that is used for the operation, not necessarily the result type (which
 	/// e.g. for comparisons is bool).
-	TypePointer commonType = nullptr;
+	Type const* commonType = nullptr;
 };
 
 enum class FunctionCallKind

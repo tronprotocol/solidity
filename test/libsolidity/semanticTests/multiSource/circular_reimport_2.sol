@@ -13,6 +13,7 @@ contract C {
   }
 }
 // ====
+// compileToEwasm: also
 // compileViaYul: also
 // ----
 // foo() -> 0x2324

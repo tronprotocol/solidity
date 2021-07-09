@@ -1,7 +1,6 @@
-pragma experimental SMTChecker;
 contract C {
 	int[][] array2d;
-	function s() public returns (int[] memory) {
+	function s() public {
 		delete array2d.push();
 		assert(array2d[array2d.length - 1].length == 0);
 		// Fails
@@ -12,9 +11,10 @@ contract C {
 		assert(array2d[length - 1][length2 - 1] == 0);
 		// Fails
 		assert(array2d[length - 1][length2 - 1] != 0);
-		return array2d[2];
 	}
 }
+// ====
+// SMTEngine: all
 // ----
-// Warning 6328: (198-245): CHC: Assertion violation happens here.\nCounterexample:\narray2d = [[]]\n\n = []\n\nTransaction trace:\nconstructor()\nState: array2d = []\ns()
-// Warning 6328: (418-463): CHC: Assertion violation happens here.\nCounterexample:\narray2d = [[], [0]]\n\n = []\n\nTransaction trace:\nconstructor()\nState: array2d = []\ns()
+// Warning 6328: (143-190): CHC: Assertion violation happens here.\nCounterexample:\narray2d = [[]]\nlength = 0\nlength2 = 0\n\nTransaction trace:\nC.constructor()\nState: array2d = []\nC.s()
+// Warning 6328: (363-408): CHC: Assertion violation happens here.\nCounterexample:\narray2d = [[], [0]]\nlength = 2\nlength2 = 1\n\nTransaction trace:\nC.constructor()\nState: array2d = []\nC.s()

@@ -11,6 +11,9 @@ set(sources
     InteractiveTests.h
     Metadata.cpp
     Metadata.h
+    TemporaryDirectory.cpp
+    TemporaryDirectory.h
+    TemporaryDirectoryTest.cpp
     TestCase.cpp
     TestCase.h
     TestCaseReader.cpp
@@ -21,7 +24,6 @@ detect_stray_source_files("${sources}" ".")
 set(contracts_sources
     contracts/AuctionRegistrar.cpp
     contracts/ContractInterface.h
-    contracts/FixedFeeRegistrar.cpp
     contracts/Wallet.cpp
 )
 detect_stray_source_files("${contracts_sources}" "contracts/")
@@ -97,6 +99,7 @@ set(libsolidity_sources
     libsolidity/SyntaxTest.cpp
     libsolidity/SyntaxTest.h
     libsolidity/ViewPureChecker.cpp
+    libsolidity/analysis/FunctionCallGraph.cpp
 )
 detect_stray_source_files("${libsolidity_sources}" "libsolidity/")
 
@@ -120,6 +123,8 @@ set(libyul_sources
     libyul/Common.cpp
     libyul/Common.h
     libyul/CompilabilityChecker.cpp
+    libyul/EVMCodeTransformTest.cpp
+    libyul/EVMCodeTransformTest.h
     libyul/EwasmTranslationTest.cpp
     libyul/EwasmTranslationTest.h
     libyul/FunctionSideEffects.cpp
@@ -130,13 +135,14 @@ set(libyul_sources
     libyul/ObjectCompilerTest.h
     libyul/ObjectParser.cpp
     libyul/Parser.cpp
-    libyul/StackReuseCodegen.cpp
     libyul/SyntaxTest.h
     libyul/SyntaxTest.cpp
     libyul/YulInterpreterTest.cpp
     libyul/YulInterpreterTest.h
     libyul/YulOptimizerTest.cpp
     libyul/YulOptimizerTest.h
+    libyul/YulOptimizerTestCommon.cpp
+    libyul/YulOptimizerTestCommon.h
 )
 detect_stray_source_files("${libyul_sources}" "libyul/")
 

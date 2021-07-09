@@ -29,7 +29,7 @@
 #include <libyul/AST.h> // Needed for m_zero below.
 #include <libyul/SideEffects.h>
 
-#include <libsolutil/InvertibleMap.h>
+#include <libsolutil/Common.h>
 
 #include <map>
 #include <set>
@@ -124,17 +124,20 @@ protected:
 	/// This only works if the current state is a direct successor of the older point,
 	/// i.e. `_otherStorage` and `_otherMemory` cannot have additional changes.
 	void joinKnowledge(
-		InvertibleMap<YulString, YulString> const& _olderStorage,
-		InvertibleMap<YulString, YulString> const& _olderMemory
+		std::unordered_map<YulString, YulString> const& _olderStorage,
+		std::unordered_map<YulString, YulString> const& _olderMemory
 	);
 
 	static void joinKnowledgeHelper(
-		InvertibleMap<YulString, YulString>& _thisData,
-		InvertibleMap<YulString, YulString> const& _olderData
+		std::unordered_map<YulString, YulString>& _thisData,
+		std::unordered_map<YulString, YulString> const& _olderData
 	);
 
 	/// Returns true iff the variable is in scope.
 	bool inScope(YulString _variableName) const;
+
+	/// Returns the literal value of the identifier, if it exists.
+	std::optional<u256> valueOfIdentifier(YulString const& _name);
 
 	enum class StoreLoadLocation {
 		Memory = 0,
@@ -163,12 +166,11 @@ protected:
 
 	/// Current values of variables, always movable.
 	std::map<YulString, AssignedValue> m_value;
-	/// m_references.forward[a].contains(b) <=> the current expression assigned to a references b
-	/// m_references.backward[b].contains(a) <=> the current expression assigned to a references b
-	InvertibleRelation<YulString> m_references;
+	/// m_references[a].contains(b) <=> the current expression assigned to a references b
+	std::unordered_map<YulString, std::set<YulString>> m_references;
 
-	InvertibleMap<YulString, YulString> m_storage;
-	InvertibleMap<YulString, YulString> m_memory;
+	std::unordered_map<YulString, YulString> m_storage;
+	std::unordered_map<YulString, YulString> m_memory;
 
 	KnowledgeBase m_knowledgeBase;
 

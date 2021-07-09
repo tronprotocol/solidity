@@ -68,11 +68,13 @@ public:
 	IRGenerationContext(
 		langutil::EVMVersion _evmVersion,
 		RevertStrings _revertStrings,
-		OptimiserSettings _optimiserSettings
+		OptimiserSettings _optimiserSettings,
+		std::map<std::string, unsigned> _sourceIndices
 	):
 		m_evmVersion(_evmVersion),
 		m_revertStrings(_revertStrings),
-		m_optimiserSettings(std::move(_optimiserSettings))
+		m_optimiserSettings(std::move(_optimiserSettings)),
+		m_sourceIndices(std::move(_sourceIndices))
 	{}
 
 	MultiUseYulFunctionCollector& functionCollector() { return m_functions; }
@@ -97,6 +99,7 @@ public:
 	IRVariable const& addLocalVariable(VariableDeclaration const& _varDecl);
 	bool isLocalVariable(VariableDeclaration const& _varDecl) const { return m_localVariables.count(&_varDecl); }
 	IRVariable const& localVariable(VariableDeclaration const& _varDecl);
+	void resetLocalVariables();
 
 	/// Registers an immutable variable of the contract.
 	/// Should only be called at construction time.
@@ -142,10 +145,6 @@ public:
 
 	ABIFunctions abiFunctions();
 
-	/// @returns code that stores @param _message for revert reason
-	/// if m_revertStrings is debug.
-	std::string revertReasonIfDebug(std::string const& _message = "");
-
 	RevertStrings revertStrings() const { return m_revertStrings; }
 
 	std::set<ContractDefinition const*, ASTNode::CompareByID>& subObjectsCreated() { return m_subObjects; }
@@ -153,10 +152,13 @@ public:
 	bool inlineAssemblySeen() const { return m_inlineAssemblySeen; }
 	void setInlineAssemblySeen() { m_inlineAssemblySeen = true; }
 
+	std::map<std::string, unsigned> const& sourceIndices() const { return m_sourceIndices; }
+
 private:
 	langutil::EVMVersion m_evmVersion;
 	RevertStrings m_revertStrings;
 	OptimiserSettings m_optimiserSettings;
+	std::map<std::string, unsigned> m_sourceIndices;
 	ContractDefinition const* m_mostDerivedContract = nullptr;
 	std::map<VariableDeclaration const*, IRVariable> m_localVariables;
 	/// Memory offsets reserved for the values of immutable variables during contract creation.

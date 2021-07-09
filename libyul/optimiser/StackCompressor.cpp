@@ -21,7 +21,6 @@
 
 #include <libyul/optimiser/StackCompressor.h>
 
-#include <libyul/optimiser/SSAValueTracker.h>
 #include <libyul/optimiser/NameCollector.h>
 #include <libyul/optimiser/Rematerialiser.h>
 #include <libyul/optimiser/UnusedPruner.h>
@@ -57,7 +56,7 @@ public:
 		for (auto const& codeCost: m_expressionCodeCost)
 		{
 			size_t numRef = m_numReferences[codeCost.first];
-			cand.emplace(make_tuple(codeCost.second * numRef, codeCost.first, m_references.forward[codeCost.first]));
+			cand.emplace(make_tuple(codeCost.second * numRef, codeCost.first, m_references[codeCost.first]));
 		}
 		return cand;
 	}

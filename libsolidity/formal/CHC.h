@@ -31,6 +31,7 @@
 
 #pragma once
 
+#include <libsolidity/formal/ModelCheckerSettings.h>
 #include <libsolidity/formal/Predicate.h>
 #include <libsolidity/formal/SMTEncoder.h>
 
@@ -56,18 +57,23 @@ public:
 		std::map<util::h256, std::string> const& _smtlib2Responses,
 		ReadCallback::Callback const& _smtCallback,
 		smtutil::SMTSolverChoice _enabledSolvers,
-		std::optional<unsigned> timeout
+		ModelCheckerSettings const& _settings
 	);
 
 	void analyze(SourceUnit const& _sources);
 
-	std::map<ASTNode const*, std::set<VerificationTarget::Type>> const& safeTargets() const { return m_safeTargets; }
-	std::map<ASTNode const*, std::set<VerificationTarget::Type>> const& unsafeTargets() const { return m_unsafeTargets; }
+	std::map<ASTNode const*, std::set<VerificationTargetType>> const& safeTargets() const { return m_safeTargets; }
+	std::map<ASTNode const*, std::set<VerificationTargetType>> const& unsafeTargets() const { return m_unsafeTargets; }
 
 	/// This is used if the Horn solver is not directly linked into this binary.
 	/// @returns a list of inputs to the Horn solver that were not part of the argument to
 	/// the constructor.
 	std::vector<std::string> unhandledQueries() const;
+
+	enum class CHCNatspecOption
+	{
+		AbstractFunctionNondet
+	};
 
 private:
 	/// Visitor functions.
@@ -76,14 +82,20 @@ private:
 	void endVisit(ContractDefinition const& _node) override;
 	bool visit(FunctionDefinition const& _node) override;
 	void endVisit(FunctionDefinition const& _node) override;
+	bool visit(Block const& _block) override;
+	void endVisit(Block const& _block) override;
 	bool visit(IfStatement const& _node) override;
 	bool visit(WhileStatement const&) override;
 	bool visit(ForStatement const&) override;
+	void endVisit(ForStatement const&) override;
 	void endVisit(FunctionCall const& _node) override;
 	void endVisit(Break const& _node) override;
 	void endVisit(Continue const& _node) override;
 	void endVisit(IndexRangeAccess const& _node) override;
 	void endVisit(Return const& _node) override;
+	bool visit(TryCatchClause const&) override;
+	void endVisit(TryCatchClause const&) override;
+	bool visit(TryStatement const& _node) override;
 
 	void pushInlineFrame(CallableDeclaration const& _callable) override;
 	void popInlineFrame(CallableDeclaration const& _callable) override;
@@ -95,12 +107,13 @@ private:
 	void externalFunctionCallToTrustedCode(FunctionCall const& _funCall);
 	void unknownFunctionCall(FunctionCall const& _funCall);
 	void makeArrayPopVerificationTarget(FunctionCall const& _arrayPop) override;
+	void makeOutOfBoundsVerificationTarget(IndexAccess const& _access) override;
 	/// Creates underflow/overflow verification targets.
 	std::pair<smtutil::Expression, smtutil::Expression> arithmeticOperation(
 		Token _op,
 		smtutil::Expression const& _left,
 		smtutil::Expression const& _right,
-		TypePointer const& _commonType,
+		Type const* _commonType,
 		Expression const& _expression
 	) override;
 	//@}
@@ -115,6 +128,19 @@ private:
 	std::set<unsigned> transactionVerificationTargetsIds(ASTNode const* _txRoot);
 	//@}
 
+	/// SMT Natspec and abstraction helpers.
+	//@{
+	/// @returns a CHCNatspecOption enum if _option is a valid SMTChecker Natspec value
+	/// or nullopt otherwise.
+	static std::optional<CHCNatspecOption> natspecOptionFromString(std::string const& _option);
+	/// @returns which SMTChecker options are enabled by @a _function's Natspec via
+	/// `@custom:smtchecker <option>` or nullopt if none is used.
+	std::set<CHCNatspecOption> smtNatspecTags(FunctionDefinition const& _function);
+	/// @returns true if _function is Natspec annotated to be abstracted by
+	/// nondeterministic values.
+	bool abstractAsNondet(FunctionDefinition const& _function);
+	//@}
+
 	/// Sort helpers.
 	//@{
 	smtutil::SortPointer sort(FunctionDefinition const& _function);
@@ -124,7 +150,7 @@ private:
 	/// Predicate helpers.
 	//@{
 	/// @returns a new block of given _sort and _name.
-	Predicate const* createSymbolicBlock(smtutil::SortPointer _sort, std::string const& _name, PredicateType _predType, ASTNode const* _node = nullptr);
+	Predicate const* createSymbolicBlock(smtutil::SortPointer _sort, std::string const& _name, PredicateType _predType, ASTNode const* _node = nullptr, ContractDefinition const* _contractContext = nullptr);
 
 	/// Creates summary predicates for all functions of all contracts
 	/// in a given _source.
@@ -133,7 +159,7 @@ private:
 	/// Creates a CHC system that, for a given contract,
 	/// - initializes its state variables (as 0 or given value, if any).
 	/// - "calls" the explicit constructor function of the contract, if any.
-	void defineContractInitializer(ContractDefinition const& _contract);
+	void defineContractInitializer(ContractDefinition const& _contract, ContractDefinition const& _contractContext);
 
 	/// Interface predicate over current variables.
 	smtutil::Expression interface();
@@ -146,7 +172,13 @@ private:
 	Predicate const* createBlock(ASTNode const* _node, PredicateType _predType, std::string const& _prefix = "");
 	/// Creates a call block for the given function _function from contract _contract.
 	/// The contract is needed here because of inheritance.
-	Predicate const* createSummaryBlock(FunctionDefinition const& _function, ContractDefinition const& _contract);
+	/// There are different types of summaries, where the most common is FunctionSummary,
+	/// but other summaries are also used for internal and external function calls.
+	Predicate const* createSummaryBlock(
+		FunctionDefinition const& _function,
+		ContractDefinition const& _contract,
+		PredicateType _type = PredicateType::FunctionSummary
+	);
 
 	/// @returns a block related to @a _contract's constructor.
 	Predicate const* createConstructorBlock(ContractDefinition const& _contract, std::string const& _prefix);
@@ -169,14 +201,17 @@ private:
 	std::vector<smtutil::Expression> currentStateVariables();
 	std::vector<smtutil::Expression> currentStateVariables(ContractDefinition const& _contract);
 
+	/// @returns \bigwedge currentValue(_vars[i]) == initialState(_var[i])
+	smtutil::Expression currentEqualInitialVarsConstraints(std::vector<VariableDeclaration const*> const& _vars) const;
+
 	/// @returns the predicate name for a given node.
 	std::string predicateName(ASTNode const* _node, ContractDefinition const* _contract = nullptr);
 	/// @returns a predicate application after checking the predicate's type.
 	smtutil::Expression predicate(Predicate const& _block);
 	/// @returns the summary predicate for the called function.
 	smtutil::Expression predicate(FunctionCall const& _funCall);
-	/// @returns a predicate that defines a contract initializer.
-	smtutil::Expression initializer(ContractDefinition const& _contract);
+	/// @returns a predicate that defines a contract initializer for _contract in the context of _contractContext.
+	smtutil::Expression initializer(ContractDefinition const& _contract, ContractDefinition const& _contractContext);
 	/// @returns a predicate that defines a constructor summary.
 	smtutil::Expression summary(ContractDefinition const& _contract);
 	/// @returns a predicate that defines a function summary.
@@ -192,7 +227,7 @@ private:
 	/// @returns <false, model> otherwise.
 	std::pair<smtutil::CheckResult, smtutil::CHCSolverInterface::CexGraph> query(smtutil::Expression const& _query, langutil::SourceLocation const& _location);
 
-	void verificationTargetEncountered(ASTNode const* const _errorNode, VerificationTarget::Type _type, smtutil::Expression const& _errorCondition);
+	void verificationTargetEncountered(ASTNode const* const _errorNode, VerificationTargetType _type, smtutil::Expression const& _errorCondition);
 
 	void checkVerificationTargets();
 	// Forward declaration. Definition is below.
@@ -206,6 +241,14 @@ private:
 	);
 
 	std::optional<std::string> generateCounterexample(smtutil::CHCSolverInterface::CexGraph const& _graph, std::string const& _root);
+
+	/// @returns a call graph for function summaries in the counterexample graph.
+	/// The returned map also contains a key _root, whose value are the
+	/// summaries called by _root.
+	std::map<unsigned, std::vector<unsigned>> summaryCalls(
+		smtutil::CHCSolverInterface::CexGraph const& _graph,
+		unsigned _root
+	);
 
 	/// @returns a set of pairs _var = _value separated by _separator.
 	template <typename T>
@@ -242,7 +285,6 @@ private:
 	/// it into m_errorIds.
 	unsigned newErrorId();
 
-	smt::SymbolicState& state();
 	smt::SymbolicIntVariable& errorFlag();
 	//@}
 
@@ -259,7 +301,7 @@ private:
 	std::map<ContractDefinition const*, Predicate const*> m_nondetInterfaces;
 
 	std::map<ContractDefinition const*, Predicate const*> m_constructorSummaries;
-	std::map<ContractDefinition const*, Predicate const*> m_contractInitializers;
+	std::map<ContractDefinition const*, std::map<ContractDefinition const*, Predicate const*>> m_contractInitializers;
 
 	/// Artificial Error predicate.
 	/// Single error block for all assertions.
@@ -306,9 +348,9 @@ private:
 	std::map<unsigned, CHCVerificationTarget> m_verificationTargets;
 
 	/// Targets proven safe.
-	std::map<ASTNode const*, std::set<VerificationTarget::Type>> m_safeTargets;
+	std::map<ASTNode const*, std::set<VerificationTargetType>> m_safeTargets;
 	/// Targets proven unsafe.
-	std::map<ASTNode const*, std::set<VerificationTarget::Type>> m_unsafeTargets;
+	std::map<ASTNode const*, std::set<VerificationTargetType>> m_unsafeTargets;
 	//@}
 
 	/// Control-flow.
@@ -353,9 +395,6 @@ private:
 
 	/// SMT solvers that are chosen at runtime.
 	smtutil::SMTSolverChoice m_enabledSolvers;
-
-	/// SMT query timeout in seconds.
-	std::optional<unsigned> m_queryTimeout;
 };
 
 }

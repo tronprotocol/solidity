@@ -303,7 +303,11 @@ BOOST_AUTO_TEST_CASE(public_state_variable)
 			"state" :
 			{
 				"details" : "example of dev",
-				"return" : "returns state"
+				"return" : "returns state",
+				"returns" :
+				{
+					"_0" : "returns state"
+				}
 			}
 		}
 	}
@@ -322,6 +326,73 @@ BOOST_AUTO_TEST_CASE(public_state_variable)
 	}
 	)R";
 	checkNatspec(sourceCode, "test", userDoc, true);
+}
+
+BOOST_AUTO_TEST_CASE(public_state_variable_struct)
+{
+	char const* sourceCode = R"(
+		contract Bank {
+			struct Coin {
+				string observeGraphicURL;
+				string reverseGraphicURL;
+			}
+
+			/// @notice Get the n-th coin I own
+			/// @return observeGraphicURL Front pic
+			/// @return reverseGraphicURL Back pic
+			Coin[] public coinStack;
+		}
+	)";
+
+	char const* devDoc = R"R(
+	{
+		"methods" : {},
+		"stateVariables" :
+		{
+			"coinStack" :
+			{
+				"returns" :
+				{
+					"observeGraphicURL" : "Front pic",
+					"reverseGraphicURL" : "Back pic"
+				}
+			}
+		}
+	}
+	)R";
+	checkNatspec(sourceCode, "Bank", devDoc, false);
+
+	char const* userDoc = R"R(
+	{
+		"methods" :
+		{
+			"coinStack(uint256)" :
+			{
+				"notice": "Get the n-th coin I own"
+			}
+		}
+	}
+	)R";
+	checkNatspec(sourceCode, "Bank", userDoc, true);
+}
+
+BOOST_AUTO_TEST_CASE(public_state_variable_struct_repeated)
+{
+	char const* sourceCode = R"(
+		contract Bank {
+			struct Coin {
+				string obverseGraphicURL;
+				string reverseGraphicURL;
+			}
+
+			/// @notice Get the n-th coin I own
+			/// @return obverseGraphicURL Front pic
+			/// @return obverseGraphicURL Front pic
+			Coin[] public coinStack;
+		}
+	)";
+
+	expectNatspecError(sourceCode);
 }
 
 BOOST_AUTO_TEST_CASE(private_state_variable)
@@ -1270,7 +1341,7 @@ BOOST_AUTO_TEST_CASE(dev_default_inherit_variable)
 
 	char const *natspec1 = R"ABCDEF({
 		"methods" : {},
-			"stateVariables" :
+		"stateVariables" :
 		{
 			"x" :
 			{
@@ -1336,7 +1407,7 @@ BOOST_AUTO_TEST_CASE(dev_explicit_inherit_variable)
 
 	char const *natspec1 = R"ABCDEF({
 		"methods" : {},
-			"stateVariables" :
+		"stateVariables" :
 		{
 			"x" :
 			{
@@ -2245,6 +2316,222 @@ BOOST_AUTO_TEST_CASE(dev_return_name_no_description)
 
 	checkNatspec(sourceCode, "A", natspec, false);
 	checkNatspec(sourceCode, "B", natspec2, false);
+}
+
+BOOST_AUTO_TEST_CASE(error)
+{
+	char const* sourceCode = R"(
+		contract test {
+			/// Something failed.
+			/// @dev an error.
+			/// @param a first parameter
+			/// @param b second parameter
+			error E(uint a, uint b);
+		}
+	)";
+
+	char const* devdoc = R"X({
+		"errors":{
+			"E(uint256,uint256)": [{
+				"details" : "an error.",
+				"params" :
+				{
+					"a" : "first parameter",
+					"b" : "second parameter"
+				}
+			}]
+		},
+		"methods": {}
+	})X";
+
+	checkNatspec(sourceCode, "test", devdoc, false);
+
+	char const* userdoc = R"X({
+		"errors":{
+			"E(uint256,uint256)": [{
+				"notice" : "Something failed."
+			}]
+		},
+		"methods": {}
+	})X";
+	checkNatspec(sourceCode, "test", userdoc, true);
+}
+
+BOOST_AUTO_TEST_CASE(error_multiple)
+{
+	char const* sourceCode = R"(
+		contract A {
+			/// Something failed.
+			/// @dev an error.
+			/// @param x first parameter
+			/// @param y second parameter
+			error E(uint x, uint y);
+		}
+		contract test {
+			/// X Something failed.
+			/// @dev X an error.
+			/// @param a X first parameter
+			/// @param b X second parameter
+			error E(uint a, uint b);
+			function f(bool a) public pure {
+				if (a)
+					revert E(1, 2);
+				else
+					revert A.E(5, 6);
+			}
+		}
+	)";
+
+	char const* devdoc = R"X({
+		"methods": {},
+		"errors": {
+			"E(uint256,uint256)": [
+				{
+					"details" : "an error.",
+					"params" :
+					{
+						"x" : "first parameter",
+						"y" : "second parameter"
+					}
+				},
+				{
+					"details" : "X an error.",
+					"params" :
+					{
+						"a" : "X first parameter",
+						"b" : "X second parameter"
+					}
+				}
+			]
+		}
+	})X";
+
+	checkNatspec(sourceCode, "test", devdoc, false);
+
+	char const* userdoc = R"X({
+		"errors":{
+			"E(uint256,uint256)": [
+				{ "notice" : "Something failed." },
+				{ "notice" : "X Something failed." }
+			]
+		},
+		"methods": {}
+	})X";
+	checkNatspec(sourceCode, "test", userdoc, true);
+}
+
+BOOST_AUTO_TEST_CASE(custom)
+{
+	char const* sourceCode = R"(
+		/// @custom:x one two three
+		/// @custom:y line
+		/// break
+		/// @custom:t one
+		/// @custom:t two
+		contract A {
+			/// @custom:note statevar
+			uint x;
+			/// @custom:since 2014
+			function g(int x) public pure virtual returns (int, int) { return (1, 2); }
+		}
+	)";
+
+	char const* natspec = R"ABCDEF({
+		"custom:t": "onetwo",
+		"custom:x": "one two three",
+		"custom:y": "line break",
+		"methods":
+		{
+			"g(int256)":
+			{
+				"custom:since": "2014"
+			}
+		},
+		"stateVariables": { "x": { "custom:note": "statevar" } }
+	})ABCDEF";
+
+	checkNatspec(sourceCode, "A", natspec, false);
+}
+
+BOOST_AUTO_TEST_CASE(custom_inheritance)
+{
+	char const *sourceCode = R"(
+		contract A {
+			/// @custom:since 2014
+			function g(uint x) public pure virtual {}
+		}
+		contract B is A {
+			function g(uint x) public pure override {}
+		}
+	)";
+
+	char const* natspecA = R"ABCDEF({
+		"methods":
+		{
+			"g(uint256)":
+			{
+				"custom:since": "2014"
+			}
+		}
+	)ABCDEF";
+	char const* natspecB = R"ABCDEF({
+		"methods": {}
+	})ABCDEF";
+
+	checkNatspec(sourceCode, "A", natspecA, false);
+	checkNatspec(sourceCode, "B", natspecB, false);
+}
+
+BOOST_AUTO_TEST_CASE(dev_different_amount_return_parameters)
+{
+	char const *sourceCode = R"(
+		interface IThing {
+			/// @return x a number
+			/// @return y another number
+			function value() external view returns (uint128 x, uint128 y);
+		}
+
+		contract Thing is IThing {
+			struct Value {
+				uint128 x;
+				uint128 y;
+			}
+
+			Value public override value;
+		}
+	)";
+
+	char const *natspec = R"ABCDEF({
+		"methods":
+		{
+			"value()":
+			{
+			  "returns":
+			  {
+				"x": "a number",
+				"y": "another number"
+			  }
+			}
+		}
+	})ABCDEF";
+
+	char const *natspec2 = R"ABCDEF({
+		"methods": {},
+		"stateVariables":
+		{
+			"value":
+			{
+				"returns":
+				{
+					"x": "a number",
+					"y": "another number"
+				}
+			}
+		}
+	})ABCDEF";
+
+	checkNatspec(sourceCode, "IThing", natspec, false);
+	checkNatspec(sourceCode, "Thing", natspec2, false);
 }
 
 }

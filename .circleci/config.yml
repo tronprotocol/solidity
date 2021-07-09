@@ -9,20 +9,20 @@ version: 2.1
 parameters:
   ubuntu-2004-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004-4
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:aca1372dcc5edadd3db13ff1aa6807727d79e08082a48eb7cc05444c1b516ace"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004-6
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:da44d7f78e093f7f0415abf07f7c1fd1c2ed4fa65fefea428821a05186c42ec9"
   ubuntu-2004-clang-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004.clang-4
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:0954edfb48a7efa6922b4d6adf536a2fc483ca34ad62f95ec54c33a616a66974"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004.clang-6
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:c78dd9c48d393b57afe053aeb2d0d358a9f31ac85039a181724c2f8408d0bcf8"
   ubuntu-1604-clang-ossfuzz-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu1604.clang.ossfuzz-6
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:990ed3aaac3fcb87ca9b63a021a91ed89dfd165b341aa7b5c6457cdbe132dfb3"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu1604.clang.ossfuzz-9
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:5078e1d74ab6f4329e9218c2d8c0ebe2d42817a3d4c3c62ce887100cbe9bc739"
   emscripten-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:emscripten-2
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:23dad3b34deae8107c8551804ef299f6a89c23ed506e8118fac151e2bdc9018c"
+    # solbuildpackpusher/solidity-buildpack-deps:emscripten-5
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:d28afb9624c2352ea40f157d1a321ffac77f54a21e33a8e8744f9126b780ded4"
 
 orbs:
   win: circleci/windows@2.2.0
@@ -88,10 +88,9 @@ defaults:
         - test/tools/ossfuzz/abiv2_proto_ossfuzz
         - test/tools/ossfuzz/abiv2_isabelle_ossfuzz
         - test/tools/ossfuzz/const_opt_ossfuzz
-        - test/tools/ossfuzz/solc_noopt_mutator_ossfuzz
-        - test/tools/ossfuzz/solc_noopt_ossfuzz
-        - test/tools/ossfuzz/solc_opt_mutator_ossfuzz
-        - test/tools/ossfuzz/solc_opt_ossfuzz
+        - test/tools/ossfuzz/solc_mutator_ossfuzz
+        - test/tools/ossfuzz/solc_ossfuzz
+        - test/tools/ossfuzz/stack_reuse_codegen_ossfuzz
         - test/tools/ossfuzz/strictasm_assembly_ossfuzz
         - test/tools/ossfuzz/strictasm_diff_ossfuzz
         - test/tools/ossfuzz/strictasm_opt_ossfuzz
@@ -355,8 +354,8 @@ jobs:
           command: apt -q update && apt install -y python3-pip
       - run:
           name: Install pylint
-          command: python3 -m pip install pylint z3-solver pygments-lexer-solidity
-          # also z3-solver to make sure pylint knows about this module, pygments-lexer-solidity for docs
+          command: python3 -m pip install pylint z3-solver pygments-lexer-solidity parsec tabulate
+          # also z3-solver, parsec and tabulate to make sure pylint knows about this module, pygments-lexer-solidity for docs
       - run:
           name: Linting Python Scripts
           command: ./scripts/pylint_all.py
@@ -413,6 +412,26 @@ jobs:
     steps:
       - checkout
       - run: *run_docs_pragma_min_version
+
+  t_pyscripts_ubu:
+    docker:
+      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    steps:
+      - checkout
+      - run:
+          name: Python unit tests
+          command: python3 test/pyscriptTests.py
+
+  t_pyscripts_win:
+    executor:
+      name: win/default
+      shell: powershell.exe
+    steps:
+      - run: git config --global core.autocrlf false
+      - checkout
+      - run:
+          name: Python unit tests
+          command: python.exe test/pyscriptTests.py
 
   b_ubu_clang: &build_ubuntu2004_clang
     resource_class: xlarge
@@ -552,7 +571,9 @@ jobs:
 
   b_archlinux:
     docker:
-      - image: archlinux/base
+      # FIXME: Newer releases won't work until CircleCI updates its host machines.
+      # See https://github.com/ethereum/solidity/pull/11332
+      - image: archlinux:base-20210131.0.14634
     environment:
       TERM: xterm
       MAKEFLAGS: -j 3
@@ -691,11 +712,19 @@ jobs:
 
   t_archlinux_soltest: &t_archlinux_soltest
       docker:
-        - image: archlinux/base
+        # FIXME: Newer releases won't work until CircleCI updates its host machines.
+        # See https://github.com/ethereum/solidity/pull/11332
+        - image: archlinux:base-20210131.0.14634
       environment:
         EVM: constantinople
         OPTIMIZE: 0
         TERM: xterm
+        # For Archlinux we do not have prebuilt docker images and we would need to build evmone from source,
+        # thus we forgo semantics tests to speed things up.
+        # FIXME: Z3 4.8.11 prerelease is now in main Arch Linux repos but it makes some of our SMT
+        # tests hang. Disabling SMT tests until we get a proper release.
+        # See https://github.com/Z3Prover/z3/issues/5330 for more details.
+        SOLTEST_FLAGS: --no-semantic-tests --no-smt
       steps:
         - run:
             name: Install runtime dependencies
@@ -844,6 +873,7 @@ jobs:
       name: win/default
       shell: powershell.exe
     steps:
+      # NOTE: Not disabling git's core.autocrlf here because we want to build using the typical Windows config.
       - checkout
       - restore_cache:
           keys:
@@ -880,6 +910,8 @@ jobs:
       name: win/default
       shell: powershell.exe
     steps:
+      # NOTE: Git's default core.autocrlf is fine for running soltest. We get additional coverage
+      # for files using CRLF that way.
       - checkout
       - attach_workspace:
           at: build
@@ -902,13 +934,19 @@ jobs:
       - checkout
       - attach_workspace:
           at: build
-      - run: scripts/bytecodecompare/storebytecode.sh && cp -v report.txt bytecode-report-ubuntu.txt
+      - run: mkdir test-cases/
+      - run: cd test-cases && ../scripts/isolate_tests.py ../test/
+      - run: cd test-cases && ../scripts/bytecodecompare/prepare_report.py ../build/solc/solc --interface standard-json --report-file ../bytecode-report-ubuntu-json.txt
+      - run: cd test-cases && ../scripts/bytecodecompare/prepare_report.py ../build/solc/solc --interface cli --report-file ../bytecode-report-ubuntu-cli.txt
       - store_artifacts:
-          path: report.txt
+          path: bytecode-report-ubuntu-json.txt
+      - store_artifacts:
+          path: bytecode-report-ubuntu-cli.txt
       - persist_to_workspace:
           root: .
           paths:
-            - bytecode-report-ubuntu.txt
+            - bytecode-report-ubuntu-json.txt
+            - bytecode-report-ubuntu-cli.txt
 
   b_bytecode_osx:
     macos:
@@ -919,31 +957,44 @@ jobs:
       - checkout
       - attach_workspace:
           at: .
-      - run: scripts/bytecodecompare/storebytecode.sh && cp -v report.txt bytecode-report-osx.txt
+      - run: mkdir test-cases/
+      - run: cd test-cases && ../scripts/isolate_tests.py ../test/
+      - run: cd test-cases && ../scripts/bytecodecompare/prepare_report.py ../build/solc/solc --interface standard-json --report-file ../bytecode-report-osx-json.txt
+      - run: cd test-cases && ../scripts/bytecodecompare/prepare_report.py ../build/solc/solc --interface cli --report-file ../bytecode-report-osx-cli.txt
       - store_artifacts:
-          path: report.txt
+          path: bytecode-report-osx-json.txt
+      - store_artifacts:
+          path: bytecode-report-osx-cli.txt
       - persist_to_workspace:
           root: .
           paths:
-            - bytecode-report-osx.txt
+            - bytecode-report-osx-json.txt
+            - bytecode-report-osx-cli.txt
 
   b_bytecode_win:
     executor:
       name: win/default
       shell: cmd.exe
     steps:
+      # NOTE: For bytecode generation we need the input files to be byte-for-byte identical on all
+      # platforms so line ending conversions must absolutely be disabled.
+      - run: git config --global core.autocrlf false
       - checkout
       - attach_workspace:
           at: build
-      - run: python scripts\isolate_tests.py test\
-      - run: python scripts\bytecodecompare\prepare_report.py build\solc\Release\solc.exe
-      - run: cp report.txt bytecode-report-windows.txt
+      - run: mkdir test-cases\
+      - run: cd test-cases\ && python ..\scripts\isolate_tests.py ..\test\
+      - run: cd test-cases\ && python ..\scripts\bytecodecompare\prepare_report.py ..\build\solc\Release\solc.exe --interface standard-json --report-file ..\bytecode-report-windows-json.txt
+      - run: cd test-cases\ && python ..\scripts\bytecodecompare\prepare_report.py ..\build\solc\Release\solc.exe --interface cli --report-file ..\bytecode-report-windows-cli.txt
       - store_artifacts:
-          path: report.txt
+          path: bytecode-report-windows-json.txt
+      - store_artifacts:
+          path: bytecode-report-windows-cli.txt
       - persist_to_workspace:
           root: .
           paths:
-            - bytecode-report-windows.txt
+            - bytecode-report-windows-json.txt
+            - bytecode-report-windows-cli.txt
 
   b_bytecode_ems:
     docker:
@@ -954,9 +1005,9 @@ jobs:
       - checkout
       - attach_workspace:
           at: emscripten_build/libsolc
-      - run: scripts/bytecodecompare/storebytecode.sh && cp -v report.txt bytecode-report-emscripten.txt
+      - run: scripts/bytecodecompare/storebytecode.sh && mv -v report.txt bytecode-report-emscripten.txt
       - store_artifacts:
-          path: report.txt
+          path: bytecode-report-emscripten.txt
       - persist_to_workspace:
           root: .
           paths:
@@ -965,10 +1016,39 @@ jobs:
   t_bytecode_compare:
     docker:
       - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    environment:
+      REPORT_FILES: |
+        bytecode-report-emscripten.txt
+        bytecode-report-ubuntu-json.txt
+        bytecode-report-ubuntu-cli.txt
+        bytecode-report-osx-json.txt
+        bytecode-report-osx-cli.txt
+        bytecode-report-windows-json.txt
+        bytecode-report-windows-cli.txt
     steps:
       - attach_workspace:
           at: .
-      - run: diff --report-identical-files --from-file bytecode-report-emscripten.txt bytecode-report-ubuntu.txt bytecode-report-osx.txt bytecode-report-windows.txt
+      - run:
+          name: Compare reports
+          command: diff --brief --report-identical-files --from-file $REPORT_FILES
+      - run:
+          name: Print diff
+          when: on_fail
+          command: diff --unified=0 --report-identical-files --from-file $REPORT_FILES | head --lines 50
+      - run:
+          name: Install zip
+          when: on_fail
+          command: |
+            apt update --quiet
+            apt install zip --assume-yes
+      - run:
+          name: Bundle reports into a single package
+          when: on_fail
+          command: zip all-bytecode-reports.zip $REPORT_FILES
+      - store_artifacts:
+          # NOTE: store_artifacts does not support the 'when' attribute.
+          # Fortunately when the artifact does not exist it just says "No artifact files found" and ignores it.
+          path: all-bytecode-reports.zip
 
 workflows:
   version: 2
@@ -985,6 +1065,8 @@ workflows:
       - chk_errorcodes: *workflow_trigger_on_tags
       - chk_antlr_grammar: *workflow_trigger_on_tags
       - chk_docs_pragma_min_version: *workflow_trigger_on_tags
+      - t_pyscripts_ubu: *workflow_trigger_on_tags
+      - t_pyscripts_win: *workflow_trigger_on_tags
 
       # build-only
       - b_docs: *workflow_trigger_on_tags

@@ -1,5 +1,3 @@
-pragma experimental SMTChecker;
-
 contract State {
 	uint x;
 	C c;
@@ -28,5 +26,8 @@ contract C {
 		return y;
 	}
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 6328: (299-313): CHC: Assertion violation happens here.\nCounterexample:\nowner = 0, y = 0, s = 0\n\n\n\nTransaction trace:\nconstructor()\nState: owner = 0, y = 0, s = 0\nf()
+// Warning 6328: (266-280): CHC: Assertion violation happens here.

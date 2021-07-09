@@ -1,5 +1,3 @@
-pragma experimental SMTChecker;
-
 abstract contract D {
     function d() public virtual ;
 }
@@ -22,6 +20,9 @@ contract C {
         x = 3;
     }
 }
+// ====
+// SMTEngine: all
+// SMTIgnoreCex: yes
 // ----
-// Warning 2072: (282-288): Unused local variable.
-// Warning 6328: (304-328): CHC: Assertion violation happens here.\nCounterexample:\na = false, x = 3, d = 0\n\n\n\nTransaction trace:\nconstructor()\nState: a = false, x = 0, d = 0\nf()
+// Warning 2072: (249-255): Unused local variable.
+// Warning 6328: (271-295): CHC: Assertion violation happens here.

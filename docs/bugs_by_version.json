@@ -1,6 +1,7 @@
 {
     "0.1.0": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ExpExponentCleanup",
@@ -21,6 +22,7 @@
     },
     "0.1.1": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ExpExponentCleanup",
@@ -41,6 +43,7 @@
     },
     "0.1.2": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ExpExponentCleanup",
@@ -61,6 +64,7 @@
     },
     "0.1.3": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ExpExponentCleanup",
@@ -81,6 +85,7 @@
     },
     "0.1.4": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ExpExponentCleanup",
@@ -102,6 +107,7 @@
     },
     "0.1.5": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ExpExponentCleanup",
@@ -123,6 +129,7 @@
     },
     "0.1.6": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -146,6 +153,7 @@
     },
     "0.1.7": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -169,6 +177,7 @@
     },
     "0.2.0": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -193,6 +202,7 @@
     },
     "0.2.1": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -217,6 +227,7 @@
     },
     "0.2.2": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -241,6 +252,7 @@
     },
     "0.3.0": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -267,6 +279,7 @@
     },
     "0.3.1": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -292,6 +305,7 @@
     },
     "0.3.2": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -317,6 +331,7 @@
     },
     "0.3.3": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -341,6 +356,7 @@
     },
     "0.3.4": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -365,6 +381,7 @@
     },
     "0.3.5": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -389,6 +406,7 @@
     },
     "0.3.6": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -411,6 +429,7 @@
     },
     "0.4.0": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -433,6 +452,7 @@
     },
     "0.4.1": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -455,6 +475,7 @@
     },
     "0.4.10": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -476,6 +497,7 @@
     },
     "0.4.11": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -496,6 +518,7 @@
     },
     "0.4.12": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -515,6 +538,7 @@
     },
     "0.4.13": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -534,6 +558,7 @@
     },
     "0.4.14": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -552,6 +577,7 @@
     },
     "0.4.15": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -569,6 +595,8 @@
     },
     "0.4.16": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -588,6 +616,8 @@
     },
     "0.4.17": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -608,6 +638,8 @@
     },
     "0.4.18": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -627,6 +659,8 @@
     },
     "0.4.19": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -647,6 +681,7 @@
     },
     "0.4.2": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -668,6 +703,8 @@
     },
     "0.4.20": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -688,6 +725,8 @@
     },
     "0.4.21": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -708,6 +747,8 @@
     },
     "0.4.22": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -728,6 +769,8 @@
     },
     "0.4.23": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -747,6 +790,8 @@
     },
     "0.4.24": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -766,6 +811,8 @@
     },
     "0.4.25": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -783,6 +830,8 @@
     },
     "0.4.26": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -797,6 +846,7 @@
     },
     "0.4.3": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -817,6 +867,7 @@
     },
     "0.4.4": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "TupleAssignmentMultiStackSlotComponents",
@@ -836,6 +887,7 @@
     },
     "0.4.5": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -858,6 +910,7 @@
     },
     "0.4.6": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -879,6 +932,7 @@
     },
     "0.4.7": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -900,6 +954,7 @@
     },
     "0.4.8": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -921,6 +976,7 @@
     },
     "0.4.9": {
         "bugs": [
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -942,6 +998,8 @@
     },
     "0.5.0": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -959,6 +1017,8 @@
     },
     "0.5.1": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -976,6 +1036,8 @@
     },
     "0.5.10": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -989,6 +1051,8 @@
     },
     "0.5.11": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1001,6 +1065,8 @@
     },
     "0.5.12": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1013,6 +1079,8 @@
     },
     "0.5.13": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1025,6 +1093,8 @@
     },
     "0.5.14": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1039,6 +1109,8 @@
     },
     "0.5.15": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1052,6 +1124,8 @@
     },
     "0.5.16": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1064,6 +1138,8 @@
     },
     "0.5.17": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1075,6 +1151,8 @@
     },
     "0.5.2": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1092,6 +1170,8 @@
     },
     "0.5.3": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1109,6 +1189,8 @@
     },
     "0.5.4": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1126,6 +1208,8 @@
     },
     "0.5.5": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1145,6 +1229,8 @@
     },
     "0.5.6": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1164,6 +1250,8 @@
     },
     "0.5.7": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1181,6 +1269,8 @@
     },
     "0.5.8": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1197,6 +1287,8 @@
     },
     "0.5.9": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "ImplicitConstructorCallvalueCheck",
@@ -1212,6 +1304,8 @@
     },
     "0.6.0": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1225,6 +1319,8 @@
     },
     "0.6.1": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1237,6 +1333,8 @@
     },
     "0.6.10": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup"
         ],
@@ -1244,6 +1342,8 @@
     },
     "0.6.11": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup"
         ],
@@ -1251,6 +1351,8 @@
     },
     "0.6.12": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup"
         ],
@@ -1258,6 +1360,8 @@
     },
     "0.6.2": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1270,6 +1374,8 @@
     },
     "0.6.3": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1282,6 +1388,8 @@
     },
     "0.6.4": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1294,6 +1402,8 @@
     },
     "0.6.5": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1305,6 +1415,8 @@
     },
     "0.6.6": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1315,6 +1427,8 @@
     },
     "0.6.7": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "MissingEscapingInFormatting",
@@ -1325,6 +1439,8 @@
     },
     "0.6.8": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup"
         ],
@@ -1332,6 +1448,8 @@
     },
     "0.6.9": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "UsingForCalldata"
@@ -1340,6 +1458,8 @@
     },
     "0.7.0": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup"
         ],
@@ -1347,6 +1467,8 @@
     },
     "0.7.1": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup",
             "FreeFunctionRedefinition"
@@ -1355,6 +1477,8 @@
     },
     "0.7.2": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy",
             "DynamicArrayCleanup"
         ],
@@ -1362,24 +1486,70 @@
     },
     "0.7.3": {
         "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching",
             "EmptyByteArrayCopy"
         ],
         "released": "2020-10-07"
     },
     "0.7.4": {
-        "bugs": [],
+        "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching"
+        ],
         "released": "2020-10-19"
     },
     "0.7.5": {
-        "bugs": [],
+        "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching"
+        ],
         "released": "2020-11-18"
     },
     "0.7.6": {
-        "bugs": [],
+        "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching"
+        ],
         "released": "2020-12-16"
     },
     "0.8.0": {
-        "bugs": [],
+        "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching"
+        ],
         "released": "2020-12-16"
+    },
+    "0.8.1": {
+        "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching"
+        ],
+        "released": "2021-01-27"
+    },
+    "0.8.2": {
+        "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory",
+            "KeccakCaching"
+        ],
+        "released": "2021-03-02"
+    },
+    "0.8.3": {
+        "bugs": [
+            "ABIDecodeTwoDimensionalArrayMemory"
+        ],
+        "released": "2021-03-23"
+    },
+    "0.8.4": {
+        "bugs": [],
+        "released": "2021-04-21"
+    },
+    "0.8.5": {
+        "bugs": [],
+        "released": "2021-06-10"
+    },
+    "0.8.6": {
+        "bugs": [],
+        "released": "2021-06-22"
     }
 }

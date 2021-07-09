@@ -39,6 +39,11 @@
 
 #include <boost/test/unit_test.hpp>
 
+namespace solidity::frontend::test
+{
+struct LogRecord;
+} // namespace solidity::frontend::test
+
 namespace solidity::test
 {
 using rational = boost::rational<bigint>;
@@ -60,7 +65,8 @@ public:
 		u256 const& _value = 0,
 		std::string const& _contractName = "",
 		bytes const& _arguments = {},
-		std::map<std::string, util::h160> const& _libraryAddresses = {}
+		std::map<std::string, util::h160> const& _libraryAddresses = {},
+		std::optional<std::string> const& _sourceName = std::nullopt
 	) = 0;
 
 	bytes const& compileAndRun(
@@ -240,6 +246,18 @@ public:
 		return result;
 	}
 
+	util::h160 setAccount(size_t _accountNumber)
+	{
+		m_sender = account(_accountNumber);
+		return m_sender;
+	}
+
+	size_t numLogs() const;
+	size_t numLogTopics(size_t _logIdx) const;
+	util::h256 logTopic(size_t _logIdx, size_t _topicIdx) const;
+	util::h160 logAddress(size_t _logIdx) const;
+	bytes logData(size_t _logIdx) const;
+
 private:
 	template <class CppFunction, class... Args>
 	auto callCppAndEncodeResult(CppFunction const& _cppFunction, Args const&... _arguments)
@@ -267,15 +285,11 @@ protected:
 	/// @returns the (potentially newly created) _ith address.
 	util::h160 account(size_t _i);
 
-	u256 balanceAt(util::h160 const& _addr);
-	bool storageEmpty(util::h160 const& _addr);
-	bool addressHasCode(util::h160 const& _addr);
+	u256 balanceAt(util::h160 const& _addr) const;
+	bool storageEmpty(util::h160 const& _addr) const;
+	bool addressHasCode(util::h160 const& _addr) const;
 
-	size_t numLogs() const;
-	size_t numLogTopics(size_t _logIdx) const;
-	util::h256 logTopic(size_t _logIdx, size_t _topicIdx) const;
-	util::h160 logAddress(size_t _logIdx) const;
-	bytes logData(size_t _logIdx) const;
+	std::vector<frontend::test::LogRecord> recordedLogs() const;
 
 	langutil::EVMVersion m_evmVersion;
 	solidity::frontend::RevertStrings m_revertStrings = solidity::frontend::RevertStrings::Default;

@@ -26,7 +26,7 @@
 
 #include <libsolutil/Algorithms.h>
 
-#include <boost/range/adaptor/transformed.hpp>
+#include <range/v3/view/transform.hpp>
 
 using namespace std;
 using namespace solidity::langutil;
@@ -239,8 +239,8 @@ void DeclarationTypeChecker::endVisit(Mapping const& _mapping)
 	else
 		solAssert(dynamic_cast<ElementaryTypeName const*>(&_mapping.keyType()), "");
 
-	TypePointer keyType = _mapping.keyType().annotation().type;
-	TypePointer valueType = _mapping.valueType().annotation().type;
+	Type const* keyType = _mapping.keyType().annotation().type;
+	Type const* valueType = _mapping.valueType().annotation().type;
 
 	// Convert key type to memory.
 	keyType = TypeProvider::withLocationIfReference(DataLocation::Memory, keyType);
@@ -255,7 +255,7 @@ void DeclarationTypeChecker::endVisit(ArrayTypeName const& _typeName)
 	if (_typeName.annotation().type)
 		return;
 
-	TypePointer baseType = _typeName.baseType().annotation().type;
+	Type const* baseType = _typeName.baseType().annotation().type;
 	if (!baseType)
 	{
 		solAssert(!m_errorReporter.errors().empty(), "");
@@ -344,7 +344,7 @@ void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 		{
 			errorString = "Data location must be " +
 				util::joinHumanReadable(
-					allowedDataLocations | boost::adaptors::transformed(locationToString),
+					allowedDataLocations | ranges::views::transform(locationToString),
 					", ",
 					" or "
 				);
@@ -368,7 +368,7 @@ void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 	}
 
 	// Find correct data location.
-	if (_variable.isEventParameter())
+	if (_variable.isEventOrErrorParameter())
 	{
 		solAssert(varLoc == Location::Unspecified, "");
 		typeLoc = DataLocation::Memory;
@@ -405,11 +405,20 @@ void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 				solAssert(!_variable.hasReferenceOrMappingType(), "Data location not properly set.");
 		}
 
-	TypePointer type = _variable.typeName().annotation().type;
+	Type const* type = _variable.typeName().annotation().type;
 	if (auto ref = dynamic_cast<ReferenceType const*>(type))
 	{
 		bool isPointer = !_variable.isStateVariable();
 		type = TypeProvider::withLocation(ref, typeLoc, isPointer);
+	}
+
+	if (_variable.isConstant() && !type->isValueType())
+	{
+		bool allowed = false;
+		if (auto arrayType = dynamic_cast<ArrayType const*>(type))
+			allowed = arrayType->isByteArray();
+		if (!allowed)
+			m_errorReporter.fatalDeclarationError(9259_error, _variable.location(), "Constants of non-value type not yet implemented.");
 	}
 
 	_variable.annotation().type = type;

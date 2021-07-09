@@ -17,7 +17,7 @@ the usual semantics known from C or JavaScript.
 
 Solidity also supports exception handling in the form of ``try``/``catch``-statements,
 but only for :ref:`external function calls <external-function-calls>` and
-contract creation calls.
+contract creation calls. Errors can be created using the :ref:`revert statement <revert-statement>`.
 
 Parentheses can *not* be omitted for conditionals, but curly braces can be omitted
 around single-statement bodies.
@@ -44,6 +44,7 @@ this nonsensical example::
     // SPDX-License-Identifier: GPL-3.0
     pragma solidity >=0.4.22 <0.9.0;
 
+    // This will report a warning
     contract C {
         function g(uint a) public pure returns (uint ret) { return a + f(); }
         function f() internal pure returns (uint ret) { return g(7) + f(); }
@@ -109,6 +110,8 @@ Due to the fact that the EVM considers a call to a non-existing contract to
 always succeed, Solidity uses the ``extcodesize`` opcode to check that
 the contract that is about to be called actually exists (it contains code)
 and causes an exception if it does not.
+Note that this check is not performed in case of :ref:`low-level calls <address_related>` which
+operate on addresses rather than contract instances.
 
 Function calls also cause exceptions if the called contract itself
 throws an exception or goes out of gas.
@@ -476,6 +479,7 @@ In any case, you will get a warning about the outer variable being shadowed.
     }
 
 
+.. index:: ! safe math, safemath, checked, unchecked
 .. _unchecked:
 
 Checked or Unchecked Arithmetic
@@ -496,14 +500,14 @@ To obtain the previous behaviour, an ``unchecked`` block can be used:
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >0.7.99;
+    pragma solidity ^0.8.0;
     contract C {
         function f(uint a, uint b) pure public returns (uint) {
-            // This addition will wrap on underflow.
+            // This subtraction will wrap on underflow.
             unchecked { return a - b; }
         }
         function g(uint a, uint b) pure public returns (uint) {
-            // This addition will revert on underflow.
+            // This subtraction will revert on underflow.
             return a - b;
         }
     }
@@ -532,6 +536,12 @@ and will wrap without an error if used inside an unchecked block:
     or modulo by zero using the ``unchecked`` block.
 
 .. note::
+   Bitwise operators do not perform overflow or underflow checks.
+   This is particularly visible when using bitwise shifts (``<<``, ``>>``, ``<<=``, ``>>=``) in
+   place of integer division and multiplication by a power of 2.
+   For example ``type(uint256).max << 3`` does not revert even though ``type(uint256).max * 8`` would.
+
+.. note::
     The second statement in ``int x = type(int).min; -x;`` will result in an overflow
     because the negative range can hold one more value than the positive range.
 
@@ -551,7 +561,8 @@ state in the current call (and all its sub-calls) and
 flags an error to the caller.
 
 When exceptions happen in a sub-call, they "bubble up" (i.e.,
-exceptions are rethrown) automatically. Exceptions to this rule are ``send``
+exceptions are rethrown) automatically unless they are caught in
+a ``try/catch`` statement. Exceptions to this rule are ``send``
 and the low-level functions ``call``, ``delegatecall`` and
 ``staticcall``: they return ``false`` as their first return value in case
 of an exception instead of "bubbling up".
@@ -562,17 +573,11 @@ of an exception instead of "bubbling up".
     if the account called is non-existent, as part of the design
     of the EVM. Account existence must be checked prior to calling if needed.
 
-Exceptions in external calls can be caught with the ``try``/``catch`` statement.
-
-Exceptions can contain data that is passed back to the caller.
-This data consists of a 4-byte selector and subsequent :ref:`ABI-encoded<abi>` data.
-The selector is computed in the same way as a function selector, i.e.,
-the first four bytes of the keccak256-hash of a function
-signature - in this case an error signature.
-
-Currently, Solidity supports two error signatures: ``Error(string)``
-and ``Panic(uint256)``. The first ("error") is used for "regular" error conditions
-while the second ("panic") is used for errors that should not be present in bug-free code.
+Exceptions can contain error data that is passed back to the caller
+in the form of :ref:`error instances <errors>`.
+The built-in errors ``Error(string)`` and ``Panic(uint256)`` are
+used by special functions, as explained below. ``Error`` is used for "regular" error conditions
+while ``Panic`` is used for errors that should not be present in bug-free code.
 
 Panic via ``assert`` and Error via ``require``
 ----------------------------------------------
@@ -594,6 +599,7 @@ function calls which will cause a Panic.
 A Panic exception is generated in the following situations.
 The error code supplied with the error data indicates the kind of panic.
 
+#. 0x00: Used for generic compiler inserted panics.
 #. 0x01: If you call ``assert`` with an argument that evaluates to false.
 #. 0x11: If an arithmetic operation results in underflow or overflow outside of an ``unchecked { ... }`` block.
 #. 0x12; If you divide or modulo by zero (e.g. ``5 / 0`` or ``23 % 0``).
@@ -604,17 +610,24 @@ The error code supplied with the error data indicates the kind of panic.
 #. 0x41: If you allocate too much memory or create an array that is too large.
 #. 0x51: If you call a zero-initialized variable of internal function type.
 
-The ``require`` function either creates an error of type ``Error(string)``
-or an error without any error data and it
+The ``require`` function either creates an error without any data or
+an error of type ``Error(string)``. It
 should be used to ensure valid conditions
 that cannot be detected until execution time.
 This includes conditions on inputs
 or return values from calls to external contracts.
 
-A ``Error(string)`` exception (or an exception without data) is generated
+.. note::
+
+    It is currently not possible to use custom errors in combination
+    with ``require``. Please use ``if (!condition) revert CustomError();`` instead.
+
+An ``Error(string)`` exception (or an exception without data) is generated
+by the compiler
 in the following situations:
 
-#. Calling ``require`` with an argument that evaluates to ``false``.
+#. Calling ``require(x)`` where ``x`` evaluates to ``false``.
+#. If you use ``revert()`` or ``revert("description")``.
 #. If you perform an external function call targeting a contract that contains no code.
 #. If your contract receives Ether via a public function without
    ``payable`` modifier (including the constructor and the fallback function).
@@ -679,22 +692,43 @@ the changes in the caller will always be reverted.
     which consumed all gas available to the call.
     Exceptions that use ``require`` used to consume all gas until before the Metropolis release.
 
+.. _revert-statement:
+
 ``revert``
 ----------
 
-The ``revert`` function is another way to trigger exceptions from within other code blocks to flag an error and
-revert the current call. The function takes an optional string
-message containing details about the error that is passed back to the caller
-and it will create an ``Error(string)`` exception.
+A direct revert can be triggered using the ``revert`` statement and the ``revert`` function.
 
-The following example shows how to use an error string together with ``revert`` and the equivalent ``require``:
+The ``revert`` statement takes a custom error as direct argument without parentheses:
+
+    revert CustomError(arg1, arg2);
+
+For backards-compatibility reasons, there is also the ``revert()`` function, which uses parentheses
+and accepts a string:
+
+    revert();
+    revert("description");
+
+The error data will be passed back to the caller and can be caught there.
+Using ``revert()`` causes a revert without any error data while ``revert("description")``
+will create an ``Error(string)`` error.
+
+Using a custom error instance will usually be much cheaper than a string description,
+because you can use the name of the error to describe it, which is encoded in only
+four bytes. A longer description can be supplied via NatSpec which does not incur
+any costs.
+
+The following example shows how to use an error string and a custom error instance
+together with ``revert`` and the equivalent ``require``:
 
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.5.0 <0.9.0;
+    pragma solidity ^0.8.4;
 
     contract VendingMachine {
+        address owner;
+        error Unauthorized();
         function buy(uint amount) public payable {
             if (amount > msg.value / 2 trx)
                 revert("Not enough Trx provided.");
@@ -705,9 +739,17 @@ The following example shows how to use an error string together with ``revert`` 
             );
             // Perform the purchase.
         }
+        function withdraw() public {
+            if (msg.sender != owner)
+                revert Unauthorized();
+
+            payable(msg.sender).transfer(address(this).balance);
+        }
     }
 
-If you provide the reason string directly, then the two syntax options are equivalent, it is the developer's preference which one to use.
+The two ways ``if (!condition) revert(...);`` and ``require(condition, ...);`` are
+equivalent as long as the arguments to ``revert`` and ``require`` do not have side-effects,
+for example if they are just strings.
 
 .. note::
     The ``require`` function is evaluated just as any other function.
@@ -742,7 +784,7 @@ A failure in an external call can be caught using a try/catch statement, as foll
 ::
 
     // SPDX-License-Identifier: GPL-3.0
-    pragma solidity >=0.6.0 <0.9.0;
+    pragma solidity >0.8.0;
 
     interface DataFeed { function getData(address token) external returns (uint value); }
 
@@ -759,6 +801,13 @@ A failure in an external call can be caught using a try/catch statement, as foll
                 // This is executed in case
                 // revert was called inside getData
                 // and a reason string was provided.
+                errorCount++;
+                return (0, false);
+            } catch Panic(uint /*errorCode*/) {
+                // This is executed in case of a panic,
+                // i.e. a serious error like division by zero
+                // or overflow. The error code can be used
+                // to determine the kind of error.
                 errorCount++;
                 return (0, false);
             } catch (bytes memory /*lowLevelData*/) {
@@ -778,23 +827,28 @@ matching the types returned by the external call. In case there was no error,
 these variables are assigned and the contract's execution continues inside the
 first success block. If the end of the success block is reached, execution continues after the ``catch`` blocks.
 
-Currently, Solidity supports different kinds of catch blocks depending on the
-type of error. If the error was caused by ``revert("reasonString")`` or
-``require(false, "reasonString")`` (or an internal error that causes such an
-exception), then the catch clause
-of the type ``catch Error(string memory reason)`` will be executed.
+Solidity supports different kinds of catch blocks depending on the
+type of error:
+
+- ``catch Error(string memory reason) { ... }``: This catch clause is executed if the error was caused by ``revert("reasonString")`` or
+  ``require(false, "reasonString")`` (or an internal error that causes such an
+  exception).
+
+- ``catch Panic(uint errorCode) { ... }``: If the error was caused by a panic, i.e. by a failing ``assert``, division by zero,
+  invalid array access, arithmetic overflow and others, this catch clause will be run.
+
+- ``catch (bytes memory lowLevelData) { ... }``: This clause is executed if the error signature
+  does not match any other clause, if there was an error while decoding the error
+  message, or
+  if no error data was provided with the exception.
+  The declared variable provides access to the low-level error data in that case.
+
+- ``catch { ... }``: If you are not interested in the error data, you can just use
+  ``catch { ... }`` (even as the only catch clause) instead of the previous clause.
+
 
 It is planned to support other types of error data in the future.
-The string ``Error`` is currently parsed as is and is not treated as an identifier.
-
-The clause ``catch (bytes memory lowLevelData)`` is executed if the error signature
-does not match any other clause, if there was an error while decoding the error
-message, or
-if no error data was provided with the exception.
-The declared variable provides access to the low-level error data in that case.
-
-If you are not interested in the error data, you can just use
-``catch { ... }`` (even as the only catch clause).
+The strings ``Error`` and ``Panic`` are currently parsed as is and are not treated as an identifiers.
 
 In order to catch all error cases, you have to have at least the clause
 ``catch { ...}`` or the clause ``catch (bytes memory lowLevelData) { ... }``.
