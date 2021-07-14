@@ -985,6 +985,11 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
         case FunctionType::Kind::verifyTransferProof:
         case FunctionType::Kind::verifyMintProof:
         case FunctionType::Kind::pedersenHash:
+		case FunctionType::Kind::rewardBalance:
+		case FunctionType::Kind::isSrCandidate:
+		case FunctionType::Kind::voteCount:
+		case FunctionType::Kind::totalVoteCount:
+		case FunctionType::Kind::totalReceivedVoteCount:
 		{
 			_functionCall.expression().accept(*this);
 			static map<FunctionType::Kind, u256> const contractAddresses{
@@ -996,7 +1001,12 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
                 {FunctionType::Kind::verifyMintProof, 16777217},
                 {FunctionType::Kind::verifyTransferProof, 16777218},
                 {FunctionType::Kind::verifyBurnProof, 16777219},
-                {FunctionType::Kind::pedersenHash, 16777220}
+                {FunctionType::Kind::pedersenHash, 16777220},
+				{FunctionType::Kind::rewardBalance, 16777221},
+				{FunctionType::Kind::isSrCandidate, 16777222},
+				{FunctionType::Kind::voteCount, 16777223},
+				{FunctionType::Kind::totalVoteCount, 16777224},
+				{FunctionType::Kind::totalReceivedVoteCount, 16777225}
 			};
 			m_context << contractAddresses.at(function.kind());
 			for (unsigned i = function.sizeOnStack(); i > 0; --i)
@@ -1349,6 +1359,29 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
             m_context << Instruction::NATIVEFREEZEEXPIRETIME;
             break;
         }
+		case FunctionType::Kind::vote:
+		{
+			_functionCall.expression().accept(*this);
+			for (unsigned i = 0; i < arguments.size(); ++i)
+			{
+				acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
+				m_context << Instruction::DUP1 << Instruction::MLOAD;
+			}
+			m_context << Instruction::NATIVEVOTE;
+			m_context << Instruction::DUP1 << Instruction::ISZERO;
+			m_context.appendConditionalRevert(true);
+			break;
+		}
+		case FunctionType::Kind::WithdrawReward:
+		{
+			_functionCall.expression().accept(*this);
+			for (unsigned i = arguments.size(); i > 0; --i)
+			{
+				acceptAndConvert(*arguments[i - 1], *function.parameterTypes()[i - 1]);
+			}
+			m_context << Instruction::NATIVEWITHDRAWREWARD;
+			break;
+		}
 		default:
 		    solAssert(false, "unsupported member function of Kind");
         }
@@ -1487,6 +1520,11 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
                 case FunctionType::Kind::verifyTransferProof:
                 case FunctionType::Kind::verifyMintProof:
                 case FunctionType::Kind::pedersenHash:
+				case FunctionType::Kind::rewardBalance:
+				case FunctionType::Kind::isSrCandidate:
+				case FunctionType::Kind::voteCount:
+				case FunctionType::Kind::totalVoteCount:
+				case FunctionType::Kind::totalReceivedVoteCount:
 				case FunctionType::Kind::SHA256:
 				case FunctionType::Kind::RIPEMD160:
 				default:
@@ -2453,6 +2491,11 @@ void ExpressionCompiler::appendExternalFunctionCall(
 	|| _functionType.kind() == FunctionType::Kind::verifyTransferProof
 	|| _functionType.kind() == FunctionType::Kind::verifyMintProof
 	|| _functionType.kind() == FunctionType::Kind::pedersenHash
+	|| _functionType.kind() == FunctionType::Kind::rewardBalance
+	|| _functionType.kind() == FunctionType::Kind::isSrCandidate
+	|| _functionType.kind() == FunctionType::Kind::voteCount
+	|| _functionType.kind() == FunctionType::Kind::totalVoteCount
+	|| _functionType.kind() == FunctionType::Kind::totalReceivedVoteCount
 	)
 		// This would be the only combination of padding and in-place encoding,
 		// but all parameters of ecrecover are value types anyway.

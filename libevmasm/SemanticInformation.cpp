@@ -201,6 +201,8 @@ bool SemanticInformation::isDeterministic(AssemblyItem const& _item)
     case Instruction::NATIVEFREEZE:
     case Instruction::NATIVEUNFREEZE:
     case Instruction::NATIVEFREEZEEXPIRETIME:
+	case Instruction::NATIVEVOTE:
+	case Instruction::NATIVEWITHDRAWREWARD:
 	case Instruction::SELFBALANCE: // depends on previous calls
 	case Instruction::EXTCODESIZE:
 	case Instruction::EXTCODEHASH:
@@ -307,6 +309,8 @@ bool SemanticInformation::invalidInPureFunctions(Instruction _instruction)
     case Instruction::NATIVEFREEZE:
     case Instruction::NATIVEUNFREEZE:
     case Instruction::NATIVEFREEZEEXPIRETIME:
+	case Instruction::NATIVEVOTE:
+	case Instruction::NATIVEWITHDRAWREWARD:
 	case Instruction::ORIGIN:
 	case Instruction::CALLER:
 	case Instruction::CALLVALUE:
@@ -354,6 +358,8 @@ bool SemanticInformation::invalidInViewFunctions(Instruction _instruction)
     case Instruction::NATIVEFREEZE:
     case Instruction::NATIVEUNFREEZE:
     case Instruction::NATIVEFREEZEEXPIRETIME:
+	case Instruction::NATIVEVOTE:
+	case Instruction::NATIVEWITHDRAWREWARD:
 		return true;
 	default:
 		break;

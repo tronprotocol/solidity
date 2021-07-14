@@ -73,6 +73,13 @@ int magicVariableToID(std::string const& _name)
     else if (_name == "freeze") return -35;
     else if (_name == "unfreeze") return -36;
     else if (_name == "freezeExpireTime") return -37;
+	else if (_name == "withdrawreward") return -38;
+	else if (_name == "vote") return -39;
+	else if (_name == "rewardBalance") return -40;
+	else if (_name == "isSrCandidate") return -41;
+	else if (_name == "voteCount") return -42;
+	else if (_name == "totalVoteCount") return -43;
+	else if (_name == "totalReceivedVoteCount") return -44;
 	else
 		solAssert(false, "Unknown magic variable: \"" + _name + "\".");
 }
@@ -109,9 +116,10 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
 		magicVarDecl("sha256", TypeProvider::function(strings{"bytes memory"}, strings{"bytes32"}, FunctionType::Kind::SHA256, false, StateMutability::Pure)),
 		magicVarDecl("sha3", TypeProvider::function(strings{"bytes memory"}, strings{"bytes32"}, FunctionType::Kind::KECCAK256, false, StateMutability::Pure)),
 		magicVarDecl("suicide", TypeProvider::function(strings{"address payable"}, strings{}, FunctionType::Kind::Selfdestruct)),
-                    magicVarDecl("freeze", TypeProvider::function(strings{"uint", "uint"}, strings{"bool"}, FunctionType::Kind::Freeze, false, StateMutability::NonPayable)),
-                    magicVarDecl("unfreeze", TypeProvider::function(strings{"uint"}, strings{"bool"}, FunctionType::Kind::Unfreeze, false, StateMutability::NonPayable)),
-                    magicVarDecl("freezeExpireTime", TypeProvider::function(strings{"uint"}, strings{"uint"}, FunctionType::Kind::FreezeExpireTime, false, StateMutability::NonPayable)),
+		magicVarDecl("freeze", TypeProvider::function(strings{"uint", "uint"}, strings{"bool"}, FunctionType::Kind::Freeze, false, StateMutability::NonPayable)),
+		magicVarDecl("unfreeze", TypeProvider::function(strings{"uint"}, strings{"bool"}, FunctionType::Kind::Unfreeze, false, StateMutability::NonPayable)),
+		magicVarDecl("freezeExpireTime", TypeProvider::function(strings{"uint"}, strings{"uint"}, FunctionType::Kind::FreezeExpireTime, false, StateMutability::NonPayable)),
+		magicVarDecl("withdrawreward", TypeProvider::function(strings{}, strings{"uint"}, FunctionType::Kind::WithdrawReward)),
 		magicVarDecl("tx", TypeProvider::magic(MagicType::Kind::Transaction)),
 		// Accepts a MagicType that can be any contract type or an Integer type and returns a
 		// MagicType. The TypeChecker handles the correctness of the input and output types.
@@ -133,6 +141,12 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             addVerifyBurnProofMethod();
             addVerifyTransferProofMethod();
             addPedersenHashMethod();
+			addVoteMethod();
+			addRewardBalanceMethod();
+			addIsSRCandidateMethod();
+			addVoteCountMethod();
+			addTotalVoteCountMethod();
+			addTotalReceivedVoteCountMethod();
         }
 
         void GlobalContext::addVerifyMintProofMethod() {
@@ -384,7 +398,178 @@ inline vector<shared_ptr<MagicVariableDeclaration const>> constructMagicVariable
             ));
         }
 
-        void GlobalContext::setCurrentContract(ContractDefinition const& _contract)
+		void GlobalContext::addVoteMethod() {
+			// bool vote(address[] memory addresses, unit256[] tronpowerlist)
+			TypePointers parameterTypes;
+
+			parameterTypes.push_back(TypeProvider::array(DataLocation::Memory, TypeProvider::address()));
+			parameterTypes.push_back(TypeProvider::array(DataLocation::Memory, TypeProvider::uint256()));
+
+			TypePointers returnParameterTypes;
+			returnParameterTypes.push_back(TypeProvider::boolean());
+			strings parameterNames;
+			parameterNames.push_back("srList");
+			parameterNames.push_back("tronpowerList");
+			strings returnParameterNames;
+			returnParameterNames.push_back("ok");
+
+			m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("vote"), "vote", TypeProvider::function(
+				parameterTypes,
+				returnParameterTypes,
+				parameterNames,
+				returnParameterNames,
+				FunctionType::Kind::vote,
+				false,
+				StateMutability::NonPayable,
+				nullptr,
+				false,
+				false,
+				false,
+				false)
+			));
+		}
+
+		void GlobalContext::addRewardBalanceMethod() {
+			// uint rewardBalance()
+			TypePointers parameterTypes;
+			TypePointers returnParameterTypes;
+			returnParameterTypes.push_back(TypeProvider::uint256());
+			strings parameterNames;
+			strings returnParameterNames;
+			returnParameterNames.push_back("result");
+
+			m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("rewardBalance"), "rewardBalance", TypeProvider::function(
+				parameterTypes,
+				returnParameterTypes,
+				parameterNames,
+				returnParameterNames,
+				FunctionType::Kind::rewardBalance,
+				false,
+				StateMutability::View,
+				nullptr,
+				false,
+				false,
+				false,
+				false)
+			));
+		}
+
+		void GlobalContext::addIsSRCandidateMethod() {
+			// bool isSrCandidate(address)
+			TypePointers parameterTypes;
+			parameterTypes.push_back(TypeProvider::address());
+
+			TypePointers returnParameterTypes;
+			returnParameterTypes.push_back(TypeProvider::boolean());
+			strings parameterNames;
+			parameterNames.push_back("address");
+			strings returnParameterNames;
+			returnParameterNames.push_back("ok");
+
+			m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("isSrCandidate"), "isSrCandidate", TypeProvider::function(
+				parameterTypes,
+				returnParameterTypes,
+				parameterNames,
+				returnParameterNames,
+				FunctionType::Kind::isSrCandidate,
+				false,
+				StateMutability::View,
+				nullptr,
+				false,
+				false,
+				false,
+				false)
+			));
+		}
+
+		void GlobalContext::addVoteCountMethod() {
+			// uint voteCount(address, address)
+			TypePointers parameterTypes;
+			parameterTypes.push_back(TypeProvider::address());
+			parameterTypes.push_back(TypeProvider::address());
+
+			TypePointers returnParameterTypes;
+			returnParameterTypes.push_back(TypeProvider::uint256());
+			strings parameterNames;
+			parameterNames.push_back("address");
+			parameterNames.push_back("address");
+			strings returnParameterNames;
+			returnParameterNames.push_back("result");
+
+			m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("voteCount"), "voteCount", TypeProvider::function(
+				parameterTypes,
+				returnParameterTypes,
+				parameterNames,
+				returnParameterNames,
+				FunctionType::Kind::voteCount,
+				false,
+				StateMutability::View,
+				nullptr,
+				false,
+				false,
+				false,
+				false)
+			));
+		}
+
+		void GlobalContext::addTotalVoteCountMethod() {
+			// uint totalVoteCount(address)
+			TypePointers parameterTypes;
+			parameterTypes.push_back(TypeProvider::address());
+
+			TypePointers returnParameterTypes;
+			returnParameterTypes.push_back(TypeProvider::uint256());
+			strings parameterNames;
+			parameterNames.push_back("address");
+			strings returnParameterNames;
+			returnParameterNames.push_back("result");
+
+			m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("totalVoteCount"), "totalVoteCount", TypeProvider::function(
+				parameterTypes,
+				returnParameterTypes,
+				parameterNames,
+				returnParameterNames,
+				FunctionType::Kind::totalVoteCount,
+				false,
+				StateMutability::View,
+				nullptr,
+				false,
+				false,
+				false,
+				false)
+			));
+		}
+
+		void GlobalContext::addTotalReceivedVoteCountMethod() {
+			// uint totalReceivedVoteCount(address)
+			TypePointers parameterTypes;
+			parameterTypes.push_back(TypeProvider::address());
+
+			TypePointers returnParameterTypes;
+			returnParameterTypes.push_back(TypeProvider::uint256());
+			strings parameterNames;
+			parameterNames.push_back("address");
+			strings returnParameterNames;
+			returnParameterNames.push_back("result");
+
+			m_magicVariables.push_back(make_shared<MagicVariableDeclaration>(magicVariableToID("totalReceivedVoteCount"), "totalReceivedVoteCount", TypeProvider::function(
+				parameterTypes,
+				returnParameterTypes,
+				parameterNames,
+				returnParameterNames,
+				FunctionType::Kind::totalReceivedVoteCount,
+				false,
+				StateMutability::View,
+				nullptr,
+				false,
+				false,
+				false,
+				false)
+			));
+		}
+
+
+void GlobalContext::setCurrentContract(ContractDefinition const& _contract)
         {
             m_currentContract = &_contract;
         }
