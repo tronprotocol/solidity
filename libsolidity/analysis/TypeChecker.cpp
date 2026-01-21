@@ -3186,6 +3186,46 @@ bool TypeChecker::visit(MemberAccess const& _memberAccess)
 				++it;
 	}
 
+	// When both a native property and a library function share the same name,
+	// disambiguate based on call syntax:
+	// - With parentheses (function call): prefer function members (library)
+	// - Without parentheses (property access): prefer non-function members (native)
+	// This mirrors the identifier resolution pattern at lines 3693-3745 where
+	// VariableDeclarations are preferred without parentheses.
+	if (possibleMembers.size() > 1)
+	{
+		bool hasFunction = false;
+		bool hasNonFunction = false;
+		for (auto const& member: possibleMembers)
+		{
+			if (member.type->category() == Type::Category::Function)
+				hasFunction = true;
+			else
+				hasNonFunction = true;
+		}
+
+		if (hasFunction && hasNonFunction)
+		{
+			MemberList::MemberMap filtered;
+			if (arguments)
+			{
+				// Called with parentheses - keep only functions (library)
+				for (auto const& member: possibleMembers)
+					if (member.type->category() == Type::Category::Function)
+						filtered.push_back(member);
+			}
+			else
+			{
+				// Accessed without parentheses - keep only non-functions (native property)
+				for (auto const& member: possibleMembers)
+					if (member.type->category() != Type::Category::Function)
+						filtered.push_back(member);
+			}
+			if (filtered.size() == 1)
+				possibleMembers = std::move(filtered);
+		}
+	}
+
 	annotation.isConstant = false;
 
 	if (possibleMembers.empty())
