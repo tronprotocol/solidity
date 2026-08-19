@@ -400,7 +400,7 @@ Json formatImmutableReferences(std::map<u256, evmasm::LinkerObject::ImmutableRef
 
 std::optional<Json> checkKeys(Json const& _input, std::set<std::string> const& _keys, std::string const& _name)
 {
-	if (!_input.empty() && !_input.is_object())
+	if (!_input.is_object())
 		return formatFatalError(Error::Type::JSONError, "\"" + _name + "\" must be an object");
 
 	for (auto const& [member, _]: _input.items())
@@ -513,6 +513,8 @@ std::optional<Json> checkMetadataKeys(Json const& _input)
 			return formatFatalError(Error::Type::JSONError, "\"settings.metadata.appendCBOR\" must be Boolean");
 		if (_input.contains("useLiteralContent") && !_input["useLiteralContent"].is_boolean())
 			return formatFatalError(Error::Type::JSONError, "\"settings.metadata.useLiteralContent\" must be Boolean");
+		if (_input.contains("bytecodeHash") && !_input["bytecodeHash"].is_string())
+			return formatFatalError(Error::Type::JSONError, "\"settings.metadata.bytecodeHash\" must be a string");
 
 		static std::set<std::string> hashes{"ipfs", "bzzr1", "none"};
 		if (_input.contains("bytecodeHash") && !hashes.count(_input["bytecodeHash"].get<std::string>()))
@@ -524,7 +526,7 @@ std::optional<Json> checkMetadataKeys(Json const& _input)
 
 std::optional<Json> checkOutputSelection(Json const& _outputSelection)
 {
-	if (!_outputSelection.empty() && !_outputSelection.is_object())
+	if (!_outputSelection.is_object())
 		return formatFatalError(Error::Type::JSONError, "\"settings.outputSelection\" must be an object");
 
 	for (auto const& [sourceName, sourceVal]: _outputSelection.items())
@@ -647,6 +649,8 @@ std::variant<StandardCompiler::InputsAndSettings, Json> StandardCompiler::parseI
 	if (auto result = checkRootKeys(_input))
 		return *result;
 
+	if (_input.contains("language") && !_input["language"].is_string())
+		return formatFatalError(Error::Type::JSONError, "\"language\" must be a string.");
 	ret.language = _input.value<std::string>("language", "");
 
 	Json const& sources = _input.value<Json>("sources", Json());
@@ -770,31 +774,28 @@ std::variant<StandardCompiler::InputsAndSettings, Json> StandardCompiler::parseI
 	if (!auxInputs.empty())
 	{
 		Json const& smtlib2Responses = auxInputs.value("smtlib2responses", Json::object());
-		if (!smtlib2Responses.empty())
+		if (!smtlib2Responses.is_object())
+			return formatFatalError(Error::Type::JSONError, "\"auxiliaryInput.smtlib2responses\" must be an object.");
+
+		for (auto const& [hashString, response]: smtlib2Responses.items())
 		{
-			if (!smtlib2Responses.is_object())
-				return formatFatalError(Error::Type::JSONError, "\"auxiliaryInput.smtlib2responses\" must be an object.");
-
-			for (auto const& [hashString, response]: smtlib2Responses.items())
+			util::h256 hash;
+			try
 			{
-				util::h256 hash;
-				try
-				{
-					hash = util::h256(hashString);
-				}
-				catch (util::BadHexCharacter const&)
-				{
-					return formatFatalError(Error::Type::JSONError, "Invalid hex encoding of SMTLib2 auxiliary input.");
-				}
-
-				if (!response.is_string())
-					return formatFatalError(
-						Error::Type::JSONError,
-						"\"smtlib2Responses." + hashString + "\" must be a string."
-					);
-
-				ret.smtLib2Responses[hash] = response.get<std::string>();
+				hash = util::h256(hashString);
 			}
+			catch (util::BadHexCharacter const&)
+			{
+				return formatFatalError(Error::Type::JSONError, "Invalid hex encoding of SMTLib2 auxiliary input.");
+			}
+
+			if (!response.is_string())
+				return formatFatalError(
+					Error::Type::JSONError,
+					"\"smtlib2Responses." + hashString + "\" must be a string."
+				);
+
+			ret.smtLib2Responses[hash] = response.get<std::string>();
 		}
 	}
 
@@ -870,7 +871,11 @@ std::variant<StandardCompiler::InputsAndSettings, Json> StandardCompiler::parseI
 
 			std::vector<std::string> components;
 			for (Json const& arrayValue: settings["debug"]["debugInfo"])
+			{
+				if (!arrayValue.is_string())
+					return formatFatalError(Error::Type::JSONError, "Every value in settings.debug.debugInfo must be a string.");
 				components.push_back(arrayValue.get<std::string>());
+			}
 
 			std::optional<DebugInfoSelection> debugInfoSelection = DebugInfoSelection::fromComponents(
 				components,
@@ -1382,6 +1387,16 @@ Json StandardCompiler::compileSolidity(StandardCompiler::InputsAndSettings _inpu
 					errors.emplace_back(formatError(Error::Type::FatalError, "general", "Analysis of the AST failed."));
 				if (binariesRequested)
 					compilerStack.compile();
+			}
+			catch (InvalidAstError const& _exc)
+			{
+				errors.emplace_back(formatErrorWithException(
+					compilerStack,
+					_exc,
+					Error::Type::JSONError,
+					"general",
+					"Failed to import AST"
+				));
 			}
 			catch (util::Exception const& _exc)
 			{

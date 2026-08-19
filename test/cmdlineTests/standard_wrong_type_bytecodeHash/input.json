@@ -1,0 +1,13 @@
+{
+    "language": "Solidity",
+    "sources": {
+        "A.sol": {
+            "content": "pragma solidity >=0.0; contract A {}"
+        }
+    },
+    "settings": {
+        "metadata": {
+            "bytecodeHash": true
+        }
+    }
+}

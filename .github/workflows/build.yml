@@ -239,49 +239,61 @@ jobs:
       contents: read
 
     steps:
+      - name: Prepare artifact workspace
+        id: artifact-workspace
+        shell: bash
+        run: |
+          artifact_work_dir="${RUNNER_TEMP}/solidity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "${artifact_work_dir}/github"
+          echo "path=${artifact_work_dir}" >> "${GITHUB_OUTPUT}"
+
       - name: Download solc-windows
         uses: actions/download-artifact@v7
         with:
           name: solc-windows
-          path: github
+          path: ${{ steps.artifact-workspace.outputs.path }}/github
 
       - name: Download solc-macos
         uses: actions/download-artifact@v7
         with:
           name: solc-macos
-          path: github
+          path: ${{ steps.artifact-workspace.outputs.path }}/github
 
       - name: Download solc-linux
         uses: actions/download-artifact@v7
         with:
           name: solc-linux
-          path: github
+          path: ${{ steps.artifact-workspace.outputs.path }}/github
 
       - name: Download solc-linux-arm
         uses: actions/download-artifact@v7
         with:
           name: solc-linux-arm
-          path: github
+          path: ${{ steps.artifact-workspace.outputs.path }}/github
 
       - name: Download solc-ems
         uses: actions/download-artifact@v7
         with:
           name: solc-ems
-          path: github
+          path: ${{ steps.artifact-workspace.outputs.path }}/github
 
       - name: Restore executable permissions
+        working-directory: ${{ steps.artifact-workspace.outputs.path }}
         run: chmod +x github/solc-static-linux github/solc-static-linux-arm github/solc-macos
 
       - name: List all artifacts
+        working-directory: ${{ steps.artifact-workspace.outputs.path }}
         run: |
           ls -R github/
 
       - name: Create tarball for use on github
+        working-directory: ${{ steps.artifact-workspace.outputs.path }}
         run: |
           cd github
           tar --create --file ../github-binaries.tar *
 
       - name: Rename binaries to solc-bin naming convention
+        working-directory: ${{ steps.artifact-workspace.outputs.path }}
         run: |
           full_version=$(
             github/solc-static-linux --version |
@@ -301,6 +313,7 @@ jobs:
 
       - name: Upload to S3
         shell: bash
+        working-directory: ${{ steps.artifact-workspace.outputs.path }}
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET_PROD }}
         run: |
@@ -313,5 +326,13 @@ jobs:
           aws s3 cp solc-static-linux "s3://${S3_BUCKET}/${{ github.sha }}/" --only-show-errors
           aws s3 cp solc-static-linux-arm "s3://${S3_BUCKET}/${{ github.sha }}/" --only-show-errors
           aws s3 cp soljson.js "s3://${S3_BUCKET}/${{ github.sha }}/" --only-show-errors
-          
-          cd .. && rm -rf github solc-bin *.tar
+
+      - name: Clean artifact workspace
+        if: always()
+        shell: bash
+        env:
+          ARTIFACT_WORK_DIR: ${{ steps.artifact-workspace.outputs.path }}
+        run: |
+          if [[ -n "${ARTIFACT_WORK_DIR}" ]]; then
+            rm -rf -- "${ARTIFACT_WORK_DIR}"
+          fi

@@ -59,6 +59,12 @@ namespace fs = boost::filesystem;
 namespace
 {
 
+bool isFilesystemRoot(fs::path const& _path)
+{
+	auto const normalizedPath = _path.lexically_normal();
+	return normalizedPath.has_root_path() && normalizedPath == normalizedPath.root_path();
+}
+
 bool resolvesToRegularFile(boost::filesystem::path _path, int maxRecursionDepth = 10)
 {
 	fs::file_status fileStatus = fs::status(_path);
@@ -217,14 +223,20 @@ void LanguageServer::changeConfiguration(Json const& _settings)
 std::vector<boost::filesystem::path> LanguageServer::allSolidityFilesFromProject() const
 {
 	std::vector<fs::path> collectedPaths{};
+	auto const basePath = m_fileRepository.basePath().lexically_normal();
+
+	// The filesystem root is used as a fallback when the client does not provide a workspace root.
+	// Keep full filesystem access available for explicit imports, but never scan the entire filesystem eagerly.
+	if (isFilesystemRoot(basePath))
+		return collectedPaths;
 
 	// We explicitly decided against including all files from include paths but leave the possibility
 	// open for a future PR to enable such a feature to be optionally enabled (default disabled).
 	// Note: Newer versions of boost have deprecated symlink_option::recurse
 #if (BOOST_VERSION < 107200)
-	auto directoryIterator = fs::recursive_directory_iterator(m_fileRepository.basePath(), fs::symlink_option::recurse);
+	auto directoryIterator = fs::recursive_directory_iterator(basePath, fs::symlink_option::recurse);
 #else
-	auto directoryIterator = fs::recursive_directory_iterator(m_fileRepository.basePath(), fs::directory_options::follow_directory_symlink);
+	auto directoryIterator = fs::recursive_directory_iterator(basePath, fs::directory_options::follow_directory_symlink);
 #endif
 	for (fs::directory_entry const& dirEntry: directoryIterator)
 		if (
@@ -412,6 +424,8 @@ void LanguageServer::handleInitialize(MessageID _id, Json const& _args)
 	m_fileRepository = FileRepository(rootPath, {});
 	if (_args.contains("initializationOptions") && _args["initializationOptions"].is_object())
 		changeConfiguration(_args["initializationOptions"]);
+	if (m_fileLoadStrategy == FileLoadStrategy::ProjectDirectory && isFilesystemRoot(m_fileRepository.basePath()))
+		m_fileLoadStrategy = FileLoadStrategy::DirectlyOpenedAndOnImported;
 
 	Json replyArgs;
 	replyArgs["serverInfo"]["name"] = "solc";

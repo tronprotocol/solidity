@@ -1,0 +1,11 @@
+{
+    "errors": [
+        {
+            "component": "general",
+            "formattedMessage": "\"settings.metadata.bytecodeHash\" must be a string",
+            "message": "\"settings.metadata.bytecodeHash\" must be a string",
+            "severity": "error",
+            "type": "JSONError"
+        }
+    ]
+}

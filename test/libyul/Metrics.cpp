@@ -25,9 +25,13 @@
 #include <test/libyul/Common.h>
 
 #include <libyul/optimiser/Metrics.h>
+#include <libyul/backends/evm/EVMDialect.h>
+#include <libyul/backends/evm/EVMMetrics.h>
 #include <libyul/AST.h>
 #include <libyul/Object.h>
 #include <libyul/YulStack.h>
+
+#include <libevmasm/GasMeter.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -380,6 +384,23 @@ BOOST_FIXTURE_TEST_CASE(switch_statement_large_custom_weights, CustomWeightFixtu
 		1 * m_weights.switchCost +
 		4 * m_weights.caseCost
 	);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(YulEVMMetrics)
+
+BOOST_AUTO_TEST_CASE(exp_uses_tvm_fixed_byte_cost)
+{
+	for (EVMVersion const& evmVersion: EVMVersion::allVersions())
+	{
+		auto const [runCost, dataCost] = GasMeterVisitor::instructionCosts(
+			evmasm::Instruction::EXP,
+			EVMDialect::strictAssemblyForEVM(evmVersion, std::nullopt)
+		);
+		BOOST_CHECK_EQUAL(runCost, evmasm::GasCosts::expGas + evmasm::GasCosts::expByteGasInTVM);
+		BOOST_CHECK_EQUAL(dataCost, evmasm::GasCosts::createDataGas);
+	}
 }
 
 BOOST_AUTO_TEST_SUITE_END()

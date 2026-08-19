@@ -1658,7 +1658,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		std::string tokenId{expressionAsType(*arguments[1], *(parameterTypes[1]))};
 		Whiskers templ(R"(
 			if iszero(lt(0xf4240, <tokenId>)) { revert(0, 0) }
-			if iszero(gt(exp(2, 63), <tokenId>)) { revert(0, 0) }
+			if iszero(gt(0x8000000000000000, <tokenId>)) { revert(0, 0) }
 			let <gas> := 0
 			if iszero(<tokenValue>) { <gas> := <callStipend> }
 			let <success> := calltoken(<gas>, <address>, <tokenValue>, <tokenId>, 0, 0, 0, 0)
@@ -1682,7 +1682,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		std::string tokenId{expressionAsType(*arguments[0], *(parameterTypes[0]))};
 		Whiskers templ(R"(
 			if iszero(lt(0xf4240, <tokenId>)) { revert(0, 0) }
-			if iszero(gt(exp(2, 63), <tokenId>)) { revert(0, 0) }
+			if iszero(gt(0x8000000000000000, <tokenId>)) { revert(0, 0) }
 			let <result> := tokenbalance(<tokenId>, <address>)
 		)");
 		templ("address", address);
@@ -1760,7 +1760,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		{
 			// @todo The value 10 is not exact and this could be fine-tuned,
 			// but this has worked for years in the old code generator.
-			u256 gasNeededByCaller = evmasm::GasCosts::callGas(m_context.evmVersion()) + 10 + evmasm::GasCosts::callNewAccountGas;
+			u256 gasNeededByCaller = evmasm::GasCosts::callGasInTVM + 10 + evmasm::GasCosts::callNewAccountGas;
 			templ("gas", "sub(gas(), " + formatNumber(gasNeededByCaller) + ")");
 		}
 
@@ -2004,30 +2004,41 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 			let <success> := staticcall(gas(), <address>, <pos>, sub(<end>, <pos>), <pos>, <staticReturndataSize>)
 
 			if iszero(<success>) { <forwardingRevert>() }
+			<?isLegacyCompatibleMultisig>
+				if lt(returndatasize(), 0x20) {
+					mstore(<pos>, 0)
+					returndatacopy(<pos>, 0, returndatasize())
+				}
+			</isLegacyCompatibleMultisig>
 
 			<?isReturndataSizeDynamic>
-				<?isMintProof>
+				<?isProof>
+					if mod(returndatasize(), 0x20) { revert(0, 0) }
 					let <returnDataSizeVar> := add(returndatasize(), 0x40)
 					returndatacopy(add(<pos>, 0x40), 0, returndatasize())
 					mstore(<pos>, 0x20)
 					mstore(add(<pos>, 0x20), div(returndatasize(), 0x20))
-				<!isMintProof>
+				<!isProof>
 					let <returnDataSizeVar> := returndatasize()
 					returndatacopy(<pos>, 0, <returnDataSizeVar>)
-				</isMintProof>
+				</isProof>
 			<!isReturndataSizeDynamic>
 				let <returnDataSizeVar> := <staticReturndataSize>
-				<?supportsReturnData>
+				<?strictReturnSize>
 					if gt(<returnDataSizeVar>, returndatasize()) {
 						<returnDataSizeVar> := returndatasize()
 					}
-				</supportsReturnData>
+				</strictReturnSize>
 			</isReturndataSizeDynamic>
 
 			// update freeMemoryPointer according to dynamic return size
 			<finalizeAllocation>(<pos>, <returnDataSizeVar>)
 
-			let <retVars> := <abiDecode>(<pos>, add(<pos>, <returnDataSizeVar>))
+			<?isLegacyCompatibleMultisig>
+				let <retVars> := mload(<pos>)
+			<!isLegacyCompatibleMultisig>
+				let <retVars> := <abiDecode>(<pos>, add(<pos>, <returnDataSizeVar>))
+			</isLegacyCompatibleMultisig>
 		)");
 		templ("allocateUnbounded", m_utils.allocateUnboundedFunction());
 		templ("pos", m_context.newYulVariable());
@@ -2040,12 +2051,16 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 
 		if (returnInfo.dynamicReturnSize)
 			solAssert(m_context.evmVersion().supportsReturndata());
-		templ("supportsReturnData", m_context.evmVersion().supportsReturndata());
+		bool const isLegacyCompatibleMultisig =
+			functionType->kind() == FunctionType::Kind::ValidateMultiSign ||
+			functionType->kind() == FunctionType::Kind::BatchValidateSign;
+		templ("isLegacyCompatibleMultisig", isLegacyCompatibleMultisig);
+		templ("strictReturnSize", m_context.evmVersion().supportsReturndata() && !isLegacyCompatibleMultisig);
 
 		templ("returnDataSizeVar", m_context.newYulVariable());
 		templ("staticReturndataSize", std::to_string(returnInfo.estimatedReturnSize));
 		templ("isReturndataSizeDynamic", returnInfo.dynamicReturnSize);
-		templ("isMintProof",functionType->kind() == FunctionType::Kind::VerifyMintProof ||functionType->kind() == FunctionType::Kind::VerifyTransferProof);
+		templ("isProof", functionType->kind() == FunctionType::Kind::VerifyMintProof || functionType->kind() == FunctionType::Kind::VerifyTransferProof);
 		templ("finalizeAllocation", m_utils.finalizeAllocationFunction());
 		templ("retVars", IRVariable(_functionCall).commaSeparatedList());
 		templ("abiDecode", m_context.abiFunctions().tupleDecoder(returnInfo.returnTypes, true));
@@ -3189,7 +3204,7 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 	{
 		// send all gas except the amount needed to execute "SUB" and "CALL"
 		// @todo this retains too much gas for now, needs to be fine-tuned.
-		u256 gasNeededByCaller = evmasm::GasCosts::callGas(m_context.evmVersion()) + 10;
+		u256 gasNeededByCaller = evmasm::GasCosts::callGasInTVM + 10;
 		if (funType.valueSet())
 			gasNeededByCaller += evmasm::GasCosts::callValueTransferGas;
 		if (!checkExtcodesize)
@@ -3298,7 +3313,7 @@ void IRGeneratorForStatements::appendBareCall(
 	{
 		// send all gas except the amount needed to execute "SUB" and "CALL"
 		// @todo this retains too much gas for now, needs to be fine-tuned.
-		u256 gasNeededByCaller = evmasm::GasCosts::callGas(m_context.evmVersion()) + 10;
+		u256 gasNeededByCaller = evmasm::GasCosts::callGasInTVM + 10;
 		if (funType.valueSet())
 			gasNeededByCaller += evmasm::GasCosts::callValueTransferGas;
 		gasNeededByCaller += evmasm::GasCosts::callNewAccountGas; // we never know

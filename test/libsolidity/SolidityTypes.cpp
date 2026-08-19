@@ -74,6 +74,26 @@ BOOST_AUTO_TEST_CASE(ufixed_types)
 	}
 }
 
+BOOST_AUTO_TEST_CASE(ethereum_subdenominations_are_invalid)
+{
+	int64_t id = 0;
+	for (Literal::SubDenomination subdenomination: {
+		Literal::SubDenomination::Wei,
+		Literal::SubDenomination::Gwei,
+		Literal::SubDenomination::Ether
+	})
+	{
+		Literal literal(
+			++id,
+			SourceLocation{},
+			Token::Number,
+			std::make_shared<std::string>("1"),
+			subdenomination
+		);
+		BOOST_CHECK(TypeProvider::forLiteral(literal) == nullptr);
+	}
+}
+
 BOOST_AUTO_TEST_CASE(storage_layout_simple)
 {
 	MemberList members(MemberList::MemberMap({

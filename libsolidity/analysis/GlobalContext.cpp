@@ -366,8 +366,8 @@ void GlobalContext::addValidateMultiSignMethod() {
 	TypePointers returnParameterTypes;
 	returnParameterTypes.push_back(TypeProvider::boolean());
 	strings parameterNames;
-	parameterNames.push_back("address");
-	parameterNames.push_back("permissonid");
+	parameterNames.push_back("account");
+	parameterNames.push_back("permissionId");
 	parameterNames.push_back("content");
 	parameterNames.push_back("signatures");
 	strings returnParameterNames;
@@ -379,7 +379,7 @@ void GlobalContext::addValidateMultiSignMethod() {
 			parameterNames,
 			returnParameterNames,
 			FunctionType::Kind::ValidateMultiSign,
-			StateMutability::Pure,
+			StateMutability::View,
 			nullptr)
 	));
 }
@@ -436,7 +436,7 @@ void GlobalContext::addIsSRCandidateMethod() {
 	TypePointers returnParameterTypes;
 	returnParameterTypes.push_back(TypeProvider::boolean());
 	strings parameterNames;
-	parameterNames.push_back("address");
+	parameterNames.push_back("srCandidate");
 	strings returnParameterNames;
 	returnParameterNames.push_back("ok");
 
@@ -460,8 +460,8 @@ void GlobalContext::addVoteCountMethod() {
 	TypePointers returnParameterTypes;
 	returnParameterTypes.push_back(TypeProvider::uint256());
 	strings parameterNames;
-	parameterNames.push_back("address");
-	parameterNames.push_back("address");
+	parameterNames.push_back("voter");
+	parameterNames.push_back("srCandidate");
 	strings returnParameterNames;
 	returnParameterNames.push_back("result");
 
@@ -484,7 +484,7 @@ void GlobalContext::addTotalVoteCountMethod() {
 	TypePointers returnParameterTypes;
 	returnParameterTypes.push_back(TypeProvider::uint256());
 	strings parameterNames;
-	parameterNames.push_back("address");
+	parameterNames.push_back("voter");
 	strings returnParameterNames;
 	returnParameterNames.push_back("result");
 
@@ -507,7 +507,7 @@ void GlobalContext::addReceivedVoteCountMethod() {
 	TypePointers returnParameterTypes;
 	returnParameterTypes.push_back(TypeProvider::uint256());
 	strings parameterNames;
-	parameterNames.push_back("address");
+	parameterNames.push_back("srCandidate");
 	strings returnParameterNames;
 	returnParameterNames.push_back("result");
 
@@ -530,7 +530,7 @@ void GlobalContext::addUsedVoteCountMethod() {
 	TypePointers returnParameterTypes;
 	returnParameterTypes.push_back(TypeProvider::uint256());
 	strings parameterNames;
-	parameterNames.push_back("address");
+	parameterNames.push_back("voter");
 	strings returnParameterNames;
 	returnParameterNames.push_back("result");
 

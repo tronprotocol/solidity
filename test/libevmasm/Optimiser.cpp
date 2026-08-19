@@ -30,6 +30,8 @@
 #include <libevmasm/ControlFlowGraph.h>
 #include <libevmasm/BlockDeduplicator.h>
 #include <libevmasm/Assembly.h>
+#include <libevmasm/ConstantOptimiser.h>
+#include <libevmasm/GasMeter.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -48,6 +50,21 @@ namespace solidity::frontend::test
 
 namespace
 {
+	class ComputeMethodProbe: private ComputeMethod
+	{
+	public:
+		static bigint gasNeededFor(AssemblyItems const& _routine, EVMVersion _evmVersion)
+		{
+			u256 value = 0;
+			Params params{/* isCreation = */ false, /* runs = */ 1, /* multiplicity = */ 0, _evmVersion};
+			ComputeMethodProbe probe(params, value);
+			return probe.ComputeMethod::gasNeeded(_routine);
+		}
+
+	private:
+		ComputeMethodProbe(Params const& _params, u256 const& _value): ComputeMethod(_params, _value) {}
+	};
+
 	AssemblyItems addDummyLocations(AssemblyItems const& _input)
 	{
 		// add dummy locations to each item so that we can check that they are not deleted
@@ -156,6 +173,15 @@ namespace
 }
 
 BOOST_AUTO_TEST_SUITE(Optimiser)
+
+BOOST_AUTO_TEST_CASE(constant_optimizer_exp_uses_tvm_fixed_byte_cost)
+{
+	for (EVMVersion const& evmVersion: EVMVersion::allVersions())
+		BOOST_CHECK_EQUAL(
+			ComputeMethodProbe::gasNeededFor({Instruction::EXP}, evmVersion),
+			GasCosts::expGas + GasCosts::expByteGasInTVM
+		);
+}
 
 BOOST_AUTO_TEST_CASE(cse_push_immutable_same)
 {

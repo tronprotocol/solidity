@@ -1646,6 +1646,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 			break;
         case FunctionType::Kind::Freeze:
         {
+			solAssert(arguments.size() == 2 && function.parameterTypes().size() == 2, "");
             _functionCall.expression().accept(*this);
             for (unsigned i = 0; i < arguments.size(); ++i){
                 acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
@@ -1657,6 +1658,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 		}
         case FunctionType::Kind::Unfreeze:
 		{
+			solAssert(arguments.size() == 1 && function.parameterTypes().size() == 1, "");
 			_functionCall.expression().accept(*this);
 			for (unsigned i = 0; i < arguments.size(); ++i)
 			{
@@ -1669,6 +1671,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 		}
         case FunctionType::Kind::FreezeExpireTime:
         {
+			solAssert(arguments.size() == 1 && function.parameterTypes().size() == 1, "");
             _functionCall.expression().accept(*this);
             for (unsigned i = 0; i < arguments.size(); ++i)
             {
@@ -1679,6 +1682,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
         }
 		case FunctionType::Kind::Vote:
 		{
+			solAssert(arguments.size() == 2 && function.parameterTypes().size() == 2, "");
 			_functionCall.expression().accept(*this);
 			for (unsigned i = 0; i < arguments.size(); ++i)
 			{
@@ -1692,11 +1696,13 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 		}
 		case FunctionType::Kind::WithdrawReward:
 		{
+			solAssert(arguments.empty() && function.parameterTypes().empty(), "");
 			m_context << Instruction::NATIVEWITHDRAWREWARD;
 			break;
 		}
 		case FunctionType::Kind::FreezeBalanceV2:
 		{
+			solAssert(arguments.size() == 2 && function.parameterTypes().size() == 2, "");
 			_functionCall.expression().accept(*this);
 			for (unsigned i = 0; i < arguments.size(); ++i){
 				acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
@@ -1708,6 +1714,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 		}
 		case FunctionType::Kind::UnfreezeBalanceV2:
 		{
+			solAssert(arguments.size() == 2 && function.parameterTypes().size() == 2, "");
 			_functionCall.expression().accept(*this);
 			for (unsigned i = 0; i < arguments.size(); ++i){
 				acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
@@ -1719,16 +1726,19 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 		}
         case FunctionType::Kind::CancelAllUnfreezeV2:
         {
+			solAssert(arguments.empty() && function.parameterTypes().empty(), "");
             m_context << Instruction::NATIVECANCELALLUNFREEZEV2;
             break;
         }
 		case FunctionType::Kind::WithdrawExpireUnfreeze:
 		{
+			solAssert(arguments.empty() && function.parameterTypes().empty(), "");
 			m_context << Instruction::NATIVEWITHDRAWEXPIREUNFREEZE;
 			break;
 		}
 		case FunctionType::Kind::DelegateResource:
 		{
+			solAssert(arguments.size() == 2 && function.parameterTypes().size() == 2, "");
 			_functionCall.expression().accept(*this);
 			for (unsigned i = 0; i < arguments.size(); ++i){
 				acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
@@ -1740,6 +1750,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 		}
 		case FunctionType::Kind::UnDelegateResource:
 		{
+			solAssert(arguments.size() == 2 && function.parameterTypes().size() == 2, "");
 			_functionCall.expression().accept(*this);
 			for (unsigned i = 0; i < arguments.size(); ++i){
 				acceptAndConvert(*arguments[i], *function.parameterTypes()[i]);
@@ -3256,7 +3267,7 @@ void ExpressionCompiler::appendExternalFunctionCall(
 	{
 		// send all gas except the amount needed to execute "SUB" and "CALL"
 		// @todo this retains too much gas for now, needs to be fine-tuned.
-		u256 gasNeededByCaller = evmasm::GasCosts::callGas(m_context.evmVersion()) + 10;
+		u256 gasNeededByCaller = evmasm::GasCosts::callGasInTVM + 10;
 		if (_functionType.valueSet())
 			gasNeededByCaller += evmasm::GasCosts::callValueTransferGas;
 		if (!existenceChecked)
@@ -3319,6 +3330,7 @@ void ExpressionCompiler::appendExternalFunctionCall(
 				switch v case 0 {
 					v := 0x60
 				} default {
+					if mod(returndatasize(), 0x20) { revert(0, 0) }
 					v := mload(0x40)
 					mstore(0x40, add(v, and(add(returndatasize(), 0x3f), not(0x1f))))
 					mstore(v, div(returndatasize(), 0x20))

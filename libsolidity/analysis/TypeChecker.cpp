@@ -2009,6 +2009,38 @@ void TypeChecker::typeCheckFunctionCall(
 			"\"staticcall\" is not supported by the VM version."
 		);
 
+	static std::set<FunctionType::Kind> const tronStaticCallKinds = {
+		FunctionType::Kind::ValidateMultiSign,
+		FunctionType::Kind::BatchValidateSign,
+		FunctionType::Kind::VerifyBurnProof,
+		FunctionType::Kind::VerifyTransferProof,
+		FunctionType::Kind::VerifyMintProof,
+		FunctionType::Kind::PedersenHash,
+		FunctionType::Kind::RewardBalance,
+		FunctionType::Kind::IsSrCandidate,
+		FunctionType::Kind::VoteCount,
+		FunctionType::Kind::UsedVoteCount,
+		FunctionType::Kind::ReceivedVoteCount,
+		FunctionType::Kind::TotalVoteCount,
+		FunctionType::Kind::GetChainParameter,
+		FunctionType::Kind::AvailableUnfreezeV2Size,
+		FunctionType::Kind::UnfreezableBalanceV2,
+		FunctionType::Kind::ExpireUnfreezeBalanceV2,
+		FunctionType::Kind::DelegatableResource,
+		FunctionType::Kind::ResourceV2,
+		FunctionType::Kind::CheckUnDelegateResource,
+		FunctionType::Kind::ResourceUsage,
+		FunctionType::Kind::TotalResource,
+		FunctionType::Kind::TotalDelegatedResource,
+		FunctionType::Kind::TotalAcquiredResource,
+	};
+	if (!m_evmVersion.hasStaticCall() && tronStaticCallKinds.count(_functionType->kind()))
+		m_errorReporter.typeError(
+			9137_error,
+			_functionCall.location(),
+			"This TRON builtin requires a Byzantium-compatible VM."
+		);
+
 	// Perform standard function call type checking
 	typeCheckFunctionGeneralChecks(_functionCall, _functionType);
 }
@@ -3313,6 +3345,12 @@ bool TypeChecker::visit(MemberAccess const& _memberAccess)
 	{
 		if (magicType->kind() == MagicType::Kind::ABI)
 			annotation.isPure = true;
+		else if (magicType->kind() == MagicType::Kind::Chain && !m_evmVersion.hasStaticCall())
+			m_errorReporter.typeError(
+				9137_error,
+				_memberAccess.location(),
+				"This TRON builtin requires a Byzantium-compatible VM."
+			);
 		else if (magicType->kind() == MagicType::Kind::MetaType && (
 			memberName == "creationCode" || memberName == "runtimeCode"
 		))

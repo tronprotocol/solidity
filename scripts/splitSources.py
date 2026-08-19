@@ -10,8 +10,8 @@
 # -  'false' if the file only had one source
 
 import sys
-import os
 import traceback
+from pathlib import Path
 
 
 def uncaught_exception_hook(exc_type, exc_value, exc_traceback):
@@ -37,9 +37,20 @@ def writeSourceToFile(lines):
     filePath, srcName = extractSourceName(lines[0])
     # print("sourceName is ", srcName)
     # print("filePath is", filePath)
+    outputRoot = Path.cwd().resolve()
+    sourcePath = Path(srcName)
+    if sourcePath.is_absolute():
+        raise ValueError("Source name must be a relative path: " + srcName)
+
+    outputPath = (outputRoot / sourcePath).resolve()
+    try:
+        outputPath.relative_to(outputRoot)
+    except ValueError:
+        raise ValueError("Source name escapes the output directory: " + srcName)
+
     if filePath:
-        os.system("mkdir -p " + filePath)
-    with open(srcName, mode='a+', encoding='utf8', newline='') as f:
+        outputPath.parent.mkdir(parents=True, exist_ok=True)
+    with outputPath.open(mode='a+', encoding='utf8', newline='') as f:
         for idx, line in enumerate(lines[1:]):
             # write to file
             if not line.startswith("==== Source:"):

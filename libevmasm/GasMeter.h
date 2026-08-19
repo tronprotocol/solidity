@@ -179,11 +179,26 @@ namespace GasCosts
 	static unsigned const copyGas = 3;
 	static unsigned const rjumpiGas = 4;
 
-	static unsigned const freezeV1Gas = 20000;
-	static unsigned const expireTimeGas = 50;
-	static unsigned const freezeV2Gas = 10000;
-	static unsigned const withdrawGas = 20000;
-	static unsigned const voteGas = 30000;
+	// TVM keeps fixed Energy prices for these instructions. Do not derive them
+	// from Ethereum hard-fork-dependent EVM prices when estimating TRON code.
+	static unsigned const sloadGasInTVM = 50;
+	static unsigned const sstoreSetGasInTVM = 20000;
+	static unsigned const sstoreResetGasInTVM = 5000;
+	static unsigned const balanceGasInTVM = 20;
+	static unsigned const extCodeSizeGasInTVM = 20;
+	static unsigned const extCodeCopyGasInTVM = 20;
+	static unsigned const extCodeHashGasInTVM = 400;
+	static unsigned const callGasInTVM = 40;
+	static unsigned const selfdestructGasInTVM = 5000;
+	static unsigned const expByteGasInTVM = 10;
+	static unsigned const create2WordGasInTVM = 6;
+	static unsigned const memorySizeLimitInTVM = 3 * 1024 * 1024;
+
+	static unsigned const freezeV1GasInTVM = 20000;
+	static unsigned const freezeExpireTimeGasInTVM = 50;
+	static unsigned const freezeV2GasInTVM = 10000;
+	static unsigned const withdrawRewardGasInTVM = 20000;
+	static unsigned const voteGasInTVM = 30000;
 }
 
 /**
@@ -255,11 +270,13 @@ public:
 	static u256 dataGas(uint64_t _length, bool _inCreation, langutil::EVMVersion _evmVersion);
 
 private:
-	/// @returns _multiplier * (_value + 31) / 32, if _value is a known constant and infinite otherwise.
+	/// @returns _multiplier * ceil(_value / 32), if _value is a known constant and infinite otherwise.
 	GasConsumption wordGas(u256 const& _multiplier, ExpressionClasses::Id _value);
-	/// @returns the gas needed to access the given memory position.
+	/// @returns the gas needed to access the given memory end position.
 	/// @todo this assumes that memory was never accessed before and thus over-estimates gas usage.
-	GasConsumption memoryGas(ExpressionClasses::Id _position);
+	GasConsumption memoryGas(bigint const& _position);
+	/// @returns the memory gas for a known-size access starting at an offset on the stack.
+	GasConsumption memoryGas(ExpressionClasses::Id _offset, u256 const& _size);
 	/// @returns the memory gas for accessing the memory at a specific offset for a number of bytes
 	/// given as values on the stack at the given relative positions.
 	GasConsumption memoryGas(int _stackPosOffset, int _stackPosSize);

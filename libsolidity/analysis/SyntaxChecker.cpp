@@ -306,6 +306,17 @@ bool SyntaxChecker::visit(Literal const& _literal)
 	if (_literal.token() != Token::Number)
 		return true;
 
+	Token const subDenomination = static_cast<Token>(_literal.subDenomination());
+	if (TokenTraits::isEtherSubdenomination(subDenomination))
+	{
+		m_errorReporter.parserError(
+			9999_error,
+			_literal.location(),
+			"Ether unit denomination is not supported by the compiler"
+		);
+		return true;
+	}
+
 	ASTString const& value = _literal.value();
 	solAssert(!value.empty(), "");
 

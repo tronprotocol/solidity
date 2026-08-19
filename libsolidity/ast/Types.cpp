@@ -1081,16 +1081,15 @@ std::tuple<bool, rational> RationalNumberType::isValidLiteral(Literal const& _li
 	}
 	switch (_literal.subDenomination())
 	{
-		case Literal::SubDenomination::None:
 		case Literal::SubDenomination::Wei:
+		case Literal::SubDenomination::Gwei:
+		case Literal::SubDenomination::Ether:
+			// These denominations are not part of the TRON language, even if a
+			// Literal is constructed without going through the parser or AST importer.
+			return std::make_tuple(false, rational(0));
+		case Literal::SubDenomination::None:
 		case Literal::SubDenomination::Sun:
 		case Literal::SubDenomination::Second:
-			break;
-		case Literal::SubDenomination::Gwei:
-			value *= bigint("1000000000");
-			break;
-		case Literal::SubDenomination::Ether:
-			value *= bigint("1000000000000000000");
 			break;
 		case Literal::SubDenomination::Trx:
 			value *= bigint("1000000");
@@ -3875,7 +3874,6 @@ bool FunctionType::isPure() const
 	return
 		m_kind == Kind::KECCAK256 ||
 		m_kind == Kind::ECRecover ||
-		m_kind == Kind::ValidateMultiSign ||
 		m_kind == Kind::BatchValidateSign ||
 		m_kind == Kind::VerifyBurnProof ||
 		m_kind == Kind::VerifyTransferProof ||

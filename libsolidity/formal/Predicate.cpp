@@ -253,7 +253,12 @@ std::string Predicate::formatSummaryCall(
 					if (magicKind == MagicType::Kind::Block && memberName == "difficulty")
 						memberName = "prevrandao";
 
-					if (magicKind == MagicType::Kind::Block || magicKind == MagicType::Kind::Message || magicKind == MagicType::Kind::Transaction)
+					if (
+						magicKind == MagicType::Kind::Block ||
+						magicKind == MagicType::Kind::Chain ||
+						magicKind == MagicType::Kind::Message ||
+						magicKind == MagicType::Kind::Transaction
+					)
 						txVars.insert(magicType->toString(true) + "." + memberName);
 				}
 				return true;

@@ -234,7 +234,14 @@ smtutil::Expression SymbolicState::txTypeConstraints() const
 		smt::symbolicUnknownConstraints(m_tx.member("block.gaslimit"), TypeProvider::uint256()) &&
 		smt::symbolicUnknownConstraints(m_tx.member("block.number"), TypeProvider::uint256()) &&
 		smt::symbolicUnknownConstraints(m_tx.member("block.timestamp"), TypeProvider::uint256()) &&
+		smt::symbolicUnknownConstraints(m_tx.member("chain.totalEnergyCurrentLimit"), TypeProvider::uint(64)) &&
+		smt::symbolicUnknownConstraints(m_tx.member("chain.totalEnergyWeight"), TypeProvider::uint(64)) &&
+		smt::symbolicUnknownConstraints(m_tx.member("chain.totalNetLimit"), TypeProvider::uint(64)) &&
+		smt::symbolicUnknownConstraints(m_tx.member("chain.totalNetWeight"), TypeProvider::uint(64)) &&
+		smt::symbolicUnknownConstraints(m_tx.member("chain.unfreezeDelayDays"), TypeProvider::uint(64)) &&
 		smt::symbolicUnknownConstraints(m_tx.member("msg.sender"), TypeProvider::address()) &&
+		smt::symbolicUnknownConstraints(m_tx.member("msg.tokenid"), TypeProvider::trcToken()) &&
+		smt::symbolicUnknownConstraints(m_tx.member("msg.tokenvalue"), TypeProvider::uint256()) &&
 		smt::symbolicUnknownConstraints(m_tx.member("msg.value"), TypeProvider::uint256()) &&
 		smt::symbolicUnknownConstraints(m_tx.member("tx.origin"), TypeProvider::address()) &&
 		smt::symbolicUnknownConstraints(m_tx.member("tx.gasprice"), TypeProvider::uint256());
@@ -242,12 +249,19 @@ smtutil::Expression SymbolicState::txTypeConstraints() const
 
 smtutil::Expression SymbolicState::txNonPayableConstraint() const
 {
-	return m_tx.member("msg.value") == 0;
+	return
+		m_tx.member("msg.value") == 0 &&
+		m_tx.member("msg.tokenid") == 0 &&
+		m_tx.member("msg.tokenvalue") == 0;
 }
 
 smtutil::Expression SymbolicState::txFunctionConstraints(FunctionDefinition const& _function) const
 {
-	smtutil::Expression conj = _function.isPayable() ? smtutil::Expression(true) : txNonPayableConstraint();
+	// Library functions inherit the caller's transaction values through DELEGATECALL.
+	smtutil::Expression conj =
+		(_function.isPayable() || _function.libraryFunction()) ?
+		smtutil::Expression(true) :
+		txNonPayableConstraint();
 	if (_function.isPartOfExternalInterface())
 	{
 		auto sig = TypeProvider::function(_function)->externalIdentifier();

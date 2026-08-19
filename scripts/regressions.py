@@ -52,7 +52,7 @@ class Regressor:
     def run_cmd(command, logfile=None, env=None):
         """
         Args:
-            command (str): command to run
+            command (list[str]): command and arguments to run
             logfile (str): log file name
             env (dict): dictionary holding key-value pairs for bash environment
                     variables
@@ -69,12 +69,32 @@ class Regressor:
             env = os.environ.copy()
 
         with open(logfile, 'w', encoding='utf8') as logfh:
-            with subprocess.Popen(command, shell=True, executable='/bin/bash',
-                                    env=env, stdout=logfh,
+            with subprocess.Popen(command, env=env, stdout=logfh,
                                     stderr=subprocess.STDOUT) as proc:
                 ret = proc.wait()
                 logfh.close()
                 return ret
+
+    @staticmethod
+    def run_corpus(fuzzer, corpus_dir, logfile, env=None):
+        if not env:
+            env = os.environ.copy()
+
+        corpus_files = []
+        for root, _, filenames in os.walk(corpus_dir):
+            corpus_files.extend(os.path.join(root, filename) for filename in filenames)
+
+        with open(logfile, 'w', encoding='utf8') as logfh:
+            for corpus_file in sorted(corpus_files):
+                with subprocess.Popen(
+                    [fuzzer, corpus_file],
+                    env=env,
+                    stdout=logfh,
+                    stderr=subprocess.STDOUT
+                ) as proc:
+                    if proc.wait() != 0:
+                        return 255
+        return 0
 
     def process_log(self, logfile):
         """
@@ -106,8 +126,7 @@ class Regressor:
             basename = os.path.basename(fuzzer)
             logfile = os.path.join(self._logpath, f"{basename}.log")
             corpus_dir = f"/tmp/solidity-fuzzing-corpus/{basename}_seed_corpus"
-            cmd = f"find {corpus_dir} -type f | xargs -n1 sh -c '{fuzzer} $0 || exit 255'"
-            self.run_cmd(cmd, logfile=logfile)
+            self.run_corpus(fuzzer, corpus_dir, logfile)
             ret = self.process_log(logfile)
             if not ret:
                 print(

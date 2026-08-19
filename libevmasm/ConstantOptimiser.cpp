@@ -383,7 +383,7 @@ bigint ComputeMethod::gasNeeded(AssemblyItems const& _routine) const
 {
 	auto numExps = static_cast<size_t>(count(_routine.begin(), _routine.end(), Instruction::EXP));
 	return combineGas(
-		simpleRunGas(_routine, m_params.evmVersion) + numExps * (GasCosts::expGas + GasCosts::expByteGas(m_params.evmVersion)),
+		simpleRunGas(_routine, m_params.evmVersion) + numExps * GasCosts::expByteGasInTVM,
 		// Data gas for routine: Some bytes are zero, but we ignore them.
 		bytesRequired(_routine, m_params.evmVersion) * (m_params.isCreation ? GasCosts::txDataNonZeroGas(m_params.evmVersion) : GasCosts::createDataGas),
 		0

@@ -1330,6 +1330,22 @@ class SolidityLSPTestSuite: # {{{
     # }}}
 
     # {{{ actual tests
+    def test_project_directory_without_workspace_root(self, solc: JsonRpcProcess) -> None:
+        """
+        A missing workspace root falls back to the filesystem root internally. Project-directory
+        loading must not interpret that fallback as a request to scan the entire filesystem.
+        """
+        self.setup_lsp(
+            solc,
+            expose_project_root=False,
+            file_load_strategy=FileLoadStrategy.ProjectDirectory
+        )
+        TEST_NAME = 'publish_diagnostics_3'
+        published_diagnostics = self.open_file_and_wait_for_diagnostics(solc, TEST_NAME)
+
+        self.expect_equal(len(published_diagnostics), 1, "Only the directly opened file is analyzed")
+        self.expect_equal(published_diagnostics[0]['uri'], self.get_test_file_uri(TEST_NAME), "Correct file URI")
+
     def test_analyze_all_project_files_flat(self, solc: JsonRpcProcess) -> None:
         """
         Tests the option (default) to analyze all .sol project files even when they have not been actively

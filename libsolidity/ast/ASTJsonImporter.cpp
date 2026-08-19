@@ -1236,13 +1236,12 @@ Literal::SubDenomination ASTJsonImporter::subdenomination(Json const& _node)
 
 	std::string const subDenStr = subDen.get<std::string>();
 
-	if (subDenStr == "wei")
-		return Literal::SubDenomination::Wei;
-	else if (subDenStr == "gwei")
-		return Literal::SubDenomination::Gwei;
-	else if (subDenStr == "ether")
-		return Literal::SubDenomination::Ether;
-	else if (subDenStr == "sun")
+	astAssert(
+		subDenStr != "wei" && subDenStr != "gwei" && subDenStr != "ether",
+		"Ether unit denomination is not supported by the compiler"
+	);
+
+	if (subDenStr == "sun")
 		return Literal::SubDenomination::Sun;
 	else if (subDenStr == "trx")
 		return Literal::SubDenomination::Trx;
