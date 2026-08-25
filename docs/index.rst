@@ -14,7 +14,7 @@ With Solidity, you can create contracts for uses such as voting, crowdfunding, b
 
 When deploying contracts, you should use the latest released version of Solidity.
 Apart from exceptional cases, only the latest version receives
-`security fixes <https://github.com/ethereum/solidity/security/policy#supported-versions>`_.
+`security fixes <https://github.com/argotorg/solidity/security/policy#supported-versions>`_.
 Furthermore, breaking changes, as well as new features, are introduced regularly.
 We currently use a 0.y.z version number `to indicate this fast pace of change <https://semver.org/#spec-item-4>`_.
 
@@ -86,7 +86,7 @@ Community contributors help translate this documentation into several languages.
 Note that they have varying degrees of completeness and up-to-dateness.
 The English version stands as a reference.
 
-You can switch between languages by clicking on the flyout menu in the bottom-left corner
+You can switch between languages by clicking on the flyout menu in the bottom-right corner
 and selecting the preferred language.
 
 * `Chinese <https://docs.soliditylang.org/zh-cn/latest/>`_

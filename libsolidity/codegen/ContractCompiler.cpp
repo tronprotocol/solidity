@@ -108,7 +108,7 @@ void ContractCompiler::compileContract(
 	appendFunctionSelector(_contract);
 }
 
-size_t ContractCompiler::compileConstructor(
+SubAssemblyID ContractCompiler::compileConstructor(
 	ContractDefinition const& _contract,
 	std::map<ContractDefinition const*, std::shared_ptr<Compiler const>> const& _otherCompilers
 )
@@ -173,7 +173,7 @@ void ContractCompiler::appendInitAndConstructorCode(ContractDefinition const& _c
 	}
 }
 
-size_t ContractCompiler::packIntoContractCreator(ContractDefinition const& _contract)
+SubAssemblyID ContractCompiler::packIntoContractCreator(ContractDefinition const& _contract)
 {
 	solAssert(!!m_runtimeCompiler, "");
 	solAssert(!_contract.isLibrary(), "Tried to use contract creator or library.");
@@ -192,7 +192,7 @@ size_t ContractCompiler::packIntoContractCreator(ContractDefinition const& _cont
 	CompilerContext::LocationSetter locationSetter(m_context, _contract);
 	m_context << deployRoutine;
 
-	solAssert(m_context.runtimeSub() != std::numeric_limits<size_t>::max(), "Runtime sub not registered");
+	solAssert(!m_context.runtimeSub().empty(), "Runtime sub not registered");
 
 	ContractType contractType(_contract);
 	auto const& immutables = contractType.immutableVariables();
@@ -226,7 +226,7 @@ size_t ContractCompiler::packIntoContractCreator(ContractDefinition const& _cont
 	return m_context.runtimeSub();
 }
 
-size_t ContractCompiler::deployLibrary(ContractDefinition const& _contract)
+SubAssemblyID ContractCompiler::deployLibrary(ContractDefinition const& _contract)
 {
 	solAssert(!!m_runtimeCompiler, "");
 	solAssert(_contract.isLibrary(), "Tried to deploy contract as library.");
@@ -236,7 +236,7 @@ size_t ContractCompiler::deployLibrary(ContractDefinition const& _contract)
 
 	CompilerContext::LocationSetter locationSetter(m_context, _contract);
 
-	solAssert(m_context.runtimeSub() != std::numeric_limits<size_t>::max(), "Runtime sub not registered");
+	solAssert(!m_context.runtimeSub().empty(), "Runtime sub not registered");
 	m_context.pushSubroutineSize(m_context.runtimeSub());
 	m_context.pushSubroutineOffset(m_context.runtimeSub());
 	// This code replaces the address added by appendDeployTimeAddress().

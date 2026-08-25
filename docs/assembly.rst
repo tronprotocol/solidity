@@ -216,6 +216,7 @@ shadow any declaration visible in the scope of the inline assembly block
 Since Solidity 0.7.0, variables and functions declared inside the
 inline assembly block may not contain ``.``, but using ``.`` is
 valid to access Solidity variables from outside the inline assembly block.
+However, it is still valid to use dots if you use Solidity in Yul-only mode.
 
 Things to Avoid
 ---------------
@@ -380,8 +381,9 @@ of Solidity, you can use a special comment to annotate an assembly block as memo
         ...
     }
 
-Note that we will disallow the annotation via comment in a future breaking release; so, if you are not concerned with
-backward-compatibility with older compiler versions, prefer using the dialect string.
+.. warning::
+    The ``memory-safe-assembly`` special comment is deprecated and scheduled for removal.
+    In new code targeting recent compilers, use the assembly block annotation.
 
 Advanced Safe Use of Memory
 ---------------------------

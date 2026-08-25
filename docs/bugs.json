@@ -523,7 +523,7 @@
         "uid": "SOL-2017-5",
         "name": "ZeroFunctionSelector",
         "summary": "It is possible to craft the name of a function such that it is executed instead of the fallback function in very specific circumstances.",
-        "description": "If a function has a selector consisting only of zeros, is payable and part of a contract that does not have a fallback function and at most five external functions in total, this function is called instead of the fallback function if Trx is sent to the contract without data.",
+        "description": "If a function has a selector consisting only of zeros, is payable and part of a contract that does not have a fallback function and at most five external functions in total, this function is called instead of the fallback function if Ether is sent to the contract without data.",
         "fixed": "0.4.18",
         "severity": "very low"
     },
@@ -608,8 +608,8 @@
     {
         "uid": "SOL-2016-7",
         "name": "LibrariesNotCallableFromPayableFunctions",
-        "summary": "Library functions threw an exception when called from a call that received Trx.",
-        "description": "Library functions are protected against sending them Trx through a call. Since the DELEGATECALL opcode forwards the information about how much Trx was sent with a call, the library function incorrectly assumed that Trx was sent to the library and threw an exception.",
+        "summary": "Library functions threw an exception when called from a call that received Ether.",
+        "description": "Library functions are protected against sending them Ether through a call. Since the DELEGATECALL opcode forwards the information about how much Ether was sent with a call, the library function incorrectly assumed that Ether was sent to the library and threw an exception.",
         "severity": "low",
         "introduced": "0.4.0",
         "fixed": "0.4.2"
@@ -617,8 +617,8 @@
     {
         "uid": "SOL-2016-6",
         "name": "SendFailsForZeroEther",
-        "summary": "The send function did not provide enough gas to the recipient if no Trx was sent with it.",
-        "description": "The recipient of an Trx transfer automatically receives a certain amount of gas from the EVM to handle the transfer. In the case of a zero-transfer, this gas is not provided which causes the recipient to throw an exception.",
+        "summary": "The send function did not provide enough gas to the recipient if no Ether was sent with it.",
+        "description": "The recipient of an Ether transfer automatically receives a certain amount of gas from the EVM to handle the transfer. In the case of a zero-transfer, this gas is not provided which causes the recipient to throw an exception.",
         "severity": "low",
         "fixed": "0.4.0"
     },
