@@ -31,7 +31,7 @@ REPODIR="$(realpath "$(dirname "$0")"/..)"
 # shellcheck source=scripts/common.sh
 source "${REPODIR}/scripts/common.sh"
 
-DEFAULT_EVM_VALUES=(constantinople petersburg istanbul berlin london paris shanghai cancun prague osaka)
+DEFAULT_EVM_VALUES=(istanbul berlin london paris shanghai cancun prague osaka)
 EVMS_WITH_EOF=(osaka)
 
 # Deserialize the EVM_VALUES array if it was provided as argument or

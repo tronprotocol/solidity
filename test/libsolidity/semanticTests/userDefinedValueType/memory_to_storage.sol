@@ -23,9 +23,9 @@ contract C {
 // ----
 // s() -> 0, 0, 0x00, 0
 // f((uint8,uint16,bytes2,uint8)): 1, 0xff, "ab", 15 ->
-// gas irOptimized: 44473
-// gas legacy: 46213
-// gas legacyOptimized: 44671
+// gas irOptimized: 44360
+// gas legacy: 46189
+// gas legacyOptimized: 44673
 // s() -> 1, 0xff, 0x6162000000000000000000000000000000000000000000000000000000000000, 15
 // g(uint16[]): 0x20, 3, 1, 2, 3 -> 0x20, 3, 1, 2, 3
 // gas irOptimized: 68898
