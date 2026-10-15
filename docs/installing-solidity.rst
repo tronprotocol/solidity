@@ -270,10 +270,11 @@ This means that:
      if you want to be sure whether you are downloading a wasm or an asm.js binary.
    - Use ``list.json`` instead of ``list.js`` and ``list.txt``. The JSON list format contains all
      the information from the old ones and more.
-   - Use https://binaries.soliditylang.org instead of https://solc-bin.ethereum.org. To keep things
-     simple we moved almost everything related to the compiler under the new ``soliditylang.org``
-     domain and this applies to ``solc-bin`` too. While the new domain is recommended, the old one
-     is still fully supported and guaranteed to point at the same location.
+
+.. warning::
+   - The solc-bin.ethereum.org domain is no longer supported. Going forward,
+     we recommend any tools which are still using it as the source of Solidity binaries
+     to switch to binaries.soliditylang.org.
 
 .. warning::
 

@@ -3312,27 +3312,57 @@ bool TypeChecker::visit(MemberAccess const& _memberAccess)
 	// TODO some members might be pure, but for example `address(0x123).balance` is not pure
 	// although every subexpression is, so leaving this limited for now.
 	if (auto tt = dynamic_cast<TypeType const*>(exprType))
+	{
 		if (
 			tt->actualType()->category() == Type::Category::Enum ||
 			tt->actualType()->category() == Type::Category::UserDefinedValueType
 		)
 			annotation.isPure = true;
+
+		// `concat` purity depends also on its arguments, but this is checked later, in visit(FunctionCall...)
+		// This covers `bytes.concat` and `string.concat`.
+		if (tt->actualType()->category() == Type::Category::Array)
+		{
+			if (
+				auto const* funcType = dynamic_cast<FunctionType const*>(annotation.type);
+				funcType &&
+				(
+					funcType->kind() == FunctionType::Kind::StringConcat ||
+					funcType->kind() == FunctionType::Kind::BytesConcat
+				)
+			)
+				annotation.isPure = true;
+		}
+	}
 	if (
 		auto const* functionType = dynamic_cast<FunctionType const*>(exprType);
 		functionType &&
 		functionType->hasDeclaration() &&
-		dynamic_cast<FunctionDefinition const*>(&functionType->declaration()) &&
 		memberName == "selector"
 	)
-		if (auto const* parentAccess = dynamic_cast<MemberAccess const*>(&_memberAccess.expression()))
+	{
+		if (dynamic_cast<FunctionDefinition const*>(&functionType->declaration()))
 		{
-			bool isPure = *parentAccess->expression().annotation().isPure;
-			if (auto const* exprInt = dynamic_cast<Identifier const*>(&parentAccess->expression()))
-				if (exprInt->name() == "this" || exprInt->name() == "super")
-					isPure = true;
+			if (auto const* parentAccess = dynamic_cast<MemberAccess const*>(&_memberAccess.expression()))
+			{
+				bool isPure = *parentAccess->expression().annotation().isPure;
+				// Accessing a function selector using `super|this.f.selector`.
+				if (auto const* exprInt = dynamic_cast<Identifier const*>(&parentAccess->expression()))
+					if (exprInt->name() == "this" || exprInt->name() == "super")
+						isPure = true;
 
-			annotation.isPure = isPure;
+				annotation.isPure = isPure;
+			}
 		}
+		// In case of event or error definition the selector is always compile-time constant, as it can be
+		// a keccak256 hash of the event signature or a function selector in case of an error.
+		else if (
+			dynamic_cast<EventDefinition const*>(&functionType->declaration()) ||
+			dynamic_cast<ErrorDefinition const*>(&functionType->declaration())
+		)
+			annotation.isPure = true;
+	}
+
 	if (
 		auto const* varDecl = dynamic_cast<VariableDeclaration const*>(annotation.referencedDeclaration);
 		!annotation.isPure.set() &&
@@ -3425,6 +3455,16 @@ bool TypeChecker::visit(MemberAccess const& _memberAccess)
 
 	if (!annotation.isPure.set())
 		annotation.isPure = false;
+
+	if (
+		auto const* funcType = dynamic_cast<FunctionType const*>(annotation.type);
+		funcType &&
+		funcType->kind() != FunctionType::Kind::Declaration &&
+		funcType->kind() != FunctionType::Kind::Internal &&
+		funcType->kind() != FunctionType::Kind::Error &&
+		funcType->kind() != FunctionType::Kind::Event
+	)
+		solAssert(funcType->isPure() == *annotation.isPure);
 
 	return false;
 }
