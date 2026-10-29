@@ -1,18 +1,30 @@
+### 0.8.32 (2025-12-18)
+
+Important Bugfixes:
+* Code Generator: Fix a bug in clearing/copying of arrays that straddle the end of storage, potentially resulting in assignment/initialization/`delete`/`push()`/`pop()` skipping some or all of the intended storage writes.
+
+
+Bugfixes:
+* Codegen: Fix internal compiler error when emitting events via module member access.
+* TypeChecker: Fix error and event selectors not being considered compile-time constant.
+* TypeChecker: Fix `string.concat` and `bytes.concat` with constant arguments not being considered compile-time constant.
+
+
 ### 0.8.31 (2025-12-03)
 
 Language Features:
-* Yul: Introduce builtin `clz(x)` for counting the number of leading zero bits in a 256-bit word.
-
-
-Compiler Features:
 * Custom Storage Layout: Allow using `constant` state variables in the base slot expression.
 * DocString Parser: Warn about deprecation of inline assembly special comment `memory-safe-assembly`.
-* ethdebug: Experimental support for instructions and source locations under EOF.
-* EVM: Set default EVM Version to `osaka`.
 * Syntax Checker: Warn about deprecation of ABI coder v1.
 * Syntax Checker: Warn about deprecation of virtual modifiers.
 * Type Checker: Warn about deprecation of `send` and `transfer` functions on instances of `address`.
 * Type Checker: Warn about deprecation of comparisons between variables of contract types.
+* Yul: Introduce builtin `clz(x)` for counting the number of leading zero bits in a 256-bit word.
+
+
+Compiler Features:
+* ethdebug: Experimental support for instructions and source locations under EOF.
+* EVM: Set default EVM Version to `osaka`.
 
 
 Bugfixes:

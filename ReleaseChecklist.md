@@ -42,6 +42,7 @@ At least a day before the release:
 - [ ] Get the posts reviewed and approved **before the release starts**.
 
 ### Changelog
+- [ ] Ensure that all changelog entries are correctly classified as language or compiler features.
 - [ ] Sort the changelog entries alphabetically and correct any errors you notice. Commit it.
 - [ ] Update the changelog to include a release date.
 - [ ] Run `scripts/update_bugs_by_version.py` to regenerate `bugs_by_version.json` from the changelog and `bugs.json`.
@@ -76,6 +77,7 @@ At least a day before the release:
 
 ### Docker
 - [ ] Make sure `docker-buildx` is installed.
+- [ ] Run `echo $GHCR_TOKEN | docker login ghcr.io --username $GH_USERNAME --password-stdin` where `$GH_USERNAME` is your GitHub username and `$GHCR_TOKEN` is a PAT with `write:packages` scope.
 - [ ] Run `./scripts/docker_deploy_manual.sh v$VERSION`.
 
 ### Release solc-js
