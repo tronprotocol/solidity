@@ -1,3 +1,9 @@
+### 0.8.33 (2025-12-18)
+
+Bugfixes:
+* TypeChecker: Fix internal error when accessing getters of constant variables.
+
+
 ### 0.8.32 (2025-12-18)
 
 Important Bugfixes:
