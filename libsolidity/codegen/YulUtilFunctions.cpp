@@ -4041,6 +4041,10 @@ std::string YulUtilFunctions::cleanupFunction(Type const& _type)
 
 std::string YulUtilFunctions::validatorFunction(Type const& _type, bool _revertOnFailure)
 {
+	if (auto const* valueType = dynamic_cast<UserDefinedValueType const*>(&_type))
+		if (valueType->underlyingType().category() == Type::Category::Address)
+			return validatorFunction(valueType->underlyingType(), _revertOnFailure);
+
 	std::string functionName = std::string("validator_") + (_revertOnFailure ? "revert_" : "assert_") + _type.identifier();
 	return m_functionCollector.createFunction(functionName, [&]() {
 		Whiskers templ(R"(
