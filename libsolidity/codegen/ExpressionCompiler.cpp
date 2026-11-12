@@ -890,7 +890,7 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 			// gas <- gas * !value
 			m_context << Instruction::SWAP1 << Instruction::DUP2;
 			m_context << Instruction::ISZERO << Instruction::MUL << Instruction::SWAP1;
-			arguments[1]->accept(*this);
+			acceptAndConvert(*arguments[1], *function.parameterTypes()[1], true);
 
 			// will be removed in next release
 			m_context << Instruction::DUP1 << Instruction::ISZERO;

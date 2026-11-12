@@ -1105,6 +1105,10 @@ std::string ABIFunctions::abiDecodingFunction(Type const& _type, bool _fromMemor
 
 std::string ABIFunctions::abiDecodingFunctionValueType(Type const& _type, bool _fromMemory)
 {
+	if (auto const* valueType = dynamic_cast<UserDefinedValueType const*>(&_type))
+		if (valueType->underlyingType().category() == Type::Category::Address)
+			return abiDecodingFunctionValueType(valueType->underlyingType(), _fromMemory);
+
 	Type const* decodingType = _type.decodingType();
 	solAssert(decodingType, "");
 	solAssert(decodingType->sizeOnStack() == 1, "");

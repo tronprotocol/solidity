@@ -735,6 +735,40 @@ contract C {
 	BOOST_TEST(ir.find("if mod(returndatasize(), 0x20) { revert(0, 0) }") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(tron_transfer_token_narrowed_id)
+{
+	for (bool optimize: {false, true})
+	{
+		auto runtimeFor = [&](std::string const& _tokenId) {
+			std::string sourceCode = R"(
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.0;
+contract C {
+    function transfer(address payable recipient, uint256 x) external {
+        recipient.transferToken(100, TOKEN_ID);
+    }
+    function transferConstant(address payable recipient) external {
+        uint256 x = (1 << 64) + 1000001;
+        recipient.transferToken(100, TOKEN_ID);
+    }
+}
+)";
+			boost::replace_all(sourceCode, "TOKEN_ID", _tokenId);
+			Json input = createLanguageAndSourcesSection("Solidity", {{"A.sol", sourceCode}});
+			input["settings"]["optimizer"]["enabled"] = optimize;
+			input["settings"]["metadata"]["appendCBOR"] = false;
+			input["settings"]["outputSelection"]["*"]["*"] = Json::array({"evm.deployedBytecode.object"});
+			Json const output = compile(input.dump());
+			BOOST_REQUIRE(containsAtMostWarnings(output));
+			return output["contracts"]["A.sol"]["C"]["evm"]["deployedBytecode"]["object"].get<std::string>();
+		};
+		// Implicit widening to trcToken must consume the same value as explicit widening.
+		std::string const cleaned = runtimeFor("uint256(uint24(x))");
+		BOOST_CHECK_EQUAL(runtimeFor("uint24(x)"), cleaned);
+		BOOST_CHECK(runtimeFor("x") != cleaned);
+	}
+}
+
 BOOST_AUTO_TEST_CASE(compilation_error)
 {
 	char const* input = R"(
