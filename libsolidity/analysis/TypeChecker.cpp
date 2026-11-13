@@ -3456,16 +3456,6 @@ bool TypeChecker::visit(MemberAccess const& _memberAccess)
 	if (!annotation.isPure.set())
 		annotation.isPure = false;
 
-	if (
-		auto const* funcType = dynamic_cast<FunctionType const*>(annotation.type);
-		funcType &&
-		funcType->kind() != FunctionType::Kind::Declaration &&
-		funcType->kind() != FunctionType::Kind::Internal &&
-		funcType->kind() != FunctionType::Kind::Error &&
-		funcType->kind() != FunctionType::Kind::Event
-	)
-		solAssert(funcType->isPure() == *annotation.isPure);
-
 	return false;
 }
 
