@@ -22,7 +22,7 @@
 # (c) 2016-2024 solidity contributors.
 #------------------------------------------------------------------------------
 FROM buildpack-deps:noble AS base
-LABEL version="7"
+LABEL version="8"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -40,6 +40,7 @@ RUN set -ex; \
 		build-essential \
 		clang \
 		cmake \
+		ccache \
 		jq \
 		libboost-filesystem-dev \
 		libboost-program-options-dev \

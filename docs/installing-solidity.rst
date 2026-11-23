@@ -31,8 +31,7 @@ Remix
 *We recommend Remix for small contracts and for quickly learning Solidity.*
 
 `Access Remix online <https://remix.ethereum.org/>`_, you do not need to install anything.
-If you want to use it without connection to the Internet, go to
-https://github.com/ethereum/remix-live/tree/gh-pages#readme and follow the instructions on that page.
+If you want to use it without connection to the Internet, download Remix Desktop from `the releases page <https://github.com/remix-project-org/remix-desktop/releases/>`_.
 Remix is also a convenient option for testing nightly builds
 without installing multiple Solidity versions.
 
@@ -113,26 +112,37 @@ self-contained (i.e. it does not refer to any external files that would have to 
 Linux Packages
 ==============
 
-Binary packages of Solidity are available at
-`solidity/releases <https://github.com/argotorg/solidity/releases>`_.
+We provide :ref:`standalone binaries <static-binaries>` of the compiler that should run on most
+distributions without any additional installation steps.
 
 Ubuntu packages for versions up to 0.8.30 are available in the
 `ethereum/ethereum PPA <https://launchpad.net/~ethereum/+archive/ubuntu/ethereum>`_.
 However, we have discontinued this distribution method and future versions will not be added there.
 
-Furthermore, some Linux distributions provide their own packages. These packages are not directly
-maintained by us but usually kept up-to-date by the respective package maintainers.
+Some Linux distributions provide their own packages.
+These packages are not directly maintained by us but usually kept up-to-date by the respective
+package maintainers.
 
-For example, Arch Linux has packages for the latest development version as AUR packages: `solidity <https://aur.archlinux.org/packages/solidity>`_
-and `solidity-bin <https://aur.archlinux.org/packages/solidity-bin>`_.
+Unofficial, community-maintained scripts for building and installing the compiler are also
+available for some distributions:
+
+- Arch Linux / (AUR):
+
+    - `solidity <https://aur.archlinux.org/packages/solidity>`_ (builds from source),
+    - `solidity-bin <https://aur.archlinux.org/packages/solidity-bin>`_ (uses our standalone binaries).
+
+- Nix:
+
+    - `solc.nix <https://github.com/hellwolf/solc.nix>`_ (builds from source).
 
 .. note::
 
-    Please be aware that `AUR <https://wiki.archlinux.org/title/Arch_User_Repository>`_ packages
-    are user-produced content and unofficial packages. Exercise caution when using them.
+    Please be aware that these scripts are produced and maintained by users and not vetted in any
+    way by the distro maintainers.
+    Exercise caution when using them.
 
 There is also a `snap package <https://snapcraft.io/solc>`_, however, it is **currently unmaintained**.
-It is installable in all the `supported Linux distros <https://snapcraft.io/docs/core/install>`_. To
+It is installable in all the `supported Linux distros <https://snapcraft.io/docs/reference/administration/distribution-support/>`_. To
 install the latest stable version of solc:
 
 .. code-block:: bash
@@ -191,6 +201,8 @@ Install it using ``brew``:
     brew unlink solidity
     # eg. Install 0.4.8
     brew install solidity.rb
+
+.. _static-binaries:
 
 Static Binaries
 ===============

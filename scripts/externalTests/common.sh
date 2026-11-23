@@ -18,7 +18,7 @@
 #
 # (c) 2019 solidity contributors.
 #------------------------------------------------------------------------------
-set -e
+set -eo pipefail
 
 # Requires $REPO_ROOT to be defined and "${REPO_ROOT}/scripts/common.sh" to be included before.
 
@@ -434,9 +434,9 @@ function eth_gas_reporter_settings
     echo "    enabled: true,"
     echo "    gasPrice: 1,"                           # Gas price does not matter to us at all. Set to whatever to avoid API call.
     echo "    noColors: true,"
-    echo "    showTimeSpent: false,"                  # We're not interested in test timing
-    echo "    onlyCalledMethods: true,"               # Exclude entries with no gas for shorter report
+    echo "    showUncalledMethods: false,"            # Exclude entries with no gas for shorter report
     echo "    showMethodSig: true,"                   # Should make diffs more stable if there are overloaded functions
+    echo "    reportFormat: 'legacy',"                # Use v1.x format for compatibility with parse_eth_gas_report.py
     echo "    outputFile: \"$(gas_report_path "$preset")\""
     echo "}"
 }

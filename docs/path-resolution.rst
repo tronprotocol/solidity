@@ -629,9 +629,9 @@ Here are the detailed rules governing the behavior of remappings:
 
 #. **At most one remapping is applied to a single import.**
 
-   - If multiple remappings match the same source unit name, the one with the longest matching
-     prefix is chosen.
-   - If prefixes are identical, the one specified last wins.
+   - If multiple remappings match the same source unit name, the one with the longest matching context is chosen.
+   - If contexts are identical, the one with the longest matching prefix is chosen.
+   - If contexts and prefixes are identical, the one specified last wins.
    - Remappings do not work on other remappings. For example ``a=b b=c c=d`` will not result in ``a``
      being remapped to ``d``.
 

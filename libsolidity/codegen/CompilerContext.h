@@ -374,7 +374,7 @@ private:
 	/// Stack of current visited AST nodes, used for location attachment
 	std::stack<ASTNode const*> m_visitedNodes;
 	/// The runtime context if in Creation mode, this is used for generating tags that would be stored into the storage and then used at runtime.
-	CompilerContext *m_runtimeContext;
+	CompilerContext* m_runtimeContext;
 	/// The index of the runtime subroutine.
 	evmasm::SubAssemblyID m_runtimeSub{};
 	/// An index of low-level function labels by name.
