@@ -316,3 +316,42 @@ public:
 };
 
 }
+
+template<>
+struct fmt::formatter<solidity::yul::ssa::SSACFG::BlockId>
+{
+	static auto constexpr parse(format_parse_context& ctx) -> decltype(ctx.begin()) { return ctx.begin(); }
+
+	template<typename FormatContext>
+	auto format(solidity::yul::ssa::SSACFG::BlockId const& _blockId, FormatContext& _ctx) const -> decltype(_ctx.out())
+	{
+		if (!_blockId.hasValue())
+			return fmt::format_to(_ctx.out(), "empty");
+		return fmt::format_to(_ctx.out(), "{}", _blockId.value);
+	}
+};
+
+template<>
+struct fmt::formatter<solidity::yul::ssa::SSACFG::ValueId>
+{
+	static auto constexpr parse(format_parse_context& ctx) -> decltype(ctx.begin()) { return ctx.begin(); }
+
+	template<typename FormatContext>
+	auto format(solidity::yul::ssa::SSACFG::ValueId const& _valueId, FormatContext& _ctx) const -> decltype(_ctx.out())
+	{
+		if (!_valueId.hasValue())
+			return fmt::format_to(_ctx.out(), "empty");
+		switch (_valueId.kind())
+		{
+		case solidity::yul::ssa::SSACFG::ValueId::Kind::Literal:
+			return fmt::format_to(_ctx.out(), "lit{}", _valueId.value());
+		case solidity::yul::ssa::SSACFG::ValueId::Kind::Variable:
+			return fmt::format_to(_ctx.out(), "v{}", _valueId.value());
+		case solidity::yul::ssa::SSACFG::ValueId::Kind::Phi:
+			return fmt::format_to(_ctx.out(), "phi{}", _valueId.value());
+		case solidity::yul::ssa::SSACFG::ValueId::Kind::Unreachable:
+			return fmt::format_to(_ctx.out(), "unreachable");
+		}
+		solidity::util::unreachable();
+	}
+};

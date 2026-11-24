@@ -82,6 +82,8 @@ contract C {
         return result;
     }
 }
+// ====
+// EVMVersion: >=constantinople
 // ----
 // arrayLength() ->0
 // canaryValue() -> 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff

@@ -13,25 +13,25 @@ parameters:
     default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:1f387a77be889f65a2a25986a5c5eccc88cec23fabe6aeaf351790751145c81e"
   ubuntu-2404-docker-image:
     type: string
-    # ghcr.io/argotorg/solidity-buildpack-deps:ubuntu2404-6
-    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:c0412c53e59ce0c96bde4c08e7332ea12e4cadba9bbac829621947897fa21272"
+    # ghcr.io/argotorg/solidity-buildpack-deps:ubuntu2404-7
+    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:e52bd8fbb38908f203c6866e39562548faf26e5b7a5174f9860b44aae2b8f0cd"
   ubuntu-2404-arm-docker-image:
     type: string
-    # ghcr.io/argotorg/solidity-buildpack-deps:ubuntu2404.arm-2
-    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:27b03c1c4688e5d69b10e0539460346a3dee3b10b0e04fb406b9707c6f0dd95e"
+    # ghcr.io/argotorg/solidity-buildpack-deps:ubuntu2404.arm-3
+    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:1e6dbf9a9173f2645449281a1e11918a95ca6dc04e59aa9d70824cffc44697ed"
   ubuntu-2404-clang-docker-image:
     type: string
-    # ghcr.io/argotorg/solidity-buildpack-deps:ubuntu2404.clang-7
-    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:7466ed23590cf14e60da884894723bcdab064742f017dcfcce015999b4f9143b"
+    # ghcr.io/argotorg/solidity-buildpack-deps:ubuntu2404.clang-8
+    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:e283c8ec6a59c76565c89b856d8019af2fa5beb96f27d3064fc4dda42bf3524d"
   ubuntu-clang-ossfuzz-docker-image:
     type: string
-    # ghcr.io/argotorg/solidity-buildpack-deps:ubuntu.clang.ossfuzz-12
-    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:c7088af5082bf764244a6251ecf3dd29d280d2cd2cd071f011f7f32e0326f426"
+    # ghcr.io/argotorg/solidity-buildpack-deps:ubuntu.clang.ossfuzz-13
+    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:2acb5d6f254ece25a96096f26960b5fe114eb86ceca92312cd20d59c096bf6e4"
   emscripten-docker-image:
     type: string
     # NOTE: Please remember to update the `scripts/build_emscripten.sh` whenever the hash of this image changes.
-    # ghcr.io/argotorg/solidity-buildpack-deps:emscripten-21
-    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:fc53d68a4680ffa7d5f70164e13a903478964f15bcc07434d74833a05f4fbc19"
+    # ghcr.io/argotorg/solidity-buildpack-deps:emscripten-22
+    default: "ghcr.io/argotorg/solidity-buildpack-deps@sha256:b9c953144d82cca5553f65626bc43b8af456dbc8966f8732ff9522f33ca8d722"
   evm-version:
     type: string
     default: osaka
@@ -74,6 +74,65 @@ commands:
       - matrix_notify_unless_pr:
           event: release
           condition: on_success
+
+  restore_ccache_if_allowed:
+    description: "Restore ccache unless on a tag or a skipped branch."
+    parameters:
+      skip_branches_regex:
+        description: "Regex of branches that should skip restoring the cache."
+        type: string
+        default: "^(develop|breaking)$"
+    steps:
+      # Tags always skip ccache. Selected branches intentionally start from scratch.
+      - when:
+          condition:
+            and:
+              - equal: ["", << pipeline.git.tag >>]
+              - not:
+                  matches:
+                    pattern: "<< parameters.skip_branches_regex >>"
+                    value: << pipeline.git.branch >>
+          steps:
+            - restore_cache:
+                keys:
+                  # Reuse cache produced on develop (prefix match; restores the most recent).
+                  - v1-ccache-{{ .Environment.CIRCLE_JOB }}-develop-
+
+  save_ccache_if_develop:
+    description: "Save a fresh ccache only on the develop branch."
+    steps:
+      # On `develop` we always generate a fresh cache by never restoring and by saving under a unique key.
+      - when:
+          condition:
+            equal: ["develop", << pipeline.git.branch >>]
+          steps:
+            - save_cache:
+                key: v1-ccache-{{ .Environment.CIRCLE_JOB }}-develop-{{ .Revision }}
+                paths:
+                  - ~/.ccache
+  run_with_ccache_unless_tag:
+    description: "Run a command with ccache enabled unless building a tag."
+    parameters:
+      command:
+        type: string
+      step_name:
+        type: string
+    steps:
+      - when:
+          condition:
+            equal: ["", << pipeline.git.tag >>]
+          steps:
+            - run:
+                name: << parameters.step_name >> (ccache)
+                command: << parameters.command >>
+      - when:
+          condition:
+            not:
+              equal: ["", << pipeline.git.tag >>]
+          steps:
+            - run:
+                name: << parameters.step_name >> (no ccache)
+                command: CCACHE_DISABLE=1 << parameters.command >>
 
   prepare_bytecode_report:
     description: "Generate bytecode report and upload it as an artifact."
@@ -208,15 +267,21 @@ commands:
 
   run_build:
     steps:
-      - run:
-          name: Build
+      - restore_ccache_if_allowed
+      # WARNING! If you edit anything between here and save_cache, remember to invalidate the cache manually by bumping the version
+      - run_with_ccache_unless_tag:
+          step_name: Build
           command: scripts/ci/build.sh
+      - save_ccache_if_develop
 
   run_build_ossfuzz:
     steps:
-      - run:
-          name: Build_ossfuzz
+      - restore_ccache_if_allowed
+      # WARNING! If you edit anything between here and save_cache, remember to invalidate the cache manually by bumping the version
+      - run_with_ccache_unless_tag:
+          step_name: Build_ossfuzz
           command: scripts/ci/build_ossfuzz.sh
+      - save_ccache_if_develop
 
   run_proofs:
     steps:
@@ -234,7 +299,7 @@ commands:
   run_soltest_all:
     parameters:
       # NOTE: If not specified, soltest_all.sh will use the default values as specified in the script.
-      # In other words, it will execute for all EVM versions that are not marked as deprecated.
+      # In other words, it will execute for all EVM versions that are not marked as low priority.
       evm_versions:
         description: "List of EVM versions (separated by space)."
         type: string
@@ -1206,7 +1271,7 @@ jobs:
       - run:
           name: Install build dependencies
           command: |
-            pacman --noconfirm -Syu --noprogressbar --needed base-devel boost cmake git openssh tar
+            pacman --noconfirm -Syu --noprogressbar --needed base-devel boost cmake ccache git openssh tar
       - checkout
       - run_build
       - store_artifacts_solc
@@ -1266,10 +1331,12 @@ jobs:
       MAKEFLAGS: -j 10
     steps:
       - checkout
-      - run:
-          name: Build
-          command: |
-            scripts/ci/build_emscripten.sh
+      - restore_ccache_if_allowed
+      # WARNING! If you edit anything between here and save_cache, remember to invalidate the cache manually by bumping the version
+      - run_with_ccache_unless_tag:
+          step_name: Build
+          command: scripts/ci/build_emscripten.sh
+      - save_ccache_if_develop
       - store_artifacts:
           path: upload/soljson.js
           destination: soljson.js
@@ -1301,11 +1368,16 @@ jobs:
           destination: docs-html
       - matrix_notify_failure_unless_pr
 
-  t_ubu_soltest_all: &t_ubu_soltest_all
+  t_ubu_soltest: &t_ubu_soltest
     <<: *base_ubuntu2404_large
-    parallelism: 50
+    parallelism: 20
+    environment:
+      <<: *base_ubuntu2404_large_env
+      EVM: << pipeline.parameters.evm-version >>
+      EOF_VERSION: 0
+      OPTIMIZE: 0
     steps:
-      - soltest_all
+      - soltest
 
   t_ubu_arm_soltest: &t_ubu_arm_soltest
     <<: *base_ubuntu2404_arm_medium
@@ -1329,7 +1401,7 @@ jobs:
       - store_artifacts_test_results
       - matrix_notify_failure_unless_pr
 
-  t_ubu_soltest_deprecated_evm_versions: &t_ubu_soltest_deprecated_evm_versions
+  t_ubu_soltest_low_priority_evm_versions: &t_ubu_soltest_low_priority_evm_versions
     <<: *base_ubuntu2404_large
     parallelism: 50
     steps:
@@ -1337,7 +1409,18 @@ jobs:
       - attach_workspace:
           at: build
       - run_soltest_all:
-          evm_versions: homestead byzantium constantinople petersburg
+          # We test most EVM versions on every PR. The ones below are the exceptions.
+          #
+          # We do not test these at all. We were never doing that and no point starting now since
+          # they are deprecated anyway:
+          # - tangerineWhistle
+          # - spuriousDragon
+          #
+          # These have a low chance of breaking so we only run them in nightly to save credits:
+          # - byzantium: deprecated, if it breaks, homestead likely will as well
+          # - petersburg: no changes compared to constantinople
+          # - prague: no changes compared to cancun
+          evm_versions: byzantium petersburg prague
       - store_test_results:
           path: test_results/
       - store_artifacts_test_results
@@ -1381,9 +1464,10 @@ jobs:
       - soltest
 
   t_ubu_force_release_soltest_all: &t_ubu_force_release_soltest_all
-    # NOTE: This definition is identical to t_ubu_soltest_all but in the workflow we make it depend on
-    # a different job (b_ubu_force_release) so the workspace it attaches contains a different executable.
-    <<: *t_ubu_soltest_all
+    <<: *base_ubuntu2404_large
+    parallelism: 50
+    steps:
+      - soltest_all
 
   t_ubu_cli: &t_ubu_cli
     <<: *base_ubuntu2404_small
@@ -1740,9 +1824,12 @@ jobs:
           key: dependencies-win-{{ arch }}-{{ checksum "scripts/install_deps.ps1" }}
           paths:
             - .\deps
-      - run:
-          name: "Building solidity"
+      - restore_ccache_if_allowed
+      # WARNING! If you edit anything between here and save_cache, remember to invalidate the cache manually by bumping the version
+      - run_with_ccache_unless_tag:
+          step_name: "Building solidity"
           command: scripts/ci/build_win.sh
+      - save_ccache_if_develop
       - run:
           name: "Run solc.exe to make sure build was successful."
           command: .\build\solc\Release\solc.exe --version
@@ -2047,7 +2134,7 @@ workflows:
       - t_ubu_cli: *requires_b_ubu
       - t_ubu_arm_cli: *requires_b_ubu_static_arm
       - t_ubu_locale: *requires_b_ubu
-      - t_ubu_soltest_all: *requires_b_ubu
+      - t_ubu_soltest: *requires_b_ubu
       - t_ubu_arm_soltest: *requires_b_ubu_static_arm
       - b_ubu_clang: *requires_nothing
       - t_ubu_clang_soltest: *requires_b_ubu_clang

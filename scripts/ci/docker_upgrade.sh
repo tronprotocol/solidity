@@ -55,6 +55,7 @@ docker run \
   --rm \
   --volume "${PWD}:/project" \
   -u "$(id -u "${USER}"):$(id -g "${USER}")" \
+  -e CCACHE_DIR=/tmp/ccache \
   "${IMAGE_NAME}" \
   bash -c "/project/scripts/ci/${IMAGE_NAME}_test_${IMAGE_VARIANT}.sh"
 
