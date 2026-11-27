@@ -769,6 +769,114 @@ contract C {
 	}
 }
 
+BOOST_AUTO_TEST_CASE(tron_calldata_address_cleanup)
+{
+	std::string const sourceCode = R"(
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.0;
+interface I {}
+type MyAddress is address;
+type MyPayableAddress is address payable;
+struct S {
+    address a;
+    address payable p;
+    I c;
+    MyAddress m;
+    MyPayableAddress mp;
+}
+contract C {
+    address[] storedAddrs;
+    I[] storedContracts;
+    MyAddress[] storedWrapped;
+    S storedStruct;
+    function readAddr(address[] calldata a) external payable returns (uint256 r) {
+        address x = a[0];
+        assembly { r := x }
+    }
+    function readPayable(address payable[] calldata a) external payable returns (uint256 r) {
+        address payable x = a[0];
+        assembly { r := x }
+    }
+    function readContract(I[] calldata a) external payable returns (uint256 r) {
+        I x = a[0];
+        assembly { r := x }
+    }
+    function readWrapped(MyAddress[] calldata a) external payable returns (uint256 r) {
+        MyAddress x = a[0];
+        assembly { r := x }
+    }
+    function readWrappedPayable(MyPayableAddress[] calldata a) external payable returns (uint256 r) {
+        MyPayableAddress x = a[0];
+        assembly { r := x }
+    }
+    function readStruct(S calldata s) external payable returns (S memory) {
+        storedStruct = s;
+        return s;
+    }
+    function readUint(uint24[] calldata u) external payable returns (uint24) {
+        return u[0];
+    }
+    function storeArrays(address[] calldata a, I[] calldata c, MyAddress[] calldata m) external payable {
+        storedAddrs = a;
+        storedContracts = c;
+        storedWrapped = m;
+    }
+}
+)";
+	for (bool viaIR: {false, true})
+		for (bool optimize: {false, true})
+		{
+			Json input = createLanguageAndSourcesSection("Solidity", {{"A.sol", sourceCode}});
+			input["settings"]["viaIR"] = viaIR;
+			input["settings"]["optimizer"]["enabled"] = optimize;
+			input["settings"]["outputSelection"]["*"]["*"] =
+				viaIR ? Json::array({"ir", "evm.deployedBytecode.object"}) : Json::array({"evm.deployedBytecode.object"});
+			Json const output = compile(input.dump());
+			BOOST_REQUIRE(containsAtMostWarnings(output));
+
+			if (viaIR && !optimize)
+			{
+				std::string const ir = output["contracts"]["A.sol"]["C"]["ir"].get<std::string>();
+				auto extractFunction = [&](std::string const& _prefix) {
+					size_t const start = ir.find("function " + _prefix);
+					BOOST_REQUIRE_MESSAGE(start != std::string::npos, "Missing " + _prefix);
+					size_t const openBrace = ir.find('{', start);
+					BOOST_REQUIRE(openBrace != std::string::npos);
+					size_t const openParen = ir.find('(', start);
+					BOOST_REQUIRE(openParen != std::string::npos && openParen < openBrace);
+					int depth = 0;
+					for (size_t i = openBrace; i < ir.size(); ++i)
+					{
+						if (ir[i] == '{')
+							++depth;
+						else if (ir[i] == '}' && --depth == 0)
+							return ir.substr(start, i - start + 1);
+					}
+					BOOST_FAIL("Unclosed function " + _prefix);
+					return std::string{};
+				};
+
+				for (std::string const& helper: {
+					std::string("read_from_calldatat_address("),
+					std::string("read_from_calldatat_address_payable("),
+					std::string("read_from_calldatat_contract$_I_$"),
+					std::string("read_from_calldatat_userDefinedValueType$_MyAddress_$"),
+					std::string("read_from_calldatat_userDefinedValueType$_MyPayableAddress_$")
+				})
+				{
+					std::string const body = extractFunction(helper);
+					BOOST_TEST_MESSAGE(helper);
+					BOOST_TEST(body.find("validator_revert_") != std::string::npos);
+					BOOST_TEST(body.find("cleanup_t_") != std::string::npos);
+				}
+
+				std::string const uintBody = extractFunction("read_from_calldatat_uint24(");
+				BOOST_TEST(uintBody.find("validator_revert_") != std::string::npos);
+				BOOST_TEST(uintBody.find("cleanup_") == std::string::npos);
+			}
+		}
+}
+
 BOOST_AUTO_TEST_CASE(compilation_error)
 {
 	char const* input = R"(

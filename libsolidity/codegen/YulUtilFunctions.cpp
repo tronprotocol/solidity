@@ -4537,11 +4537,24 @@ std::string YulUtilFunctions::readFromMemoryOrCalldata(Type const& _type, bool _
 		}
 
 		solAssert(_type.isValueType(), "");
+		Type const* underlyingType = &_type;
+		if (auto const* valueType = dynamic_cast<UserDefinedValueType const*>(underlyingType))
+			underlyingType = &valueType->underlyingType();
+		bool const needsCalldataCleanup =
+			_fromCalldata &&
+			(
+				underlyingType->category() == Type::Category::Address ||
+				underlyingType->category() == Type::Category::Contract
+			);
+
 		Whiskers templ(R"(
 			function <functionName>(ptr) -> <returnVariables> {
 				<?fromCalldata>
 					let value := calldataload(ptr)
 					<validate>(value)
+					<?needsCalldataCleanup>
+						value := <cleanup>(value)
+					</needsCalldataCleanup>
 				<!fromCalldata>
 					let value := <cleanup>(mload(ptr))
 				</fromCalldata>
@@ -4556,6 +4569,7 @@ std::string YulUtilFunctions::readFromMemoryOrCalldata(Type const& _type, bool _
 		)");
 		templ("functionName", functionName);
 		templ("fromCalldata", _fromCalldata);
+		templ("needsCalldataCleanup", needsCalldataCleanup);
 		if (_fromCalldata)
 			templ("validate", validatorFunction(_type, true));
 		auto const* funType = dynamic_cast<FunctionType const*>(&_type);
